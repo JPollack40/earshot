@@ -83,15 +83,38 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     /** Reads the feed list from an OPML file. Throws IOException with a readable message if it can't. */
     suspend fun readOpml(uri: Uri): List<OpmlFeed> = withContext(Dispatchers.IO) {
         try {
-            val stream = context.contentResolver.openInputStream(uri)
+            val stream = context.contentResolver.openInputStream(uri)?.buffered()
                 ?: throw IOException("The file couldn't be opened")
-            stream.use { OpmlParser.parse(it) }
+            stream.use {
+                if (isIntuneEncrypted(it)) {
+                    Log.w(TAG, "OPML import: $uri is encrypted by Microsoft Intune app protection")
+                    throw IOException(
+                        "This file is encrypted by your work profile's Microsoft Intune protection, so other " +
+                            "apps can't read it. It was probably saved through a work app (Outlook, Teams, " +
+                            "OneDrive or Edge). Export it again from Podcast Addict straight to Downloads.",
+                    )
+                }
+                OpmlParser.parse(it)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "OPML import: couldn't read $uri", e)
-            throw if (e is IOException) e else IOException("That doesn't look like an OPML file (${e.message})", e)
+            throw if (e is IOException) e else IOException("That doesn't look like an OPML subscriptions file", e)
         }
+    }
+
+    /**
+     * Files saved by Intune-managed apps start with a "MSMAMARPCRYPT" header and are AES-encrypted.
+     * Peeks at the start of [input] (which must support mark/reset) without consuming it.
+     */
+    private fun isIntuneEncrypted(input: java.io.InputStream): Boolean {
+        val magic = "MSMAMARPCRYPT".toByteArray()
+        val head = ByteArray(32)
+        input.mark(head.size)
+        val n = input.read(head).coerceAtLeast(0)
+        input.reset()
+        return String(head, 0, n, Charsets.ISO_8859_1).contains(String(magic, Charsets.ISO_8859_1))
     }
 
     /**
