@@ -94,6 +94,12 @@ compileSdk 37.1 (`compileSdk { version = release(37) { minorApiLevel = 1 } }`; r
 
 ## 8. Open issues and decisions
 
+- **Feature idea (Serena, 2026-11-26): adjustable skip lengths.** Long-press the back or forward skip button in the app to pick that button's length: 5 s, 15 s, 30 s, 1 min, 5 min, 15 min (defaults stay back 15 / forward 30). Decide: build now, or as part of phase 4. How it would work:
+  - The long-press picker lives in the phone app's player (and mini player if wanted). Android Auto, the notification and the lock screen don't pass long-presses to apps, so there they just use the chosen lengths.
+  - Car/notification icons: Media3 has numbered icons only for 5, 10, 15 and 30 s. For 1, 5 and 15 min the button uses the generic skip icon, with its name ("Forward 1 minute") as the label.
+  - The service would switch from Media3's fixed seek increments to its own skip commands, so a new length applies right away, including in the car and to headset buttons.
+  - Could become per-podcast in phase 4 (per-podcast settings).
+
 - Android Auto's now-playing **Queue** button shows only the current episode, and the car's skip next/previous aren't offered (back 15 / forward 30 take those slots). The full queue is in the Queue tab. Could be fixed by mirroring the queue into the player's playlist.
 - Android Auto shows a **search** button, but search isn't implemented yet (`onSearch` / `onGetSearchResult`). Natural fit for phase 5 (Podcast Index) or sooner.
 - In the car, the Latest tab and a podcast's episode list don't refresh live (Queue, Inbox and Podcasts do); reopening them reloads.
