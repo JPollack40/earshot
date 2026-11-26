@@ -32,6 +32,7 @@ object ItunesSearch {
                 artworkUrl = o.optString("artworkUrl600").ifBlank { o.optString("artworkUrl100") }.takeIf { it.isNotBlank() },
             )
         }
-        return out
+        // Apple sometimes lists the same feed twice (e.g. "radiolab"); the results list needs unique feeds.
+        return out.distinctBy { it.feedUrl }
     }
 }
