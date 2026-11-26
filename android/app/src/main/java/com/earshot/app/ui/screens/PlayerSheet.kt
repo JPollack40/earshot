@@ -1,0 +1,266 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.earshot.app.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.automirrored.outlined.Notes
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.earshot.app.playback.SleepTimer
+import com.earshot.app.ui.AppViewModel
+import com.earshot.app.ui.formatClock
+import com.earshot.app.ui.formatSpeed
+
+private val SPEEDS = listOf(0.8f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.7f, 2.0f, 2.5f, 3.0f)
+private val SLEEP_MINUTES = listOf(5, 15, 30, 45, 60, 90)
+
+@Composable
+fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
+    val now by vm.nowPlaying.collectAsStateWithLifecycle()
+    val episode by vm.currentEpisode.collectAsStateWithLifecycle()
+    val chapters by vm.chapters.collectAsStateWithLifecycle()
+    val sleep by vm.sleepTimer.collectAsStateWithLifecycle()
+    var dragPosition by remember { mutableStateOf<Float?>(null) }
+    var speedMenu by remember { mutableStateOf(false) }
+    var sleepMenu by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Artwork(now.artworkUrl, 220, corner = 12)
+            Spacer(Modifier.height(16.dp))
+            Text(
+                now.title,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(now.podcastTitle, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            val position = dragPosition?.toLong() ?: now.positionMs
+            val currentChapter = chapters.lastOrNull { it.startMs <= position }
+            if (currentChapter != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(currentChapter.title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+            }
+
+            // ---- Scrubber ----
+            Spacer(Modifier.height(8.dp))
+            val duration = now.durationMs.coerceAtLeast(1L).toFloat()
+            Slider(
+                value = (dragPosition ?: now.positionMs.toFloat()).coerceIn(0f, duration),
+                onValueChange = { dragPosition = it },
+                onValueChangeFinished = {
+                    dragPosition?.let { vm.player.seekTo(it.toLong()) }
+                    dragPosition = null
+                },
+                valueRange = 0f..duration,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatClock(position), style = MaterialTheme.typography.labelSmall)
+                Text(
+                    if (now.durationMs > 0) "-" + formatClock(now.durationMs - position) else "",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+
+            // ---- Transport ----
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                SkipButton(seconds = 15, forward = false) { vm.player.seekBack() }
+                FilledIconButton(
+                    onClick = { vm.player.togglePlay() },
+                    modifier = Modifier.size(72.dp),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    if (now.isBuffering) {
+                        CircularProgressIndicator(Modifier.size(28.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 3.dp)
+                    } else {
+                        Icon(
+                            if (now.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (now.isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(40.dp),
+                        )
+                    }
+                }
+                SkipButton(seconds = 30, forward = true) { vm.player.seekForward() }
+            }
+
+            // ---- Speed / sleep / notes ----
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box {
+                    AssistChip(
+                        onClick = { speedMenu = true },
+                        label = { Text(formatSpeed(now.speed)) },
+                        leadingIcon = { Icon(Icons.Filled.Speed, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                        SPEEDS.forEach { s ->
+                            DropdownMenuItem(
+                                text = { Text(formatSpeed(s), fontWeight = if (s == now.speed) FontWeight.Bold else null) },
+                                onClick = {
+                                    vm.player.setSpeed(s)
+                                    speedMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+                Box {
+                    AssistChip(
+                        onClick = { sleepMenu = true },
+                        label = { Text(sleepLabel(sleep)) },
+                        leadingIcon = { Icon(Icons.Filled.Bedtime, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenu(expanded = sleepMenu, onDismissRequest = { sleepMenu = false }) {
+                        DropdownMenuItem(text = { Text("Off") }, onClick = { vm.player.setSleepTimer(null); sleepMenu = false })
+                        SLEEP_MINUTES.forEach { m ->
+                            DropdownMenuItem(text = { Text("$m minutes") }, onClick = { vm.player.setSleepTimer(m); sleepMenu = false })
+                        }
+                        DropdownMenuItem(text = { Text("End of episode") }, onClick = { vm.player.sleepAtEndOfEpisode(); sleepMenu = false })
+                    }
+                }
+                if (episode?.episode?.description?.isNotBlank() == true) {
+                    AssistChip(
+                        onClick = { showNotes = true },
+                        label = { Text("Notes") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null, Modifier.size(18.dp)) },
+                    )
+                }
+            }
+
+            // ---- Chapters ----
+            if (chapters.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text(
+                    "Chapters",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
+                chapters.forEach { ch ->
+                    val active = ch == currentChapter
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.player.seekTo(ch.startMs) }
+                            .background(if (active) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface)
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            formatClock(ch.startMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(56.dp),
+                        )
+                        Text(
+                            ch.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val ep = episode
+    if (showNotes && ep != null) {
+        EpisodeSheet(
+            item = ep,
+            onDismiss = { showNotes = false },
+            onPlay = { vm.play(ep) },
+            onDownload = { vm.download(ep) },
+            onDeleteDownload = { vm.deleteDownload(ep) },
+            onTogglePlayed = { vm.setPlayed(ep, !ep.episode.played) },
+        )
+    }
+}
+
+@Composable
+private fun SkipButton(seconds: Int, forward: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(56.dp)) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Filled.Replay,
+                contentDescription = if (forward) "Forward $seconds seconds" else "Back $seconds seconds",
+                modifier = Modifier
+                    .size(40.dp)
+                    .scale(scaleX = if (forward) -1f else 1f, scaleY = 1f),
+            )
+            Text("$seconds", fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 3.dp))
+        }
+    }
+}
+
+private fun sleepLabel(sleep: SleepTimer): String = when (sleep) {
+    SleepTimer.Off -> "Sleep"
+    SleepTimer.EndOfEpisode -> "End of episode"
+    is SleepTimer.At -> {
+        val minsLeft = ((sleep.endsAtMs - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1
+        "${minsLeft}m"
+    }
+}

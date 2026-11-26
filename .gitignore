@@ -1,0 +1,25 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+.kotlin/
+
+# Signing keys and secrets: never commit these
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Web (phase 5)
+node_modules/
+dist/
