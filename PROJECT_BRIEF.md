@@ -47,8 +47,8 @@ A personal podcast app for Serena, used only by her. Native Android app, a web p
 | 1 | Setup: Android Studio, GitHub repo, (later) Supabase project and Podcast Index key | Android Studio + GitHub repo done (VM signed in to GitHub, phone paired for Wi-Fi debugging). Supabase and Podcast Index key later |
 | 2 | Core player: search/RSS/OPML, stream and download, background playback, speed, sleep timer, chapters, download auto-delete + Settings screen | **Done 2026-11-26.** Builds, tested on Serena's phone, merged to main (bd30ae7). Airplane-mode download tests skipped by choice |
 | 3 | Inbox triage + queue (drag reorder) + Android Auto (test with the Desktop Head Unit) | **Done 2026-11-26.** Tested on Serena's phone and on the Desktop Head Unit driving the phone; pushed to main |
-| 4 | Smart Speed + Voice Boost, per-podcast settings, "time saved" stat, adjustable skip lengths (long-press a skip button: 5 s, 10 s, 15 s, 30 s, 1 min, 5 min, 15 min) | **Built 2026-11-26** on branch `claude/project-thread-vtxk1w`, installed on Serena's phone; library upgrade checked; player, dialogs, Settings and podcast settings checked by tapping (no audio). Waiting on Serena's listening test and the Desktop Head Unit test, then merge to main |
-| 5 | Supabase schema and auth, two-way sync, React web player, Podcast Index search | |
+| 4 | Smart Speed + Voice Boost, per-podcast settings, "time saved" stat, adjustable skip lengths (long-press a skip button: 5 s, 10 s, 15 s, 30 s, 1 min, 5 min, 15 min) | **Done 2026-11-26.** Tested by Serena on her phone and the Desktop Head Unit: Smart Speed (tuning sounds right), time saved, per-podcast settings, Settings defaults and Android Auto all passed. Voice Boost seemed to work but was hard to judge (see section 8). Fixed a crash her testing found (directory search returning the same feed twice, e.g. "radiolab"). On branch `claude/project-thread-vtxk1w` until merged to main |
+| 5 | Supabase schema and auth, two-way sync, React web player, Podcast Index search, **search within a podcast** (keywords against a podcast's episode titles and show notes, from its page), **preview a podcast without subscribing** (open a search result, see all its episodes, play or queue them; queued episodes stay until played, like unsubscribing) | **Next.** The two bold items were added by Serena on 2026-11-26 |
 | 6 | Transcripts (feed first, cloud API fallback) + headphone-tap bookmarks + transcript search + Markdown export | |
 | 7 | Automation rules + smart playlists | |
 | 8 | GitHub Actions signed release builds | |
@@ -102,7 +102,8 @@ compileSdk 37.1 (`compileSdk { version = release(37) { minorApiLevel = 1 } }`; r
 
 ## 8. Open issues and decisions
 
-- **Phase 4 still to test (Serena):** how Smart Speed and Voice Boost sound on real episodes (tuning constants may need adjusting after listening), time saved counting up while playing, and the skip buttons in the Desktop Head Unit (icons and lengths, including a 1-minute button with the plain icon).
+- **Voice Boost check (Serena):** hard to judge on the episodes she tried. Suggested test: an episode with a much quieter guest (phone-in) or a soft-spoken show, phone volume low, toggle the chip every ~10 s; the quiet voice should rise to about the host's level within ~3 s. If it still seems too subtle, raise `MAX_GAIN` / `TARGET_RMS` in `VoiceBoostProcessor.kt`.
+- Not yet checked on the phone: the "radiolab" search after the fix (the duplicate was confirmed in Apple's results; fix is to drop duplicate feeds).
 - Voice Boost and Smart Speed only apply to normal PCM playback; they do nothing if Android ever uses offload or float output (both off today).
 - Smart Speed doesn't detect music (wishlist item): shows with background music under speech get little or no trimming.
 - Changing speed or toggling Smart Speed from the player while a podcast has its own settings changes that podcast's settings (by design; see section 5). Watch whether that feels right in use.
