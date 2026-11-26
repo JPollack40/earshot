@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,12 +43,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +63,7 @@ import com.earshot.app.playback.SleepTimer
 import com.earshot.app.ui.AppViewModel
 import com.earshot.app.ui.formatClock
 import com.earshot.app.ui.formatSpeed
+import kotlinx.coroutines.launch
 
 private val SPEEDS = listOf(0.8f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.7f, 2.0f, 2.5f, 3.0f)
 private val SLEEP_MINUTES = listOf(5, 15, 30, 45, 60, 90)
@@ -71,6 +78,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     var speedMenu by remember { mutableStateOf(false) }
     var sleepMenu by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    var chaptersTop by remember { mutableIntStateOf(0) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -78,7 +88,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     ) {
         Column(
             Modifier
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -145,9 +155,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 SkipButton(seconds = 30, forward = true) { vm.player.seekForward() }
             }
 
-            // ---- Speed / sleep / notes ----
+            // ---- Speed / sleep / notes / chapters ----
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 Box {
                     AssistChip(
                         onClick = { speedMenu = true },
@@ -187,12 +197,23 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null, Modifier.size(18.dp)) },
                     )
                 }
+                // Only once chapters have actually loaded; jumps down to the list.
+                if (chapters.isNotEmpty()) {
+                    AssistChip(
+                        onClick = { scope.launch { scroll.animateScrollTo(chaptersTop) } },
+                        label = { Text("Chapters (${chapters.size})") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, null, Modifier.size(18.dp)) },
+                    )
+                }
             }
 
             // ---- Chapters ----
             if (chapters.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.onGloballyPositioned { chaptersTop = it.positionInParent().y.toInt() },
+                )
                 Text(
                     "Chapters",
                     style = MaterialTheme.typography.titleSmall,

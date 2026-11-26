@@ -34,6 +34,20 @@ object FeedParser {
     private const val NS_PODCAST = "https://podcastindex.org/namespace/1.0"
     private const val NS_CONTENT = "http://purl.org/rss/1.0/modules/content/"
 
+    /**
+     * Feeds declare the Podcasting 2.0 namespace under more than one URI. The canonical one is
+     * NS_PODCAST, but older feeds (including the "Podcasting 2.0" show's own feed) still use the
+     * GitHub docs URL, so normalize every known spelling to NS_PODCAST.
+     */
+    private fun normalizeNamespace(ns: String): String {
+        val n = ns.trim().trimEnd('/').lowercase()
+        return when {
+            n.endsWith("podcastindex.org/namespace/1.0") -> NS_PODCAST
+            n.contains("github.com/podcastindex-org/podcast-namespace") -> NS_PODCAST
+            else -> ns
+        }
+    }
+
     private class ItemBuilder {
         var guid: String? = null
         var title = ""
@@ -87,7 +101,7 @@ object FeedParser {
         var event = p.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             if (event == XmlPullParser.START_TAG) {
-                val ns = p.namespace ?: ""
+                val ns = normalizeNamespace(p.namespace ?: "")
                 val name = p.name
                 val cur = item
                 if (cur != null) {
