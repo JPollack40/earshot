@@ -1,10 +1,8 @@
 package com.earshot.app.playback
 
 import android.content.ComponentName
-import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -18,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
 
 data class NowPlaying(
     val episodeId: String? = null,
@@ -81,6 +78,7 @@ class PlayerConnection(private val app: EarshotApp) {
             val queued = pending.toList()
             pending.clear()
             queued.forEach { it(c) }
+            loadQueueHead(c)
             startTicker()
         }, ContextCompat.getMainExecutor(app))
     }
@@ -110,15 +108,8 @@ class PlayerConnection(private val app: EarshotApp) {
             updateState()
         }
 
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // With a queue (phase 3) this is where "sleep at end of episode" kicks in.
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && _sleep.value == SleepTimer.EndOfEpisode) {
-                controller?.pause()
-                _sleep.value = SleepTimer.Off
-            }
-        }
-
         override fun onPlaybackStateChanged(playbackState: Int) {
+            // The service checks this flag before starting the next queued episode.
             if (playbackState == Player.STATE_ENDED && _sleep.value == SleepTimer.EndOfEpisode) {
                 _sleep.value = SleepTimer.Off
             }
@@ -143,47 +134,34 @@ class PlayerConnection(private val app: EarshotApp) {
 
     // ---- Commands ----
 
+    /**
+     * Plays an episode. Only the id is sent: the service looks the episode up, moves it to the top
+     * of the queue and resumes from the saved position (the same path Android Auto uses).
+     */
     fun play(item: EpisodeWithPodcast) {
-        val e = item.episode
-        val localFile = e.localPath?.let { File(it) }?.takeIf { it.exists() }
-        val uri: Uri = localFile?.let { Uri.fromFile(it) } ?: Uri.parse(e.audioUrl)
-        val nearEnd = e.durationMs > 0 && e.positionMs > e.durationMs - 5_000
-        val start = if (e.played || nearEnd) 0L else e.positionMs
-
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(e.id)
-            .setUri(uri)
-            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(e.title)
-                    .setArtist(item.podcastTitle)
-                    .setAlbumTitle(item.podcastTitle)
-                    .setArtworkUri(item.artworkUrl?.let { Uri.parse(it) })
-                    .setIsPlayable(true)
-                    .setIsBrowsable(false)
-                    .build(),
-            )
-            .build()
-
+        val id = item.episode.id
         withController { c ->
             // Same episode still loaded: just resume. After it has ended, load it again instead,
             // because its download may have been deleted when it finished.
-            if (c.currentMediaItem?.mediaId == e.id && c.playbackState != Player.STATE_ENDED) {
+            if (c.currentMediaItem?.mediaId == id && c.playbackState != Player.STATE_ENDED) {
+                app.appScope.launch { app.repository.queueFirst(id) }
                 c.play()
                 return@withController
             }
-            // Save where we were in the previous episode before switching.
-            val prevId = c.currentMediaItem?.mediaId
-            val prevPos = c.currentPosition
-            if (prevId != null && c.playbackState != Player.STATE_ENDED) {
-                app.appScope.launch {
-                    app.repository.episodes.savePosition(prevId, prevPos, System.currentTimeMillis())
-                }
-            }
-            c.setMediaItem(mediaItem, start)
+            c.setMediaItem(MediaItem.Builder().setMediaId(id).build())
             c.prepare()
             c.play()
+        }
+    }
+
+    /** At app start, show the top of the queue in the mini player, paused, ready to resume. */
+    private fun loadQueueHead(c: MediaController) {
+        if (c.mediaItemCount > 0) return
+        app.appScope.launch {
+            val head = app.repository.queueHead() ?: return@launch
+            if (c.mediaItemCount > 0) return@launch
+            c.setMediaItem(MediaItem.Builder().setMediaId(head.episode.id).build())
+            c.prepare()
         }
     }
 

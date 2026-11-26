@@ -57,6 +57,8 @@ import com.earshot.app.ui.Screen
 fun LibraryScreen(vm: AppViewModel) {
     val library by vm.library.collectAsStateWithLifecycle()
     val latest by vm.latest.collectAsStateWithLifecycle()
+    val inbox by vm.inbox.collectAsStateWithLifecycle()
+    val queue by vm.queue.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
@@ -78,12 +80,16 @@ fun LibraryScreen(vm: AppViewModel) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Latest") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Podcasts (${library.size})") })
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { TabLabel("Queue", queue.size) })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { TabLabel("Inbox", inbox.size) })
+                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { TabLabel("Latest", 0) })
+                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { TabLabel("Podcasts", library.size) })
             }
             when {
+                tab == 0 -> QueueList(vm, Modifier.fillMaxSize())
+                tab == 1 -> InboxList(vm, Modifier.fillMaxSize())
                 library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) })
-                tab == 0 -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
+                tab == 2 -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
                 else -> PodcastList(vm, library)
             }
         }
@@ -145,7 +151,7 @@ private fun PodcastList(vm: AppViewModel, library: List<PodcastWithCount>) {
         AlertDialog(
             onDismissRequest = { confirmUnsubscribe = null },
             title = { Text("Unsubscribe?") },
-            text = { Text("Remove ${row.podcast.title} and its downloaded episodes from this phone?") },
+            text = { Text("Remove ${row.podcast.title} and its downloads from this phone? Episodes in your queue stay until you play or remove them.") },
             confirmButton = {
                 TextButton(onClick = {
                     vm.unsubscribe(row.podcast.id)
@@ -175,4 +181,15 @@ private fun EmptyLibrary(onAdd: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Button(onClick = onAdd) { Text("Add podcasts") }
     }
+}
+
+/** Compact tab label with an optional count, so four tabs fit on the Fold's cover screen. */
+@Composable
+private fun TabLabel(name: String, count: Int) {
+    Text(
+        if (count > 0) "$name $count" else name,
+        style = MaterialTheme.typography.labelLarge,
+        maxLines = 1,
+        softWrap = false,
+    )
 }

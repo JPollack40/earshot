@@ -20,6 +20,11 @@ data class Podcast(
     val imageUrl: String? = null,
     val lastRefreshedAt: Long = 0,
     val sortOrder: Int = 0,
+    /**
+     * False after unsubscribing while some of its episodes were still queued: the podcast is hidden
+     * and no longer refreshed, but those episodes stay until played or removed (v3).
+     */
+    @ColumnInfo(defaultValue = "1") val subscribed: Boolean = true,
 )
 
 @Entity(
@@ -60,6 +65,11 @@ data class Episode(
     val localPath: String? = null,
     /** When the download finished (ms). 0 = not downloaded, or downloaded before this was tracked. */
     @ColumnInfo(defaultValue = "0") val downloadedAt: Long = 0,
+    // Triage (v3)
+    /** New episode waiting in the Inbox to be queued or archived. */
+    @ColumnInfo(defaultValue = "0") val inInbox: Boolean = false,
+    /** Place in the queue (lower plays first); null when not queued. */
+    val queuePosition: Long? = null,
 )
 
 object DownloadState {

@@ -125,7 +125,7 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
         AlertDialog(
             onDismissRequest = { confirmUnsubscribe = false },
             title = { Text("Unsubscribe?") },
-            text = { Text("Remove ${podcast?.title.orEmpty()} and its downloaded episodes from this phone?") },
+            text = { Text("Remove ${podcast?.title.orEmpty()} and its downloads from this phone? Episodes in your queue stay until you play or remove them.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmUnsubscribe = false

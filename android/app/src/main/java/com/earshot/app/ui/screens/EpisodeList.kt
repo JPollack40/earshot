@@ -46,15 +46,23 @@ fun EpisodeList(
         }
     }
 
-    val open = openId?.let { id -> episodes.firstOrNull { it.episode.id == id } }
-    if (open != null) {
-        EpisodeSheet(
-            item = open,
-            onDismiss = { openId = null },
-            onPlay = { vm.play(open) },
-            onDownload = { vm.download(open) },
-            onDeleteDownload = { vm.deleteDownload(open) },
-            onTogglePlayed = { vm.setPlayed(open, !open.episode.played) },
-        )
-    }
+    EpisodeSheetFor(vm, openId?.let { id -> episodes.firstOrNull { it.episode.id == id } }) { openId = null }
+}
+
+/** The episode detail sheet with every action wired to the view model. Shows nothing when [item] is null. */
+@Composable
+fun EpisodeSheetFor(vm: AppViewModel, item: EpisodeWithPodcast?, onDismiss: () -> Unit) {
+    if (item == null) return
+    EpisodeSheet(
+        item = item,
+        onDismiss = onDismiss,
+        onPlay = { vm.play(item) },
+        onDownload = { vm.download(item) },
+        onDeleteDownload = { vm.deleteDownload(item) },
+        onTogglePlayed = { vm.setPlayed(item, !item.episode.played) },
+        onQueueNext = { vm.queueNext(item) },
+        onQueueLast = { vm.queueLast(item) },
+        onRemoveFromQueue = { vm.removeFromQueue(item) },
+        onArchive = { vm.archive(item) },
+    )
 }

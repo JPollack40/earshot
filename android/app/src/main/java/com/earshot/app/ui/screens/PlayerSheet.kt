@@ -249,15 +249,8 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     }
 
     val ep = episode
-    if (showNotes && ep != null) {
-        EpisodeSheet(
-            item = ep,
-            onDismiss = { showNotes = false },
-            onPlay = { vm.play(ep) },
-            onDownload = { vm.download(ep) },
-            onDeleteDownload = { vm.deleteDownload(ep) },
-            onTogglePlayed = { vm.setPlayed(ep, !ep.episode.played) },
-        )
+    if (showNotes) {
+        EpisodeSheetFor(vm, ep) { showNotes = false }
     }
 }
 

@@ -54,9 +54,21 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     // ---- Subscriptions ----
 
-    suspend fun subscribe(rawUrl: String): Podcast = withContext(Dispatchers.IO) {
+    /**
+     * [inboxNewest]: put the newest episode in the Inbox (single subscribe), or nothing (OPML import,
+     * so importing many feeds doesn't flood the Inbox). Later refreshes inbox every new episode.
+     */
+    suspend fun subscribe(rawUrl: String, inboxNewest: Boolean = true): Podcast = withContext(Dispatchers.IO) {
         val url = normalizeUrl(rawUrl)
-        podcasts.findByFeedUrl(url)?.let { return@withContext it }
+        podcasts.findByFeedUrl(url)?.let { existing ->
+            if (existing.subscribed) return@withContext existing
+            // Was unsubscribed but kept for its queued episodes: bring it back.
+            podcasts.setSubscribed(existing.id, true)
+            val podcast = existing.copy(subscribed = true)
+            runCatching { refresh(podcast, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE) }
+                .onFailure { if (it is CancellationException) throw it }
+            return@withContext podcast
+        }
         val feed = fetchFeed(url)
         val id = podcasts.insert(
             Podcast(
@@ -68,16 +80,114 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 lastRefreshedAt = System.currentTimeMillis(),
             ),
         )
-        saveEpisodes(id, url, feed)
+        saveEpisodes(id, url, feed, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE)
         requireNotNull(podcasts.get(id))
     }
 
-    suspend fun unsubscribe(podcastId: Long) = withContext(Dispatchers.IO) {
-        for (e in episodes.downloadsForPodcast(podcastId)) {
-            DownloadWorker.cancel(context, e.id)
-            e.localPath?.let { File(it).delete() }
+    /**
+     * Removes the podcast, except episodes that are queued or loaded in the player ([keepId]):
+     * those stay (podcast hidden, no refreshes) until played or removed from the queue.
+     */
+    suspend fun unsubscribe(podcastId: Long, keepId: String?) = withContext(Dispatchers.IO) {
+        queueLock.withLock {
+            val keep = keepId.orEmpty()
+            val dropping = episodes.unqueuedForPodcast(podcastId, keep)
+            for (e in dropping) {
+                if (e.downloadState != DownloadState.NONE) {
+                    DownloadWorker.cancel(context, e.id)
+                    e.localPath?.let { File(it).delete() }
+                }
+            }
+            val total = episodes.idsForPodcast(podcastId).size
+            if (dropping.size == total) {
+                podcasts.delete(podcastId) // episodes cascade
+            } else {
+                db.withTransaction {
+                    podcasts.setSubscribed(podcastId, false)
+                    episodes.deleteUnqueuedForPodcast(podcastId, keep)
+                }
+                Log.i(TAG, "Unsubscribed from $podcastId, keeping ${total - dropping.size} queued/playing episode(s)")
+            }
         }
-        podcasts.delete(podcastId) // episodes cascade
+    }
+
+    /** Deletes unsubscribed podcasts whose last queued episode has gone. */
+    private suspend fun pruneUnsubscribed() {
+        val n = podcasts.deleteUnusedUnsubscribed()
+        if (n > 0) Log.i(TAG, "Removed $n unsubscribed podcast(s) with nothing left in the queue")
+    }
+
+    // ---- Inbox ----
+
+    fun observeInbox() = episodes.observeInbox()
+
+    suspend fun archive(id: String) = episodes.setInInbox(id, false)
+
+    suspend fun archiveInbox(): Int = episodes.archiveInbox()
+
+    // ---- Queue ----
+    // The queue is small (tens of episodes), so every change simply renumbers it 0..n-1.
+
+    private val queueLock = Mutex()
+
+    fun observeQueue() = episodes.observeQueue()
+
+    suspend fun queueHead() = episodes.queueHead()
+
+    private suspend fun writeQueue(ids: List<String>) {
+        db.withTransaction {
+            ids.forEachIndexed { i, id -> episodes.setQueuePosition(id, i.toLong()) }
+        }
+    }
+
+    /** Inserts (or moves) [id] at [index] of the queue, clamped to its length. */
+    private suspend fun queueAt(id: String, index: (List<String>) -> Int) {
+        queueLock.withLock {
+            val ids = episodes.queueIds().toMutableList()
+            ids.remove(id)
+            ids.add(index(ids).coerceIn(0, ids.size), id)
+            db.withTransaction {
+                writeQueue(ids)
+                episodes.setInInbox(id, false)
+            }
+        }
+        autoDownload(id)
+    }
+
+    /** Playing an episode puts it at the top of the queue; whatever was playing moves down one. */
+    suspend fun queueFirst(id: String) = queueAt(id) { 0 }
+
+    /** After the episode at the top (the one playing, usually). */
+    suspend fun queueNext(id: String) = queueAt(id) { if (it.isEmpty()) 0 else 1 }
+
+    suspend fun queueLast(id: String) = queueAt(id) { it.size }
+
+    suspend fun removeFromQueue(id: String) {
+        queueLock.withLock {
+            episodes.setQueuePosition(id, null)
+            pruneUnsubscribed()
+        }
+    }
+
+    /** Saves a new order after a drag; ids not in [ordered] (changed meanwhile) keep their relative order at the end. */
+    suspend fun reorderQueue(ordered: List<String>) {
+        queueLock.withLock {
+            val current = episodes.queueIds()
+            val known = ordered.filter { it in current }
+            writeQueue(known + current.filter { it !in known })
+        }
+    }
+
+    private suspend fun autoDownload(id: String) {
+        if (!Settings.autoDownloadQueued(context)) return
+        val e = episodes.get(id) ?: return
+        if (e.played) return
+        val fileOk = e.downloadState == DownloadState.DONE && e.localPath?.let { File(it).exists() } == true
+        if (e.downloadState == DownloadState.NONE || e.downloadState == DownloadState.FAILED ||
+            (e.downloadState == DownloadState.DONE && !fileOk)
+        ) {
+            download(id)
+        }
     }
 
     /** Reads the feed list from an OPML file. Throws IOException with a readable message if it can't. */
@@ -153,7 +263,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         val retryDelaysMs = longArrayOf(2_000, 5_000)
         for (attempt in 0..retryDelaysMs.size) {
             try {
-                subscribe(f.url)
+                subscribe(f.url, inboxNewest = false)
                 return null
             } catch (e: CancellationException) {
                 throw e
@@ -178,7 +288,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     // ---- Refresh ----
 
     /** Returns the number of new episodes found. */
-    suspend fun refresh(podcast: Podcast): Int = withContext(Dispatchers.IO) {
+    suspend fun refresh(podcast: Podcast, inbox: InboxMode = InboxMode.ALL_NEW): Int = withContext(Dispatchers.IO) {
         val feed = fetchFeed(podcast.feedUrl)
         podcasts.update(
             podcast.copy(
@@ -189,7 +299,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 lastRefreshedAt = System.currentTimeMillis(),
             ),
         )
-        saveEpisodes(podcast.id, podcast.feedUrl, feed)
+        saveEpisodes(podcast.id, podcast.feedUrl, feed, inbox)
     }
 
     suspend fun refresh(podcastId: Long): Int = podcasts.get(podcastId)?.let { refresh(it) } ?: 0
@@ -223,10 +333,16 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
-    private suspend fun saveEpisodes(podcastId: Long, feedUrl: String, feed: ParsedFeed): Int {
+    private suspend fun saveEpisodes(podcastId: Long, feedUrl: String, feed: ParsedFeed, inbox: InboxMode): Int {
         val existing = episodes.idsForPodcast(podcastId).toHashSet()
         val parsed = feed.episodes.map { it.toEntity(podcastId, feedUrl) }.distinctBy { it.id }
-        val fresh = parsed.filter { it.id !in existing }
+        val newest = parsed.filter { it.id !in existing }
+        val inboxIds = when (inbox) {
+            InboxMode.ALL_NEW -> newest.map { it.id }.toSet()
+            InboxMode.NEWEST -> setOfNotNull(newest.maxByOrNull { it.pubDate }?.id)
+            InboxMode.NONE -> emptySet()
+        }
+        val fresh = newest.map { if (it.id in inboxIds) it.copy(inInbox = true) else it }
         db.withTransaction {
             episodes.insertAll(fresh)
             for (e in parsed) {
@@ -252,7 +368,12 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     // ---- Episode state ----
 
-    suspend fun setPlayed(id: String, played: Boolean) = episodes.setPlayed(id, played)
+    suspend fun setPlayed(id: String, played: Boolean) {
+        queueLock.withLock {
+            episodes.setPlayed(id, played)
+            if (played) pruneUnsubscribed()
+        }
+    }
 
     suspend fun download(id: String) {
         episodes.setDownload(id, DownloadState.QUEUED, 0, null)
@@ -285,6 +406,8 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             var deleted = 0
             for (e in episodes.completedDownloads()) {
                 if (e.id == protectedId) continue
+                // Queued episodes never expire; finished ones have already left the queue.
+                if (e.queuePosition != null && !e.played) continue
                 val file = e.localPath?.let { File(it) }
                 var downloadedAt = e.downloadedAt
                 if (downloadedAt == 0L) {
@@ -341,3 +464,15 @@ private fun ParsedEpisode.toEntity(podcastId: Long, feedUrl: String) = Episode(
     transcriptUrl = transcriptUrl,
     transcriptType = transcriptType,
 )
+
+/** Which newly found episodes go to the Inbox. */
+enum class InboxMode {
+    /** Every new episode (regular refreshes). */
+    ALL_NEW,
+
+    /** Only the newest one (subscribing to a single podcast). */
+    NEWEST,
+
+    /** None (OPML import). */
+    NONE,
+}

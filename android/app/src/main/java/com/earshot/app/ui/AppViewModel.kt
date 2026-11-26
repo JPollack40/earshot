@@ -63,6 +63,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // ---- Data ----
     val library = repo.observeLibrary().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val latest = repo.observeLatest().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val inbox = repo.observeInbox().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val queue = repo.observeQueue().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val nowPlaying = player.state
     val sleepTimer = player.sleepTimer
 
@@ -193,7 +195,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun unsubscribe(podcastId: Long) {
         viewModelScope.launch {
-            repo.unsubscribe(podcastId)
+            repo.unsubscribe(podcastId, keepId = nowPlaying.value.episodeId)
             if (backStack.lastOrNull() == Screen.PodcastDetail(podcastId)) back()
             say("Unsubscribed")
         }
@@ -217,7 +219,43 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---- Inbox and queue ----
+    fun queueNext(item: EpisodeWithPodcast) {
+        viewModelScope.launch { repo.queueNext(item.episode.id) }
+    }
+
+    fun queueLast(item: EpisodeWithPodcast) {
+        viewModelScope.launch { repo.queueLast(item.episode.id) }
+    }
+
+    fun removeFromQueue(item: EpisodeWithPodcast) {
+        viewModelScope.launch { repo.removeFromQueue(item.episode.id) }
+    }
+
+    fun reorderQueue(ids: List<String>) {
+        viewModelScope.launch { repo.reorderQueue(ids) }
+    }
+
+    fun archive(item: EpisodeWithPodcast) {
+        viewModelScope.launch { repo.archive(item.episode.id) }
+    }
+
+    fun archiveInbox() {
+        viewModelScope.launch {
+            val n = repo.archiveInbox()
+            say("Archived $n episode${if (n == 1) "" else "s"}")
+        }
+    }
+
     // ---- Settings ----
+    var autoDownloadQueued by mutableStateOf(Settings.autoDownloadQueued(app))
+        private set
+
+    fun updateAutoDownloadQueued(enabled: Boolean) {
+        Settings.setAutoDownloadQueued(app, enabled)
+        autoDownloadQueued = enabled
+    }
+
     var deleteWhenFinished by mutableStateOf(Settings.deleteWhenFinished(app))
         private set
     var expireDays by mutableIntStateOf(Settings.expireDays(app))

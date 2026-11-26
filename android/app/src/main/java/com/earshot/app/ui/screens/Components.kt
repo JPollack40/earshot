@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.PlaylistRemove
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DownloadDone
@@ -96,15 +101,19 @@ fun EpisodeRow(
     onOpen: () -> Unit,
     onPlay: () -> Unit,
     onDownload: () -> Unit,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val e = item.episode
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Opaque, so a swipe's coloured background only shows where the row has moved away.
+            .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(start = if (leading != null) 0.dp else 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leading?.invoke()
         Artwork(item.artworkUrl, 44)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f).alpha(if (e.played) 0.5f else 1f)) {
@@ -175,6 +184,10 @@ fun EpisodeSheet(
     onDownload: () -> Unit,
     onDeleteDownload: () -> Unit,
     onTogglePlayed: () -> Unit,
+    onQueueNext: () -> Unit,
+    onQueueLast: () -> Unit,
+    onRemoveFromQueue: () -> Unit,
+    onArchive: () -> Unit,
 ) {
     val e = item.episode
     val notes = remember(e.description) { AnnotatedString.fromHtml(e.description) }
@@ -198,7 +211,7 @@ fun EpisodeSheet(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = { onPlay(); onDismiss() }) {
                     Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -221,6 +234,34 @@ fun EpisodeSheet(
                     Icon(if (e.played) Icons.Outlined.RadioButtonUnchecked else Icons.Filled.CheckCircle, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(if (e.played) "Unplayed" else "Played")
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onQueueNext(); onDismiss() }) {
+                    Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Play next")
+                }
+                if (e.queuePosition != null) {
+                    OutlinedButton(onClick = { onRemoveFromQueue(); onDismiss() }) {
+                        Icon(Icons.Filled.PlaylistRemove, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Remove from queue")
+                    }
+                } else {
+                    OutlinedButton(onClick = { onQueueLast(); onDismiss() }) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Play last")
+                    }
+                }
+                if (e.inInbox) {
+                    OutlinedButton(onClick = { onArchive(); onDismiss() }) {
+                        Icon(Icons.Filled.Archive, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Archive")
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))

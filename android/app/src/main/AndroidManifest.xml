@@ -32,13 +32,13 @@
         </activity>
 
         <!-- Playback lives in this service so audio keeps going with the screen off.
-             The MediaBrowserService filter is what Android Auto will look for in phase 3. -->
+             It is a MediaLibraryService so Android Auto can browse the queue, inbox and podcasts. -->
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
@@ -48,5 +48,9 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+        <!-- Android Auto: this app is a media app (see res/xml/automotive_app_desc.xml). -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
     </application>
 </manifest>

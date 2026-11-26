@@ -31,4 +31,11 @@ object Settings {
     fun setExpireDays(context: Context, days: Int) {
         prefs(context).edit().putInt("expire_days", days).apply()
     }
+
+    /** Download an episode as soon as it's added to the queue. */
+    fun autoDownloadQueued(context: Context): Boolean = prefs(context).getBoolean("auto_download_queued", true)
+
+    fun setAutoDownloadQueued(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("auto_download_queued", enabled).apply()
+    }
 }

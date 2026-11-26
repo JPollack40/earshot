@@ -58,6 +58,14 @@ fun SettingsScreen(vm: AppViewModel) {
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             SectionHeader("Downloads")
             SettingRow(
+                title = "Download queued episodes",
+                subtitle = "Starts a download whenever an episode is added to the queue.",
+                onClick = { vm.updateAutoDownloadQueued(!vm.autoDownloadQueued) },
+            ) {
+                Switch(checked = vm.autoDownloadQueued, onCheckedChange = vm::updateAutoDownloadQueued)
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            SettingRow(
                 title = "Delete downloads when finished",
                 subtitle = "Frees space as soon as an episode is played to the end or marked played.",
                 onClick = { vm.updateDeleteWhenFinished(!vm.deleteWhenFinished) },
