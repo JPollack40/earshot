@@ -12,7 +12,7 @@ One repo for the whole project:
 
 ---
 
-## What's in this build (phases 1 to 3)
+## What's in this build (phases 1 to 4)
 
 - **Add podcasts** by searching, pasting a feed URL, or importing an OPML file from your current app.
 - **Latest tab** shows new episodes from all shows, newest first. **Podcasts tab** shows your shows with unplayed counts.
@@ -21,7 +21,7 @@ One repo for the whole project:
 - **Background playback** with lock-screen and notification controls and headset buttons.
   Pauses when headphones are unplugged.
 - **Remembers your place** in every episode. Position is saved every 5 seconds and on pause.
-- **Player screen**: scrubber, skip back 15 s and forward 30 s, speed from 0.8× to 3×, a sleep timer (minutes or end of episode),
+- **Player screen**: scrubber, skip back and forward (15 s / 30 s by default; long-press either button to pick 5 s to 15 min), speed from 0.8× to 3×, a sleep timer (minutes or end of episode),
   and chapters from Podcasting 2.0 feeds (tap a chapter to jump to it).
 - **Downloads** run in the background with a progress notification. They retry automatically 3 times,
   then show a red retry icon instead of failing silently. Downloaded episodes play from the file.
@@ -31,9 +31,12 @@ One repo for the whole project:
   The Queue plays top to bottom: drag the handle to reorder, swipe left to remove. Playing an episode moves it to the top,
   and when it finishes the next one starts. Queued episodes download automatically (Settings toggle).
 - **Unsubscribing keeps queued episodes** until you play or remove them.
-- **Android Auto** (phase 3): browse Queue, Inbox, Latest and Podcasts in the car, with back 15 / forward 30 buttons.
+- **Android Auto** (phase 3): browse Queue, Inbox, Latest and Podcasts in the car, with skip buttons that use your chosen lengths.
+- **Smart Speed and Voice Boost** (phase 4): Smart Speed shortens silences; Voice Boost evens out loudness. Chips on the player, defaults in Settings.
+- **Per-podcast playback settings** (phase 4): sliders icon on a podcast page sets its own speed, Smart Speed, Voice Boost and skip lengths.
+- **Time saved** (phase 4): total in Settings (split into speed and Smart Speed), per episode under the player buttons.
 
-Not in this build yet: Smart Speed and Voice Boost (phase 4), sync and the web player (phase 5), transcripts (phase 6).
+Not in this build yet: sync and the web player (phase 5), transcripts (phase 6).
 
 
 ---

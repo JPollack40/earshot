@@ -47,7 +47,7 @@ A personal podcast app for Serena, used only by her. Native Android app, a web p
 | 1 | Setup: Android Studio, GitHub repo, (later) Supabase project and Podcast Index key | Android Studio + GitHub repo done (VM signed in to GitHub, phone paired for Wi-Fi debugging). Supabase and Podcast Index key later |
 | 2 | Core player: search/RSS/OPML, stream and download, background playback, speed, sleep timer, chapters, download auto-delete + Settings screen | **Done 2026-11-26.** Builds, tested on Serena's phone, merged to main (bd30ae7). Airplane-mode download tests skipped by choice |
 | 3 | Inbox triage + queue (drag reorder) + Android Auto (test with the Desktop Head Unit) | **Done 2026-11-26.** Tested on Serena's phone and on the Desktop Head Unit driving the phone; pushed to main |
-| 4 | Smart Speed + Voice Boost, per-podcast settings, "time saved" stat, adjustable skip lengths (long-press a skip button: 5 s, 10 s, 15 s, 30 s, 1 min, 5 min, 15 min) | **Next** |
+| 4 | Smart Speed + Voice Boost, per-podcast settings, "time saved" stat, adjustable skip lengths (long-press a skip button: 5 s, 10 s, 15 s, 30 s, 1 min, 5 min, 15 min) | **Built 2026-11-26** on branch `claude/project-thread-vtxk1w`, installed on Serena's phone; library upgrade checked; player, dialogs, Settings and podcast settings checked by tapping (no audio). Waiting on Serena's listening test and the Desktop Head Unit test, then merge to main |
 | 5 | Supabase schema and auth, two-way sync, React web player, Podcast Index search | |
 | 6 | Transcripts (feed first, cloud API fallback) + headphone-tap bookmarks + transcript search + Markdown export | |
 | 7 | Automation rules + smart playlists | |
@@ -57,7 +57,7 @@ A personal podcast app for Serena, used only by her. Native Android app, a web p
 
 **Fixes for reviewers' complaints:** compact rows; unsubscribing keeps queued episodes (done in phase 3); drag-reorder subscriptions; downloads auto-retry and show a visible failed state; no ads; features never silently removed.
 
-## 5. What the code contains (android/, through phase 3)
+## 5. What the code contains (android/, through phase 4)
 
 - `data/db`: Room entities (Podcast, Episode) and DAOs. Refreshing a feed updates metadata without touching play position, download, inbox or queue state.
 - `data/feed`: streaming RSS parser (RSS 2.0, iTunes and Podcasting 2.0 tags; current and legacy Podcasting 2.0 namespaces), OPML import, JSON chapters.
@@ -65,7 +65,7 @@ A personal podcast app for Serena, used only by her. Native Android app, a web p
 - `data/search/ItunesSearch.kt`: directory search.
 - `data/Repository.kt`: subscribe, unsubscribe, refresh, import, download, chapters, inbox and queue operations, download cleanup.
 - `data/OpmlImporter.kt`: app-wide OPML import, 4 feeds at a time with retries, progress banner, names failed feeds, detects Intune-encrypted files.
-- `playback/PlaybackService.kt`: Media3 **MediaLibraryService** with ExoPlayer. Saves position every 5 s. Back 15 / forward 30 buttons in the notification and Android Auto (media button preferences in the back/forward slots). Android Auto browse tree with 4 tabs: Queue, Inbox, Latest (100 newest), Podcasts → episodes (100). Playback resumption (Bluetooth or car "resume") plays the top of the queue. Tells Android Auto when the queue, inbox or podcast list changes (`notifyChildrenChanged`). `onGetItem` must resolve folder ids too, or Media3 rejects Auto's subscriptions and the car's lists go stale.
+- `playback/PlaybackService.kt`: Media3 **MediaLibraryService** with ExoPlayer (custom audio chain, see below). Saves position every 5 s. Skip back / forward buttons in the notification and Android Auto (media button preferences in the back/forward slots), using the current skip lengths. Android Auto browse tree with 4 tabs: Queue, Inbox, Latest (100 newest), Podcasts → episodes (100). Playback resumption (Bluetooth or car "resume") plays the top of the queue. Tells Android Auto when the queue, inbox or podcast list changes (`notifyChildrenChanged`). `onGetItem` must resolve folder ids too, or Media3 rejects Auto's subscriptions and the car's lists go stale.
 - `playback/EpisodeMedia.kt`: builds MediaItems and browse folders; the resume-position rule.
 - `playback/PlayerConnection.kt`: app-wide MediaController, now-playing state, speed, sleep timer. Plays by sending only the episode id; the service looks it up (same path as Android Auto). At app start it loads the top of the queue, paused, into the mini player.
 - `work/`: RefreshWorker (every 2 h), DownloadWorker (foreground, retries, records downloadedAt), CleanupWorker (daily download cleanup).
@@ -74,7 +74,15 @@ A personal podcast app for Serena, used only by her. Native Android app, a web p
 - **Unsubscribe:** if any episode is queued or loaded in the player, the podcast is kept hidden (`subscribed = 0`, no refreshes) with only those episodes; everything else and its downloads are deleted. When its last queued episode goes, the podcast and its downloads are removed. Subscribing again brings it back.
 - **Download auto-delete (Serena's rules):** finished/marked-played episodes lose their download right away (deferred while still loaded in the player). Unfinished downloads expire N days (default 7; Never/3/7/14/30) after the later of download time and last played. Never deletes the loaded, queued or downloading episode. The cleanup also deletes stray files in the downloads folder that no episode points to (only files older than 10 minutes, never `.part` files).
 - **Settings screen** (gear in Library top bar): "Download queued episodes", "Delete downloads when finished", "Delete unfinished downloads after". Stored in `data/Settings.kt`.
-- **Room schema is version 3** with real migrations (1→2: downloadedAt; 2→3: episodes.inInbox, episodes.queuePosition, podcasts.subscribed). Every future schema change needs a real Migration: the destructive fallback would wipe Serena's library.
+- **Room schema is version 4** with real migrations (1→2: downloadedAt; 2→3: episodes.inInbox, episodes.queuePosition, podcasts.subscribed; 3→4: nullable podcasts.speed, smartSpeed, voiceBoost, skipBackMs, skipForwardMs and episodes.timeSavedMs). Every future schema change needs a real Migration: the destructive fallback would wipe Serena's library. Back up the phone database before installing a schema change (`adb exec-out run-as com.earshot.app cat databases/earshot.db`, plus `-wal` and `-shm`); `sqlite3.exe` is in platform-tools for checking it.
+- **Feed refresh** writes only the feed's fields (`PodcastDao.updateMeta`), so it can't overwrite settings or subscription state changed meanwhile.
+- **Playback settings (phase 4):** app-wide defaults in `data/Settings.kt` (`PlaybackDefaults`, a StateFlow; defaults 1.0×, Smart Speed off, Voice Boost off, back 15 s, forward 30 s). A podcast overrides any of them (null = use the default). `PlaybackPrefs.resolve` combines them. The service observes the loaded episode's podcast plus the defaults and applies changes immediately.
+  - **Player:** speed chip opens a Playback dialog (speed, Smart Speed, Voice Boost, "Just for <podcast>"). Smart Speed and Voice Boost chips toggle directly. Rule: a change goes to the podcast if it already has its own audio settings, otherwise to the defaults. Ticking "Just for <podcast>" copies the current values to the podcast; unticking clears them. Skip lengths work the same way, as a pair.
+  - **Skip lengths:** tap to skip, long-press either button for the picker. `playback/SkipLengths.kt`: the session's player is a `ForwardingPlayer` (`SkipLengthPlayer`) whose seekBack/seekForward use the current lengths, so the notification, lock screen, headset and Android Auto follow them. The media button preferences are rebuilt when lengths change: numbered icons for 5/10/15/30 s, plain skip icon for 1/5/15 min, with the length in the name ("Forward 1 minute"). The app skips by exact length (`PlayerConnection.skipBy`).
+  - **Podcast page:** sliders icon (also in ⋮ menu) opens Playback settings: each item is "Default (x)" or its own value.
+  - **Settings:** Playback section (defaults) and Time saved section.
+- **Audio chain (phase 4):** `playback/SmartAudioChain.kt` replaces Media3's default chain: silence shortening → Voice Boost → Sonic speed (Voice Boost after silence detection, so boosted room noise still counts as silence). Smart Speed = Media3 `SilenceSkippingAudioProcessor` tuned: pauses over 0.15 s are cut to 25%, at most 0.5 s kept. Voice Boost = `playback/VoiceBoostProcessor.kt`: slow AGC toward −20 dBFS (−6 to +12 dB, gated below about −44 dBFS), 3:1 compressor above −12 dBFS, soft limiter. Always in the chain, passes through untouched when off, so toggling needs no player reset. Tuning values are constants in those two files.
+- **Time saved (phase 4):** the service ticks every second: speed saves t×(s−1); Smart Speed's skipped frames (episode time) count as skipped÷s. Totals in prefs (`saved_speed_ms`, `saved_smart_ms`), per episode in `episodes.timeSavedMs`, flushed every 5 s. Shown in Settings and under the player buttons ("Saved 3m 12s on this episode"). Speeds below 1× subtract.
 - `ui/`: ViewModel with a simple back stack (no navigation library). Library tabs: **Queue · Inbox · Latest · Podcasts**, with counts. Podcast page, Add (search / URL / OPML), Player sheet (with Chapters chip), Mini player, Episode sheet (Play, Download, Played, Play next, Play last or Remove from queue, Archive), Settings, import banner.
 
 ## 6. Pinned versions (checked November 2026)
@@ -94,13 +102,12 @@ compileSdk 37.1 (`compileSdk { version = release(37) { minorApiLevel = 1 } }`; r
 
 ## 8. Open issues and decisions
 
-- **Adjustable skip lengths (Serena, 2026-11-26): decided, part of phase 4.** Long-press the back or forward skip button in the app to pick that button's length: 5 s, 10 s, 15 s, 30 s, 1 min, 5 min, 15 min (defaults stay back 15 / forward 30). Design notes:
-  - The long-press picker lives in the phone app's player (and mini player if wanted). Android Auto, the notification and the lock screen don't pass long-presses to apps, so there they just use the chosen lengths.
-  - Car/notification icons: Media3 has numbered icons only for 5, 10, 15 and 30 s. For 1, 5 and 15 min the button uses the generic skip icon, with its name ("Forward 1 minute") as the label.
-  - The service would switch from Media3's fixed seek increments to its own skip commands, so a new length applies right away, including in the car and to headset buttons.
-  - Could become per-podcast in phase 4 (per-podcast settings).
-
-- Android Auto's now-playing **Queue** button shows only the current episode, and the car's skip next/previous aren't offered (back 15 / forward 30 take those slots). The full queue is in the Queue tab. Could be fixed by mirroring the queue into the player's playlist.
+- **Phase 4 still to test (Serena):** how Smart Speed and Voice Boost sound on real episodes (tuning constants may need adjusting after listening), time saved counting up while playing, and the skip buttons in the Desktop Head Unit (icons and lengths, including a 1-minute button with the plain icon).
+- Voice Boost and Smart Speed only apply to normal PCM playback; they do nothing if Android ever uses offload or float output (both off today).
+- Smart Speed doesn't detect music (wishlist item): shows with background music under speech get little or no trimming.
+- Changing speed or toggling Smart Speed from the player while a podcast has its own settings changes that podcast's settings (by design; see section 5). Watch whether that feels right in use.
+- Mini player has no skip buttons (the long-press picker is in the full player only).
+- Android Auto's now-playing **Queue** button shows only the current episode, and the car's skip next/previous aren't offered (the skip back / forward buttons take those slots). The full queue is in the Queue tab. Could be fixed by mirroring the queue into the player's playlist.
 - Android Auto shows a **search** button, but search isn't implemented yet (`onSearch` / `onGetSearchResult`). Natural fit for phase 5 (Podcast Index) or sooner.
 - In the car, the Latest tab and a podcast's episode list don't refresh live (Queue, Inbox and Podcasts do); reopening them reloads.
 - A feed that changes all its episode guids would flood the Inbox (every episode looks new). Rare; could cap new-episode inboxing per refresh.
