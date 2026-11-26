@@ -1,7 +1,9 @@
 package com.earshot.app.playback
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -10,13 +12,16 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.CommandButton
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import com.earshot.app.EarshotApp
+import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.Settings
 import com.earshot.app.ui.MainActivity
 import com.google.common.collect.ImmutableList
@@ -30,7 +35,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -45,6 +57,7 @@ private const val TAG = "Earshot"
  * and the next queued episode starts. Play position is saved every few seconds.
  */
 @OptIn(UnstableApi::class)
+@kotlin.OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
@@ -55,7 +68,19 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        player = ExoPlayer.Builder(this)
+        // Our own audio chain, for Smart Speed and Voice Boost.
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+                .setAudioProcessorChain(audio)
+                .build()
+        }
+        player = ExoPlayer.Builder(this, renderers)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -65,11 +90,11 @@ class PlaybackService : MediaLibraryService() {
             )
             .setHandleAudioBecomingNoisy(true) // pause when headphones unplug
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setSeekBackIncrementMs(15_000)
-            .setSeekForwardIncrementMs(30_000)
             .build()
-        player.setPlaybackSpeed(Settings.speed(this))
         player.addListener(listener)
+        skipPlayer = SkipLengthPlayer(player)
+        prefs = PlaybackPrefs.resolve(Settings.playbackDefaults(this).value, null)
+        player.setPlaybackSpeed(prefs.speed)
 
         val openApp = PendingIntent.getActivity(
             this,
@@ -77,23 +102,25 @@ class PlaybackService : MediaLibraryService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // Back 15 / forward 30 in the previous/next slots of the notification and Android Auto.
-        val buttons = ImmutableList.of(
-            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_15)
-                .setPlayerCommand(Player.COMMAND_SEEK_BACK)
-                .setDisplayName("Back 15 seconds")
-                .setSlots(CommandButton.SLOT_BACK)
-                .build(),
-            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
-                .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
-                .setDisplayName("Forward 30 seconds")
-                .setSlots(CommandButton.SLOT_FORWARD)
-                .build(),
-        )
-        session = MediaLibrarySession.Builder(this, player, LibraryCallback())
+        session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(openApp)
-            .setMediaButtonPreferences(buttons)
+            .setMediaButtonPreferences(skipButtons(prefs.skipBackMs, prefs.skipForwardMs))
             .build()
+
+        // Apply the loaded episode's settings (its podcast's, else the defaults) whenever the
+        // episode or either set of settings changes.
+        scope.launch {
+            loadedEpisodeId
+                .flatMapLatest { id -> if (id == null) flowOf(null) else repo.episodes.observeWithPodcast(id) }
+                .map { it?.episode?.podcastId }
+                .distinctUntilChanged()
+                .flatMapLatest { pid -> if (pid == null) flowOf(null) else repo.podcasts.observe(pid) }
+                .combine(Settings.playbackDefaults(this@PlaybackService)) { podcast, defaults ->
+                    PlaybackPrefs.resolve(defaults, podcast)
+                }
+                .distinctUntilChanged()
+                .collect(::applyPrefs)
+        }
 
         // Android Auto caches browse lists: tell it when the queue, inbox or podcast list changes.
         scope.launch {
@@ -107,11 +134,81 @@ class PlaybackService : MediaLibraryService() {
         }
 
         saveJob = scope.launch {
+            var tick = 0
             while (isActive) {
-                delay(5_000)
-                if (player.isPlaying) savePosition()
+                delay(1_000)
+                trackTimeSaved()
+                if (++tick % 5 == 0) {
+                    flushTimeSaved()
+                    if (player.isPlaying) savePosition()
+                }
             }
         }
+    }
+
+    // ---- Playback settings: speed, Smart Speed, Voice Boost, skip lengths ----
+
+    private val audio = SmartAudioChain()
+    private lateinit var skipPlayer: SkipLengthPlayer
+    private lateinit var prefs: PlaybackPrefs
+    private val loadedEpisodeId = MutableStateFlow<String?>(null)
+
+    private fun applyPrefs(p: PlaybackPrefs) {
+        val old = prefs
+        prefs = p
+        Log.i(TAG, "Playback settings: $p")
+        if (player.playbackParameters.speed != p.speed) player.setPlaybackSpeed(p.speed)
+        if (player.skipSilenceEnabled != p.smartSpeed) player.skipSilenceEnabled = p.smartSpeed
+        audio.voiceBoost.enabled = p.voiceBoost
+        skipPlayer.backMs = p.skipBackMs
+        skipPlayer.forwardMs = p.skipForwardMs
+        if (old.skipBackMs != p.skipBackMs || old.skipForwardMs != p.skipForwardMs) {
+            session?.setMediaButtonPreferences(skipButtons(p.skipBackMs, p.skipForwardMs))
+        }
+    }
+
+    // ---- Time saved by speed and Smart Speed ----
+
+    private var lastTickAt = 0L
+    private var lastSkippedFrames = 0L
+    private var pendingEpisodeId: String? = null
+    private var pendingSpeedMs = 0.0
+    private var pendingSmartMs = 0.0
+
+    /**
+     * Called every second. Listening for t seconds at speed s covers t*s of the episode, saving
+     * t*(s-1). Smart Speed's skipped silence (in episode time) would have taken skipped/s to hear.
+     */
+    private fun trackTimeSaved() {
+        val now = SystemClock.elapsedRealtime()
+        val frames = audio.silence.skippedFrames
+        // The count restarts from zero when the audio is flushed (seeks, new episode).
+        val newFrames = if (frames >= lastSkippedFrames) frames - lastSkippedFrames else frames
+        lastSkippedFrames = frames
+        val elapsed = if (lastTickAt == 0L) 0L else now - lastTickAt
+        lastTickAt = now
+        val id = player.currentMediaItem?.mediaId
+        if (!player.isPlaying || id == null || elapsed <= 0 || elapsed > 5_000) return
+        if (id != pendingEpisodeId) {
+            flushTimeSaved()
+            pendingEpisodeId = id
+        }
+        val speed = player.playbackParameters.speed
+        pendingSpeedMs += elapsed * (speed - 1.0)
+        val rate = player.audioFormat?.sampleRate ?: 0
+        if (newFrames > 0 && rate > 0) pendingSmartMs += newFrames * 1000.0 / rate / speed
+    }
+
+    private fun flushTimeSaved() {
+        val id = pendingEpisodeId ?: return
+        val speedMs = pendingSpeedMs.toLong()
+        val smartMs = pendingSmartMs.toLong()
+        if (speedMs == 0L && smartMs == 0L) return
+        pendingSpeedMs -= speedMs
+        pendingSmartMs -= smartMs
+        Settings.addTimeSaved(this, speedMs, smartMs)
+        val dao = repo.episodes
+        app.appScope.launch { dao.addTimeSaved(id, speedMs + smartMs) }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -123,6 +220,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onEvents(player: Player, events: Player.Events) {
             updateProtected()
+            loadedEpisodeId.value = player.currentMediaItem?.mediaId
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -314,6 +412,8 @@ class PlaybackService : MediaLibraryService() {
         val dao = repo.episodes
         player.removeListener(listener)
         protectedEpisodeId = null
+        trackTimeSaved()
+        flushTimeSaved()
         app.appScope.launch {
             if (saveId != null) dao.savePosition(saveId, position, System.currentTimeMillis())
             app.cleanupDownloads("playback session ended")

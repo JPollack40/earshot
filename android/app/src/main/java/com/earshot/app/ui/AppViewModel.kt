@@ -12,7 +12,11 @@ import android.util.Log
 import androidx.compose.runtime.mutableIntStateOf
 import com.earshot.app.EarshotApp
 import com.earshot.app.data.ImportStatus
+import com.earshot.app.data.PlaybackDefaults
+import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.Settings
+import com.earshot.app.data.TimeSaved
+import com.earshot.app.data.db.Podcast
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.data.feed.Chapter
 import com.earshot.app.data.search.ItunesSearch
@@ -23,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -272,4 +277,77 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         expireDays = days
         app.cleanupDownloads("setting changed")
     }
+
+    // ---- Playback settings (speed, Smart Speed, Voice Boost, skip lengths) ----
+    val playbackDefaults: StateFlow<PlaybackDefaults> = Settings.playbackDefaults(app)
+    val timeSaved: StateFlow<TimeSaved> = Settings.timeSaved(app)
+
+    /** Podcast of the episode loaded in the player. */
+    val currentPodcast: StateFlow<Podcast?> = currentEpisode
+        .map { it?.episode?.podcastId }
+        .distinctUntilChanged()
+        .flatMapLatest { id -> if (id == null) flowOf(null) else repo.observePodcast(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Settings that apply to the loaded episode right now. */
+    val currentPrefs: StateFlow<PlaybackPrefs> = combine(currentPodcast, playbackDefaults) { p, d -> PlaybackPrefs.resolve(d, p) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackPrefs.resolve(playbackDefaults.value, null))
+
+    fun updatePlaybackDefaults(change: (PlaybackDefaults) -> PlaybackDefaults) = Settings.updatePlaybackDefaults(app, change)
+
+    fun updatePodcastPlayback(podcastId: Long, change: (Podcast) -> Podcast) {
+        viewModelScope.launch { repo.updatePodcastPlayback(podcastId, change) }
+    }
+
+    fun Podcast.hasOwnAudio() = speed != null || smartSpeed != null || voiceBoost != null
+    fun Podcast.hasOwnSkip() = skipBackMs != null || skipForwardMs != null
+
+    /**
+     * A speed / Smart Speed / Voice Boost change from the player. Goes to the loaded podcast if it
+     * has its own audio settings, otherwise to the defaults.
+     */
+    fun changeAudio(change: (PlaybackPrefs) -> PlaybackPrefs) {
+        val n = change(currentPrefs.value)
+        val p = currentPodcast.value
+        if (p != null && p.hasOwnAudio()) {
+            updatePodcastPlayback(p.id) { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
+        } else {
+            updatePlaybackDefaults { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
+        }
+    }
+
+    /** "Just for this podcast" for audio: on keeps the current values as the podcast's own. */
+    fun setAudioJustForPodcast(on: Boolean) {
+        val p = currentPodcast.value ?: return
+        val cur = currentPrefs.value
+        updatePodcastPlayback(p.id) {
+            if (on) it.copy(speed = cur.speed, smartSpeed = cur.smartSpeed, voiceBoost = cur.voiceBoost)
+            else it.copy(speed = null, smartSpeed = null, voiceBoost = null)
+        }
+    }
+
+    /** A skip length picked by long-pressing a skip button; same rule as [changeAudio]. */
+    fun changeSkip(forward: Boolean, ms: Long) {
+        val cur = currentPrefs.value
+        val back = if (forward) cur.skipBackMs else ms
+        val fwd = if (forward) ms else cur.skipForwardMs
+        val p = currentPodcast.value
+        if (p != null && p.hasOwnSkip()) {
+            updatePodcastPlayback(p.id) { it.copy(skipBackMs = back, skipForwardMs = fwd) }
+        } else {
+            updatePlaybackDefaults { it.copy(skipBackMs = back, skipForwardMs = fwd) }
+        }
+    }
+
+    fun setSkipJustForPodcast(on: Boolean) {
+        val p = currentPodcast.value ?: return
+        val cur = currentPrefs.value
+        updatePodcastPlayback(p.id) {
+            if (on) it.copy(skipBackMs = cur.skipBackMs, skipForwardMs = cur.skipForwardMs)
+            else it.copy(skipBackMs = null, skipForwardMs = null)
+        }
+    }
+
+    fun skipBack() = player.skipBy(-currentPrefs.value.skipBackMs)
+    fun skipForward() = player.skipBy(currentPrefs.value.skipForwardMs)
 }

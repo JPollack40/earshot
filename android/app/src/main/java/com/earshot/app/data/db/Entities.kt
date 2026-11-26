@@ -25,6 +25,12 @@ data class Podcast(
      * and no longer refreshed, but those episodes stay until played or removed (v3).
      */
     @ColumnInfo(defaultValue = "1") val subscribed: Boolean = true,
+    // Per-podcast playback settings (v4). Null means "use the app-wide default".
+    val speed: Float? = null,
+    val smartSpeed: Boolean? = null,
+    val voiceBoost: Boolean? = null,
+    val skipBackMs: Long? = null,
+    val skipForwardMs: Long? = null,
 )
 
 @Entity(
@@ -70,6 +76,8 @@ data class Episode(
     @ColumnInfo(defaultValue = "0") val inInbox: Boolean = false,
     /** Place in the queue (lower plays first); null when not queued. */
     val queuePosition: Long? = null,
+    /** Listening time saved on this episode by speed and Smart Speed, in ms (v4). */
+    @ColumnInfo(defaultValue = "0") val timeSavedMs: Long = 0,
 )
 
 object DownloadState {

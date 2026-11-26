@@ -38,7 +38,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.earshot.app.data.Settings
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.earshot.app.playback.skipLengthName
 import com.earshot.app.ui.AppViewModel
+import com.earshot.app.ui.formatSaved
+import com.earshot.app.ui.formatSpeed
 
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
@@ -56,6 +60,56 @@ fun SettingsScreen(vm: AppViewModel) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+            val divider = @Composable { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp) }
+            val d by vm.playbackDefaults.collectAsStateWithLifecycle()
+            SectionHeader("Playback")
+            Text(
+                "Defaults for every podcast. A podcast can have its own (podcast page, sliders icon).",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            ChoiceRow("Speed", null, d.speed, Settings.SPEED_CHOICES, ::formatSpeed) { s ->
+                vm.updatePlaybackDefaults { it.copy(speed = s) }
+            }
+            divider()
+            SettingRow(
+                title = "Smart Speed",
+                subtitle = "Shortens silences in speech.",
+                onClick = { vm.updatePlaybackDefaults { it.copy(smartSpeed = !it.smartSpeed) } },
+            ) {
+                Switch(checked = d.smartSpeed, onCheckedChange = { b -> vm.updatePlaybackDefaults { it.copy(smartSpeed = b) } })
+            }
+            divider()
+            SettingRow(
+                title = "Voice Boost",
+                subtitle = "Evens out loudness and lifts quiet voices.",
+                onClick = { vm.updatePlaybackDefaults { it.copy(voiceBoost = !it.voiceBoost) } },
+            ) {
+                Switch(checked = d.voiceBoost, onCheckedChange = { b -> vm.updatePlaybackDefaults { it.copy(voiceBoost = b) } })
+            }
+            divider()
+            ChoiceRow("Skip back", "Also: long-press the button in the player.", d.skipBackMs, Settings.SKIP_CHOICES_MS, ::skipLengthName) { ms ->
+                vm.updatePlaybackDefaults { it.copy(skipBackMs = ms) }
+            }
+            divider()
+            ChoiceRow("Skip forward", null, d.skipForwardMs, Settings.SKIP_CHOICES_MS, ::skipLengthName) { ms ->
+                vm.updatePlaybackDefaults { it.copy(skipForwardMs = ms) }
+            }
+            divider()
+
+            val saved by vm.timeSaved.collectAsStateWithLifecycle()
+            SectionHeader("Time saved")
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                Text(formatSaved(saved.totalMs), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "${formatSaved(saved.bySpeedMs)} from speed · ${formatSaved(saved.bySmartSpeedMs)} from Smart Speed",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            divider()
+
             SectionHeader("Downloads")
             SettingRow(
                 title = "Download queued episodes",
@@ -110,7 +164,7 @@ private fun ExpirySetting(days: Int, onChange: (Int) -> Unit) {
 private fun expiryLabel(days: Int) = if (days == 0) "Never" else "$days days"
 
 @Composable
-private fun SectionHeader(text: String) {
+internal fun SectionHeader(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelLarge,
@@ -120,7 +174,7 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun SettingRow(
+internal fun SettingRow(
     title: String,
     subtitle: String,
     onClick: () -> Unit,

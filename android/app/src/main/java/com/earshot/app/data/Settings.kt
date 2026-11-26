@@ -1,16 +1,111 @@
 package com.earshot.app.data
 
 import android.content.Context
+import com.earshot.app.data.db.Podcast
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-/** Small app-wide preferences. Per-podcast settings move into the database in phase 4. */
+/** App-wide playback defaults. A podcast can override any of them (see [Podcast]). */
+data class PlaybackDefaults(
+    val speed: Float = 1.0f,
+    val smartSpeed: Boolean = false,
+    val voiceBoost: Boolean = false,
+    val skipBackMs: Long = 15_000,
+    val skipForwardMs: Long = 30_000,
+)
+
+/** The settings that actually apply to an episode: its podcast's overrides, else the defaults. */
+data class PlaybackPrefs(
+    val speed: Float,
+    val smartSpeed: Boolean,
+    val voiceBoost: Boolean,
+    val skipBackMs: Long,
+    val skipForwardMs: Long,
+) {
+    companion object {
+        fun resolve(defaults: PlaybackDefaults, podcast: Podcast?) = PlaybackPrefs(
+            speed = podcast?.speed ?: defaults.speed,
+            smartSpeed = podcast?.smartSpeed ?: defaults.smartSpeed,
+            voiceBoost = podcast?.voiceBoost ?: defaults.voiceBoost,
+            skipBackMs = podcast?.skipBackMs ?: defaults.skipBackMs,
+            skipForwardMs = podcast?.skipForwardMs ?: defaults.skipForwardMs,
+        )
+    }
+}
+
+/** Time saved across all listening, split by what saved it. */
+data class TimeSaved(val bySpeedMs: Long = 0, val bySmartSpeedMs: Long = 0) {
+    val totalMs get() = bySpeedMs + bySmartSpeedMs
+}
+
+/** Small app-wide preferences. Per-podcast settings live in the database. */
 object Settings {
     private fun prefs(context: Context) = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    fun speed(context: Context): Float = prefs(context).getFloat("speed", 1.0f)
+    /** Skip lengths offered by the long-press picker and the settings screens. */
+    val SKIP_CHOICES_MS = listOf(5_000L, 10_000L, 15_000L, 30_000L, 60_000L, 300_000L, 900_000L)
 
-    fun setSpeed(context: Context, speed: Float) {
-        prefs(context).edit().putFloat("speed", speed).apply()
+    val SPEED_CHOICES = listOf(0.8f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.7f, 2.0f, 2.5f, 3.0f)
+
+    // ---- Playback defaults (observed by the playback service, so changes apply right away) ----
+
+    private var playback: MutableStateFlow<PlaybackDefaults>? = null
+
+    fun playbackDefaults(context: Context): StateFlow<PlaybackDefaults> = playbackFlow(context).asStateFlow()
+
+    private fun playbackFlow(context: Context): MutableStateFlow<PlaybackDefaults> = synchronized(this) {
+        playback ?: run {
+            val p = prefs(context)
+            MutableStateFlow(
+                PlaybackDefaults(
+                    speed = p.getFloat("speed", 1.0f),
+                    smartSpeed = p.getBoolean("smart_speed", false),
+                    voiceBoost = p.getBoolean("voice_boost", false),
+                    skipBackMs = p.getLong("skip_back_ms", 15_000),
+                    skipForwardMs = p.getLong("skip_forward_ms", 30_000),
+                ),
+            ).also { playback = it }
+        }
     }
+
+    fun updatePlaybackDefaults(context: Context, change: (PlaybackDefaults) -> PlaybackDefaults) {
+        val flow = playbackFlow(context)
+        val d = synchronized(this) { change(flow.value).also { flow.value = it } }
+        prefs(context).edit()
+            .putFloat("speed", d.speed)
+            .putBoolean("smart_speed", d.smartSpeed)
+            .putBoolean("voice_boost", d.voiceBoost)
+            .putLong("skip_back_ms", d.skipBackMs)
+            .putLong("skip_forward_ms", d.skipForwardMs)
+            .apply()
+    }
+
+    // ---- Time saved ----
+
+    private var timeSaved: MutableStateFlow<TimeSaved>? = null
+
+    fun timeSaved(context: Context): StateFlow<TimeSaved> = timeSavedFlow(context).asStateFlow()
+
+    private fun timeSavedFlow(context: Context): MutableStateFlow<TimeSaved> = synchronized(this) {
+        timeSaved ?: run {
+            val p = prefs(context)
+            MutableStateFlow(TimeSaved(p.getLong("saved_speed_ms", 0), p.getLong("saved_smart_ms", 0)))
+                .also { timeSaved = it }
+        }
+    }
+
+    fun addTimeSaved(context: Context, bySpeedMs: Long, bySmartSpeedMs: Long) {
+        if (bySpeedMs == 0L && bySmartSpeedMs == 0L) return
+        val flow = timeSavedFlow(context)
+        val t = synchronized(this) {
+            val o = flow.value
+            TimeSaved(o.bySpeedMs + bySpeedMs, o.bySmartSpeedMs + bySmartSpeedMs).also { flow.value = it }
+        }
+        prefs(context).edit().putLong("saved_speed_ms", t.bySpeedMs).putLong("saved_smart_ms", t.bySmartSpeedMs).apply()
+    }
+
+    // ---- Downloads ----
 
     /** Choices offered for [expireDays]; 0 means never. */
     val EXPIRE_DAY_CHOICES = listOf(0, 3, 7, 14, 30)

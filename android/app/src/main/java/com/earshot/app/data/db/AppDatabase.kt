@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Podcast::class, Episode::class], version = 3, exportSchema = false)
+@Database(entities = [Podcast::class, Episode::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun podcasts(): PodcastDao
     abstract fun episodes(): EpisodeDao
@@ -29,9 +29,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v4: per-podcast playback settings (null = app default) and time saved per episode. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN speed REAL")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN smartSpeed INTEGER")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN voiceBoost INTEGER")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN skipBackMs INTEGER")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN skipForwardMs INTEGER")
+                db.execSQL("ALTER TABLE episodes ADD COLUMN timeSavedMs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "earshot.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // Upgrades must always migrate (subscriptions live here). Only a downgrade, which
                 // only happens when installing an older dev build, may start from scratch.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)

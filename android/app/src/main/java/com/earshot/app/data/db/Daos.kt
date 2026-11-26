@@ -37,6 +37,26 @@ interface PodcastDao {
     @Update
     suspend fun update(podcast: Podcast)
 
+    /** Feed-provided fields only, so a refresh never overwrites settings changed meanwhile. */
+    @Query(
+        "UPDATE podcasts SET title = :title, author = :author, description = :description, " +
+            "imageUrl = :imageUrl, lastRefreshedAt = :refreshedAt WHERE id = :id",
+    )
+    suspend fun updateMeta(id: Long, title: String, author: String, description: String, imageUrl: String?, refreshedAt: Long)
+
+    @Query(
+        "UPDATE podcasts SET speed = :speed, smartSpeed = :smartSpeed, voiceBoost = :voiceBoost, " +
+            "skipBackMs = :skipBackMs, skipForwardMs = :skipForwardMs WHERE id = :id",
+    )
+    suspend fun updatePlayback(
+        id: Long,
+        speed: Float?,
+        smartSpeed: Boolean?,
+        voiceBoost: Boolean?,
+        skipBackMs: Long?,
+        skipForwardMs: Long?,
+    )
+
     @Query("DELETE FROM podcasts WHERE id = :id")
     suspend fun delete(id: Long)
 
@@ -152,6 +172,9 @@ interface EpisodeDao {
 
     @Query("UPDATE episodes SET positionMs = :positionMs, lastPlayedAt = :at WHERE id = :id")
     suspend fun savePosition(id: String, positionMs: Long, at: Long)
+
+    @Query("UPDATE episodes SET timeSavedMs = timeSavedMs + :ms WHERE id = :id")
+    suspend fun addTimeSaved(id: String, ms: Long)
 
     @Query("UPDATE episodes SET durationMs = :durationMs WHERE id = :id")
     suspend fun setDuration(id: String, durationMs: Long)

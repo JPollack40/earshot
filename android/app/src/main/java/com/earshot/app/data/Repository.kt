@@ -289,19 +289,28 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         return f.title
     }
 
+    // ---- Per-podcast playback settings ----
+
+    /** Changes a podcast's playback settings (a null field means "use the app default"). */
+    suspend fun updatePodcastPlayback(id: Long, change: (Podcast) -> Podcast) {
+        val p = podcasts.get(id) ?: return
+        val n = change(p)
+        podcasts.updatePlayback(id, n.speed, n.smartSpeed, n.voiceBoost, n.skipBackMs, n.skipForwardMs)
+    }
+
     // ---- Refresh ----
 
     /** Returns the number of new episodes found. */
     suspend fun refresh(podcast: Podcast, inbox: InboxMode = InboxMode.ALL_NEW): Int = withContext(Dispatchers.IO) {
         val feed = fetchFeed(podcast.feedUrl)
-        podcasts.update(
-            podcast.copy(
-                title = feed.title.ifBlank { podcast.title },
-                author = feed.author.ifBlank { podcast.author },
-                description = feed.description.ifBlank { podcast.description },
-                imageUrl = feed.imageUrl ?: podcast.imageUrl,
-                lastRefreshedAt = System.currentTimeMillis(),
-            ),
+        // Only the feed's fields: [podcast] may be stale, and its settings may have changed since.
+        podcasts.updateMeta(
+            id = podcast.id,
+            title = feed.title.ifBlank { podcast.title },
+            author = feed.author.ifBlank { podcast.author },
+            description = feed.description.ifBlank { podcast.description },
+            imageUrl = feed.imageUrl ?: podcast.imageUrl,
+            refreshedAt = System.currentTimeMillis(),
         )
         saveEpisodes(podcast.id, podcast.feedUrl, feed, inbox)
     }

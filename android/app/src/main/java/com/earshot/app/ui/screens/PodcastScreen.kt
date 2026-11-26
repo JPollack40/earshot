@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -47,6 +48,8 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     val episodes by remember(podcastId) { vm.episodesFor(podcastId) }.collectAsStateWithLifecycle(emptyList())
     var menuOpen by remember { mutableStateOf(false) }
     var confirmUnsubscribe by remember { mutableStateOf(false) }
+    var showPlayback by remember { mutableStateOf(false) }
+    val defaults by vm.playbackDefaults.collectAsStateWithLifecycle()
     var descExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -60,11 +63,21 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showPlayback = true }) {
+                        Icon(Icons.Filled.Tune, contentDescription = "Playback settings")
+                    }
                     RefreshAction(vm.refreshing) { vm.refresh(podcastId) }
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Playback settings") },
+                            onClick = {
+                                menuOpen = false
+                                showPlayback = true
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text("Unsubscribe") },
                             onClick = {
@@ -118,6 +131,16 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                     }
                 }
             },
+        )
+    }
+
+    val pod = podcast
+    if (showPlayback && pod != null) {
+        PodcastPlaybackDialog(
+            podcast = pod,
+            defaults = defaults,
+            onChange = { change -> vm.updatePodcastPlayback(podcastId, change) },
+            onDismiss = { showPlayback = false },
         )
     }
 

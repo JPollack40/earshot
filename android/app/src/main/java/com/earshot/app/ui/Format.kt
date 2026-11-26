@@ -41,3 +41,16 @@ fun formatSpeed(speed: Float): String {
     val s = if (speed % 1f == 0f) "%.1f".format(speed) else "%.2f".format(speed).trimEnd('0')
     return "$s×"
 }
+
+/** Time saved: "45s", "12m 05s", "3h 12m". */
+fun formatSaved(ms: Long): String {
+    val totalSec = ms.coerceAtLeast(0) / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return when {
+        h > 0 -> "%dh %02dm".format(h, m)
+        m > 0 -> "%dm %02ds".format(m, s)
+        else -> "${s}s"
+    }
+}

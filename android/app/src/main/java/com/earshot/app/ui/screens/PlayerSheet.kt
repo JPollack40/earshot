@@ -20,9 +20,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.outlined.Notes
@@ -31,10 +32,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -62,10 +63,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.playback.SleepTimer
 import com.earshot.app.ui.AppViewModel
 import com.earshot.app.ui.formatClock
+import com.earshot.app.ui.formatSaved
 import com.earshot.app.ui.formatSpeed
 import kotlinx.coroutines.launch
 
-private val SPEEDS = listOf(0.8f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.7f, 2.0f, 2.5f, 3.0f)
 private val SLEEP_MINUTES = listOf(5, 15, 30, 45, 60, 90)
 
 @Composable
@@ -75,7 +76,11 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val chapters by vm.chapters.collectAsStateWithLifecycle()
     val sleep by vm.sleepTimer.collectAsStateWithLifecycle()
     var dragPosition by remember { mutableStateOf<Float?>(null) }
-    var speedMenu by remember { mutableStateOf(false) }
+    val prefs by vm.currentPrefs.collectAsStateWithLifecycle()
+    val podcast by vm.currentPodcast.collectAsStateWithLifecycle()
+    var audioDialog by remember { mutableStateOf(false) }
+    /** Which skip button's length picker is open: false = back, true = forward, null = none. */
+    var skipDialog by remember { mutableStateOf<Boolean?>(null) }
     var sleepMenu by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
@@ -135,7 +140,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             // ---- Transport ----
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                SkipButton(seconds = 15, forward = false) { vm.player.seekBack() }
+                SkipButton(prefs.skipBackMs, forward = false, onClick = vm::skipBack, onLongClick = { skipDialog = false })
                 FilledIconButton(
                     onClick = { vm.player.togglePlay() },
                     modifier = Modifier.size(72.dp),
@@ -152,30 +157,37 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         )
                     }
                 }
-                SkipButton(seconds = 30, forward = true) { vm.player.seekForward() }
+                SkipButton(prefs.skipForwardMs, forward = true, onClick = vm::skipForward, onLongClick = { skipDialog = true })
+            }
+            val saved = episode?.episode?.timeSavedMs ?: 0
+            if (saved >= 1_000) {
+                Text(
+                    "Saved ${formatSaved(saved)} on this episode",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             // ---- Speed / sleep / notes / chapters ----
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-                Box {
-                    AssistChip(
-                        onClick = { speedMenu = true },
-                        label = { Text(formatSpeed(now.speed)) },
-                        leadingIcon = { Icon(Icons.Filled.Speed, null, Modifier.size(18.dp)) },
-                    )
-                    DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                        SPEEDS.forEach { s ->
-                            DropdownMenuItem(
-                                text = { Text(formatSpeed(s), fontWeight = if (s == now.speed) FontWeight.Bold else null) },
-                                onClick = {
-                                    vm.player.setSpeed(s)
-                                    speedMenu = false
-                                },
-                            )
-                        }
-                    }
-                }
+                AssistChip(
+                    onClick = { audioDialog = true },
+                    label = { Text(formatSpeed(prefs.speed)) },
+                    leadingIcon = { Icon(Icons.Filled.Speed, null, Modifier.size(18.dp)) },
+                )
+                FilterChip(
+                    selected = prefs.smartSpeed,
+                    onClick = { vm.changeAudio { it.copy(smartSpeed = !it.smartSpeed) } },
+                    label = { Text("Smart Speed") },
+                    leadingIcon = { Icon(Icons.Filled.Bolt, null, Modifier.size(18.dp)) },
+                )
+                FilterChip(
+                    selected = prefs.voiceBoost,
+                    onClick = { vm.changeAudio { it.copy(voiceBoost = !it.voiceBoost) } },
+                    label = { Text("Voice Boost") },
+                    leadingIcon = { Icon(Icons.Filled.RecordVoiceOver, null, Modifier.size(18.dp)) },
+                )
                 Box {
                     AssistChip(
                         onClick = { sleepMenu = true },
@@ -252,23 +264,37 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     if (showNotes) {
         EpisodeSheetFor(vm, ep) { showNotes = false }
     }
-}
 
-@Composable
-private fun SkipButton(seconds: Int, forward: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(56.dp)) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                Icons.Filled.Replay,
-                contentDescription = if (forward) "Forward $seconds seconds" else "Back $seconds seconds",
-                modifier = Modifier
-                    .size(40.dp)
-                    .scale(scaleX = if (forward) -1f else 1f, scaleY = 1f),
+    val pod = podcast
+    if (audioDialog) {
+        with(vm) {
+            AudioDialog(
+                prefs = prefs,
+                podcast = pod,
+                podcastOnly = pod?.hasOwnAudio() == true,
+                onSpeed = { s -> changeAudio { it.copy(speed = s) } },
+                onSmartSpeed = { b -> changeAudio { it.copy(smartSpeed = b) } },
+                onVoiceBoost = { b -> changeAudio { it.copy(voiceBoost = b) } },
+                onPodcastOnly = ::setAudioJustForPodcast,
+                onDismiss = { audioDialog = false },
             )
-            Text("$seconds", fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 3.dp))
+        }
+    }
+    skipDialog?.let { forward ->
+        with(vm) {
+            SkipLengthDialog(
+                forward = forward,
+                currentMs = if (forward) prefs.skipForwardMs else prefs.skipBackMs,
+                podcast = pod,
+                podcastOnly = pod?.hasOwnSkip() == true,
+                onPick = { changeSkip(forward, it) },
+                onPodcastOnly = ::setSkipJustForPodcast,
+                onDismiss = { skipDialog = null },
+            )
         }
     }
 }
+
 
 private fun sleepLabel(sleep: SleepTimer): String = when (sleep) {
     SleepTimer.Off -> "Sleep"

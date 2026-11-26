@@ -44,7 +44,7 @@ class PlayerConnection(private val app: EarshotApp) {
     private var future: ListenableFuture<MediaController>? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
 
-    private val _state = MutableStateFlow(NowPlaying(speed = Settings.speed(app)))
+    private val _state = MutableStateFlow(NowPlaying(speed = Settings.playbackDefaults(app).value.speed))
     val state: StateFlow<NowPlaying> = _state.asStateFlow()
 
     private val _sleep = MutableStateFlow<SleepTimer>(SleepTimer.Off)
@@ -166,14 +166,15 @@ class PlayerConnection(private val app: EarshotApp) {
     }
 
     fun togglePlay() = withController { if (it.isPlaying) it.pause() else it.play() }
-    fun seekBack() = withController { it.seekBack() }
-    fun seekForward() = withController { it.seekForward() }
-    fun seekTo(positionMs: Long) = withController { it.seekTo(positionMs) }
 
-    fun setSpeed(speed: Float) {
-        Settings.setSpeed(app, speed)
-        withController { it.setPlaybackSpeed(speed) }
+    /** Skips by an exact length (the app knows the current podcast's skip lengths). */
+    fun skipBy(deltaMs: Long) = withController { c ->
+        val target = (c.currentPosition + deltaMs).coerceAtLeast(0)
+        val d = c.duration
+        c.seekTo(if (d > 0) target.coerceAtMost(d) else target)
     }
+
+    fun seekTo(positionMs: Long) = withController { it.seekTo(positionMs) }
 
     fun setSleepTimer(minutes: Int?) {
         sleepJob?.cancel()
