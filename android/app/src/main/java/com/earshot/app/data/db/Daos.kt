@@ -49,6 +49,14 @@ interface PodcastDao {
             "(SELECT 1 FROM episodes e WHERE e.podcastId = podcasts.id AND e.queuePosition IS NOT NULL)",
     )
     suspend fun deleteUnusedUnsubscribed(): Int
+
+    /** Downloads belonging to podcasts that [deleteUnusedUnsubscribed] is about to remove. */
+    @Query(
+        "SELECT e.* FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId " +
+            "WHERE p.subscribed = 0 AND e.downloadState != 0 AND NOT EXISTS " +
+            "(SELECT 1 FROM episodes q WHERE q.podcastId = p.id AND q.queuePosition IS NOT NULL)",
+    )
+    suspend fun downloadsOfUnusedUnsubscribed(): List<Episode>
 }
 
 @Dao

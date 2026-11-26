@@ -30,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -93,6 +94,17 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(buttons)
             .build()
+
+        // Android Auto caches browse lists: tell it when the queue, inbox or podcast list changes.
+        scope.launch {
+            repo.observeQueue().drop(1).collect { session?.notifyChildrenChanged(EpisodeMedia.QUEUE, it.size, null) }
+        }
+        scope.launch {
+            repo.observeInbox().drop(1).collect { session?.notifyChildrenChanged(EpisodeMedia.INBOX, it.size, null) }
+        }
+        scope.launch {
+            repo.observeLibrary().drop(1).collect { session?.notifyChildrenChanged(EpisodeMedia.PODCASTS, it.size, null) }
+        }
 
         saveJob = scope.launch {
             while (isActive) {
@@ -238,8 +250,22 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> = future {
-            val ep = repo.episodes.getWithPodcast(mediaId)
-            if (ep != null) LibraryResult.ofItem(EpisodeMedia.item(ep), null)
+            // Folders must resolve too: Media3 only accepts a browser's subscription to a list
+            // (which is how Android Auto hears about changes) if onGetItem returns it as browsable.
+            val folder = when {
+                mediaId == EpisodeMedia.ROOT -> EpisodeMedia.folder(EpisodeMedia.ROOT, "Earshot")
+                mediaId == EpisodeMedia.QUEUE -> EpisodeMedia.folder(EpisodeMedia.QUEUE, "Queue")
+                mediaId == EpisodeMedia.INBOX -> EpisodeMedia.folder(EpisodeMedia.INBOX, "Inbox")
+                mediaId == EpisodeMedia.LATEST -> EpisodeMedia.folder(EpisodeMedia.LATEST, "Latest")
+                mediaId == EpisodeMedia.PODCASTS ->
+                    EpisodeMedia.folder(EpisodeMedia.PODCASTS, "Podcasts", MediaMetadata.MEDIA_TYPE_FOLDER_PODCASTS)
+                mediaId.startsWith(EpisodeMedia.PODCAST_PREFIX) ->
+                    mediaId.removePrefix(EpisodeMedia.PODCAST_PREFIX).toLongOrNull()
+                        ?.let { repo.podcasts.get(it) }?.let(EpisodeMedia::podcastFolder)
+                else -> null
+            }
+            val item = folder ?: repo.episodes.getWithPodcast(mediaId)?.let(EpisodeMedia::item)
+            if (item != null) LibraryResult.ofItem(item, null)
             else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
         }
 

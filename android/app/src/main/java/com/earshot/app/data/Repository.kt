@@ -113,6 +113,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     /** Deletes unsubscribed podcasts whose last queued episode has gone. */
     private suspend fun pruneUnsubscribed() {
+        for (e in podcasts.downloadsOfUnusedUnsubscribed()) {
+            DownloadWorker.cancel(context, e.id)
+            e.localPath?.let { File(it).delete() }
+        }
         val n = podcasts.deleteUnusedUnsubscribed()
         if (n > 0) Log.i(TAG, "Removed $n unsubscribed podcast(s) with nothing left in the queue")
     }
@@ -426,8 +430,30 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 deleted++
                 Log.i(TAG, "Deleted download of \"${e.title}\" ($reason)")
             }
-            deleted
+            deleted + deleteOrphanFiles(now)
         }
+    }
+
+    /**
+     * Deletes files in the downloads folder that no episode points to any more (for example left
+     * behind by an older build). Skips in-progress ".part" files and anything modified in the last
+     * 10 minutes, so a download that has just finished but isn't recorded yet is safe.
+     */
+    private suspend fun deleteOrphanFiles(now: Long): Int {
+        val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")
+        val files = dir.listFiles() ?: return 0
+        // Compared by file name, so different spellings of the same folder path can never cause a wrong delete.
+        val referenced = episodes.completedDownloads().mapNotNull { it.localPath?.let { p -> File(p).name } }.toHashSet()
+        var n = 0
+        for (f in files) {
+            if (!f.isFile || f.name.endsWith(".part") || f.name in referenced) continue
+            if (now - f.lastModified() < 10 * 60_000L) continue
+            if (f.delete()) {
+                n++
+                Log.i(TAG, "Deleted orphaned download file ${f.name}")
+            }
+        }
+        return n
     }
 
     suspend fun fetchChapters(url: String): List<Chapter> = withContext(Dispatchers.IO) {

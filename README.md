@@ -12,7 +12,7 @@ One repo for the whole project:
 
 ---
 
-## Phase 1: what's in this build
+## What's in this build (phases 1 to 3)
 
 - **Add podcasts** by searching, pasting a feed URL, or importing an OPML file from your current app.
 - **Latest tab** shows new episodes from all shows, newest first. **Podcasts tab** shows your shows with unplayed counts.
@@ -26,8 +26,15 @@ One repo for the whole project:
 - **Downloads** run in the background with a progress notification. They retry automatically 3 times,
   then show a red retry icon instead of failing silently. Downloaded episodes play from the file.
 - **Automatic feed refresh** every 2 hours, plus the refresh button.
+- **Download auto-delete and Settings** (phase 2): finished downloads are removed, unfinished ones expire after a chosen number of days.
+- **Inbox → Queue triage** (phase 3): new episodes land in the Inbox. Swipe right to queue, left to archive, or Archive all.
+  The Queue plays top to bottom: drag the handle to reorder, swipe left to remove. Playing an episode moves it to the top,
+  and when it finishes the next one starts. Queued episodes download automatically (Settings toggle).
+- **Unsubscribing keeps queued episodes** until you play or remove them.
+- **Android Auto** (phase 3): browse Queue, Inbox, Latest and Podcasts in the car, with back 15 / forward 30 buttons.
 
-Not in this build yet: the queue and inbox (phase 3), Android Auto (phase 3), Smart Speed and Voice Boost (phase 4), sync (phase 5).
+Not in this build yet: Smart Speed and Voice Boost (phase 4), sync and the web player (phase 5), transcripts (phase 6).
+
 
 ---
 
