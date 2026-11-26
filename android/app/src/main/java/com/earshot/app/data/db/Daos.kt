@@ -102,4 +102,22 @@ interface EpisodeDao {
 
     @Query("UPDATE episodes SET downloadProgress = :progress WHERE id = :id")
     suspend fun setDownloadProgress(id: String, progress: Int)
+
+    @Query(
+        "UPDATE episodes SET downloadState = ${DownloadState.DONE}, downloadProgress = 100, " +
+            "localPath = :localPath, downloadedAt = :at WHERE id = :id",
+    )
+    suspend fun markDownloaded(id: String, localPath: String, at: Long)
+
+    @Query(
+        "UPDATE episodes SET downloadState = ${DownloadState.NONE}, downloadProgress = 0, " +
+            "localPath = NULL, downloadedAt = 0 WHERE id = :id",
+    )
+    suspend fun clearDownload(id: String)
+
+    @Query("UPDATE episodes SET downloadedAt = :at WHERE id = :id")
+    suspend fun setDownloadedAt(id: String, at: Long)
+
+    @Query("SELECT * FROM episodes WHERE downloadState = ${DownloadState.DONE}")
+    suspend fun completedDownloads(): List<Episode>
 }

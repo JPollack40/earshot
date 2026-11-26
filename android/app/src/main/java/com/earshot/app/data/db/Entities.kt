@@ -1,5 +1,6 @@
 package com.earshot.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -57,6 +58,8 @@ data class Episode(
     val downloadState: Int = DownloadState.NONE,
     val downloadProgress: Int = 0,
     val localPath: String? = null,
+    /** When the download finished (ms). 0 = not downloaded, or downloaded before this was tracked. */
+    @ColumnInfo(defaultValue = "0") val downloadedAt: Long = 0,
 )
 
 object DownloadState {

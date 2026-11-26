@@ -10,19 +10,37 @@ import com.earshot.app.data.db.Podcast
 import com.earshot.app.data.feed.Chapter
 import com.earshot.app.data.feed.ChaptersParser
 import com.earshot.app.data.feed.FeedParser
+import com.earshot.app.data.feed.OpmlFeed
 import com.earshot.app.data.feed.OpmlParser
 import com.earshot.app.data.feed.ParsedEpisode
 import com.earshot.app.data.feed.ParsedFeed
 import com.earshot.app.data.net.Http
 import com.earshot.app.work.DownloadWorker
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 
-data class ImportResult(val added: Int, val failed: Int)
+/** [added] counts feeds now in the library (including ones that already were); [failed] holds titles. */
+data class ImportResult(val added: Int, val failed: List<String>)
+
+private const val TAG = "Earshot"
+
+/** The server answered, but what it sent isn't a feed we can read. Not worth retrying. */
+class FeedFormatException(message: String, cause: Throwable) : IOException(message, cause)
+private const val DAY_MS = 24L * 60 * 60 * 1000
 
 class Repository(private val context: Context, private val db: AppDatabase) {
     val podcasts = db.podcasts()
@@ -62,21 +80,76 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         podcasts.delete(podcastId) // episodes cascade
     }
 
-    suspend fun importOpml(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
-        val feeds = context.contentResolver.openInputStream(uri)?.use { OpmlParser.parse(it) }.orEmpty()
-        var added = 0
-        var failed = 0
-        for (f in feeds) {
+    /** Reads the feed list from an OPML file. Throws IOException with a readable message if it can't. */
+    suspend fun readOpml(uri: Uri): List<OpmlFeed> = withContext(Dispatchers.IO) {
+        try {
+            val stream = context.contentResolver.openInputStream(uri)
+                ?: throw IOException("The file couldn't be opened")
+            stream.use { OpmlParser.parse(it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "OPML import: couldn't read $uri", e)
+            throw if (e is IOException) e else IOException("That doesn't look like an OPML file (${e.message})", e)
+        }
+    }
+
+    /**
+     * Subscribes to every feed in the list, [parallelism] at a time. One bad feed never stops the
+     * rest; each failure is logged and reported back by title. [onProgress] gets (finished, total).
+     */
+    suspend fun importFeeds(
+        feeds: List<OpmlFeed>,
+        parallelism: Int = 4,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): ImportResult = withContext(Dispatchers.IO) {
+        val unique = feeds.distinctBy { normalizeUrl(it.url) }
+        val gate = Semaphore(parallelism)
+        val done = AtomicInteger(0)
+        val outcomes = coroutineScope {
+            unique.map { f ->
+                async {
+                    gate.withPermit {
+                        val failure = subscribeWithRetry(f)
+                        onProgress(done.incrementAndGet(), unique.size)
+                        failure
+                    }
+                }
+            }.awaitAll()
+        }
+        val failed = outcomes.filterNotNull()
+        Log.i(TAG, "OPML import finished: ${unique.size - failed.size} of ${unique.size} added")
+        ImportResult(added = unique.size - failed.size, failed = failed)
+    }
+
+    /**
+     * Network errors are retried (phones often drop connections while switching between Wi-Fi and
+     * mobile data); anything else, like a broken feed, fails at once. Returns the title on failure.
+     */
+    private suspend fun subscribeWithRetry(f: OpmlFeed): String? {
+        val retryDelaysMs = longArrayOf(2_000, 5_000)
+        for (attempt in 0..retryDelaysMs.size) {
             try {
                 subscribe(f.url)
-                added++
+                return null
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: FeedFormatException) {
+                Log.w(TAG, "OPML import: couldn't add \"${f.title}\" (${f.url})", e)
+                return f.title
+            } catch (e: IOException) {
+                if (attempt < retryDelaysMs.size) {
+                    Log.w(TAG, "OPML import: \"${f.title}\" failed (${e.message}), retrying")
+                    delay(retryDelaysMs[attempt])
+                } else {
+                    Log.w(TAG, "OPML import: couldn't add \"${f.title}\" (${f.url})", e)
+                }
             } catch (e: Exception) {
-                failed++
+                Log.w(TAG, "OPML import: couldn't add \"${f.title}\" (${f.url})", e)
+                return f.title
             }
         }
-        ImportResult(added, failed)
+        return f.title
     }
 
     // ---- Refresh ----
@@ -107,6 +180,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Log.w(TAG, "Refresh failed for \"${p.title}\" (${p.feedUrl})", e)
                 0
             }
         }
@@ -120,7 +194,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         } catch (e: IOException) {
             throw e
         } catch (e: Exception) {
-            throw IOException("Couldn't read that feed (${e.message})", e)
+            throw FeedFormatException("Couldn't read that feed (${e.message})", e)
         } finally {
             conn.disconnect()
         }
@@ -165,7 +239,49 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     suspend fun deleteDownload(id: String) = withContext(Dispatchers.IO) {
         DownloadWorker.cancel(context, id)
         episodes.get(id)?.localPath?.let { File(it).delete() }
-        episodes.setDownload(id, DownloadState.NONE, 0, null)
+        episodes.clearDownload(id)
+    }
+
+    private val cleanupLock = Mutex()
+
+    /**
+     * Applies the download-retention rules from Settings:
+     *  - finished (played) episodes lose their download right away, if "delete when finished" is on;
+     *  - unfinished downloads expire N days after the later of download time and last play.
+     * [protectedId] is the episode loaded in the player (unless it has ended); it is never touched.
+     * Only completed downloads are considered, so queued and in-progress ones are safe.
+     * Returns the number of files deleted.
+     */
+    suspend fun cleanupDownloads(
+        protectedId: String?,
+        now: Long = System.currentTimeMillis(),
+    ): Int = withContext(Dispatchers.IO) {
+        cleanupLock.withLock {
+            val deleteFinished = Settings.deleteWhenFinished(context)
+            val days = Settings.expireDays(context)
+            var deleted = 0
+            for (e in episodes.completedDownloads()) {
+                if (e.id == protectedId) continue
+                val file = e.localPath?.let { File(it) }
+                var downloadedAt = e.downloadedAt
+                if (downloadedAt == 0L) {
+                    // Downloaded before v2 tracked this: use the file's own timestamp.
+                    downloadedAt = file?.takeIf { it.exists() }?.lastModified()?.takeIf { it > 0 } ?: now
+                    episodes.setDownloadedAt(e.id, downloadedAt)
+                }
+                val reason = when {
+                    e.played && deleteFinished -> "finished"
+                    !e.played && days > 0 && now - maxOf(downloadedAt, e.lastPlayedAt) > days * DAY_MS ->
+                        "unfinished for over $days days"
+                    else -> null
+                } ?: continue
+                file?.delete()
+                episodes.clearDownload(e.id)
+                deleted++
+                Log.i(TAG, "Deleted download of \"${e.title}\" ($reason)")
+            }
+            deleted
+        }
     }
 
     suspend fun fetchChapters(url: String): List<Chapter> = withContext(Dispatchers.IO) {

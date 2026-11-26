@@ -45,7 +45,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         return try {
             val file = withContext(Dispatchers.IO) { downloadTo(episode, dao) }
-            dao.setDownload(id, DownloadState.DONE, 100, file.absolutePath)
+            dao.markDownloaded(id, file.absolutePath, System.currentTimeMillis())
             Result.success()
         } catch (e: CancellationException) {
             withContext(NonCancellable) { dao.setDownload(id, DownloadState.NONE, 0, null) }

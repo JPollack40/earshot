@@ -11,4 +11,24 @@ object Settings {
     fun setSpeed(context: Context, speed: Float) {
         prefs(context).edit().putFloat("speed", speed).apply()
     }
+
+    /** Choices offered for [expireDays]; 0 means never. */
+    val EXPIRE_DAY_CHOICES = listOf(0, 3, 7, 14, 30)
+
+    /** Delete an episode's download as soon as it's finished (played). */
+    fun deleteWhenFinished(context: Context): Boolean = prefs(context).getBoolean("delete_when_finished", true)
+
+    fun setDeleteWhenFinished(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("delete_when_finished", enabled).apply()
+    }
+
+    /**
+     * Unfinished downloads are deleted this many days after the later of download time and last
+     * play. 0 means never.
+     */
+    fun expireDays(context: Context): Int = prefs(context).getInt("expire_days", 7)
+
+    fun setExpireDays(context: Context, days: Int) {
+        prefs(context).edit().putInt("expire_days", days).apply()
+    }
 }

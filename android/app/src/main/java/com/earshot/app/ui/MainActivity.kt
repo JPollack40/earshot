@@ -12,6 +12,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.ui.screens.AddScreen
+import com.earshot.app.ui.screens.ImportBanner
+import com.earshot.app.ui.screens.SettingsScreen
 import com.earshot.app.ui.screens.LibraryScreen
 import com.earshot.app.ui.screens.MiniPlayer
 import com.earshot.app.ui.screens.PlayerSheet
@@ -77,12 +81,16 @@ fun EarshotRoot(vm: AppViewModel) {
             }
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when (val screen = vm.backStack.last()) {
-                Screen.Library -> LibraryScreen(vm)
-                is Screen.PodcastDetail -> PodcastScreen(vm, screen.podcastId)
-                Screen.Add -> AddScreen(vm)
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (val screen = vm.backStack.last()) {
+                    Screen.Library -> LibraryScreen(vm)
+                    is Screen.PodcastDetail -> PodcastScreen(vm, screen.podcastId)
+                    Screen.Add -> AddScreen(vm)
+                    Screen.Settings -> SettingsScreen(vm)
+                }
             }
+            ImportBanner(vm)
         }
     }
 

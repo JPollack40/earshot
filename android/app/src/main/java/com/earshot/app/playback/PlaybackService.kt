@@ -81,12 +81,31 @@ class PlaybackService : MediaSessionService() {
             if (!isPlaying) scope.launch { savePosition() }
         }
 
+        override fun onEvents(player: Player, events: Player.Events) {
+            updateProtected()
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // The previous episode is no longer loaded, so a finished one can now lose its download.
+            updateProtected()
+            app.cleanupDownloads("moved to next episode")
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 val id = player.currentMediaItem?.mediaId ?: return
-                scope.launch { app.repository.episodes.setPlayed(id, true) }
+                updateProtected()
+                scope.launch {
+                    app.repository.episodes.setPlayed(id, true)
+                    app.cleanupDownloads("episode finished")
+                }
             }
         }
+    }
+
+    /** The loaded episode keeps its download until it has ended or the player moves on. */
+    private fun updateProtected() {
+        protectedEpisodeId = if (player.playbackState == Player.STATE_ENDED) null else player.currentMediaItem?.mediaId
     }
 
     private suspend fun savePosition() {
@@ -119,12 +138,16 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        // Final position save; uses the app scope because this service's scope is about to be cancelled.
-        val id = player.currentMediaItem?.mediaId
+        // Final position save, then download cleanup (nothing is loaded any more). Uses the app scope
+        // because this service's scope is about to be cancelled.
+        val saveId = player.currentMediaItem?.mediaId?.takeIf { player.playbackState != Player.STATE_ENDED }
         val position = player.currentPosition
-        if (id != null && player.playbackState != Player.STATE_ENDED) {
-            val dao = app.repository.episodes
-            app.appScope.launch { dao.savePosition(id, position, System.currentTimeMillis()) }
+        val dao = app.repository.episodes
+        player.removeListener(listener)
+        protectedEpisodeId = null
+        app.appScope.launch {
+            if (saveId != null) dao.savePosition(saveId, position, System.currentTimeMillis())
+            app.cleanupDownloads("playback session ended")
         }
         saveJob?.cancel()
         scope.cancel()
@@ -134,5 +157,15 @@ class PlaybackService : MediaSessionService() {
         }
         session = null
         super.onDestroy()
+    }
+
+    companion object {
+        /**
+         * Id of the episode loaded in the player, unless it has played to the end. Download cleanup
+         * never deletes this one. Null when nothing is loaded or the service isn't running.
+         */
+        @Volatile
+        var protectedEpisodeId: String? = null
+            private set
     }
 }

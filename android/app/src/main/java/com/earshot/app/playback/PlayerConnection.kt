@@ -167,7 +167,9 @@ class PlayerConnection(private val app: EarshotApp) {
             .build()
 
         withController { c ->
-            if (c.currentMediaItem?.mediaId == e.id) {
+            // Same episode still loaded: just resume. After it has ended, load it again instead,
+            // because its download may have been deleted when it finished.
+            if (c.currentMediaItem?.mediaId == e.id && c.playbackState != Player.STATE_ENDED) {
                 c.play()
                 return@withController
             }
