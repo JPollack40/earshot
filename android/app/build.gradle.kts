@@ -6,7 +6,13 @@ plugins {
 
 android {
     namespace = "com.earshot.app"
-    compileSdk = 36
+    // Compose 1.13 / Coil 3.6 / core 1.19 / lifecycle 2.11 need compileSdk 37.1+.
+    // compileSdk only controls which APIs we can call; targetSdk stays 36 (no new runtime behavior).
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "com.earshot.app"
