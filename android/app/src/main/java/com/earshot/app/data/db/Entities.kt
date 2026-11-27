@@ -223,3 +223,21 @@ data class Listen(
     @ColumnInfo(defaultValue = "1") val dirty: Boolean = true,
     @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
 )
+
+/**
+ * A result made from an episode's transcript by the "ai" edge function (v9, phase 11), one per
+ * episode and [kind]: "chapters", "summary" or "ads". [dataJson] is the stored shape (times in ms):
+ *   chapters: {"chapters":[{"start":ms,"title":"..."}]}
+ *   summary:  {"summary":"...","points":[{"at":ms,"text":"..."}]}
+ *   ads:      {"ads":[{"start":ms,"end":ms,"label":"..."}]}
+ * The server saves it (public.episode_ai) and sync brings it to every device, so it never needs uploading.
+ */
+@Entity(tableName = "episode_ai", primaryKeys = ["episodeId", "kind"])
+data class EpisodeAi(
+    val episodeId: String,
+    val kind: String,
+    val dataJson: String,
+    val model: String = "",
+    @ColumnInfo(defaultValue = "0") val createdAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = 0,
+)

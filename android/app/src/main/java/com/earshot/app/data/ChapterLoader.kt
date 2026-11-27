@@ -40,9 +40,14 @@ class ChapterLoader(private val context: Context) {
 
     private fun key(ep: Episode) = ep.id + "|" + (ep.chaptersUrl ?: "")
 
+    /** Bumped by [invalidate], so screens and the player load chapters again. */
+    private val _changes = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val changes: kotlinx.coroutines.flow.StateFlow<Int> = _changes
+
     /** Forgets what's cached for this episode (e.g. after chapters were generated). */
     fun invalidate(episodeId: String) {
         synchronized(memory) { memory.keys.removeAll { it.startsWith("$episodeId|") } }
+        _changes.value++
     }
 
     suspend fun load(ep: Episode): List<Chapter> = withContext(Dispatchers.IO) {

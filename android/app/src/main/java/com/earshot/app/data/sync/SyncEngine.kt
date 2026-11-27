@@ -104,7 +104,7 @@ class SyncEngine(private val app: EarshotApp) {
     /** After signing in on this phone: everything is uploaded again and everything pulled from the start. */
     suspend fun resetForNewAccount() {
         prefs.edit().remove("rev_podcasts").remove("rev_episodes").remove("rev_settings")
-            .remove("rev_transcripts").remove("rev_bookmarks").remove("rev_playlists").apply()
+            .remove("rev_transcripts").remove("rev_bookmarks").remove("rev_playlists").remove("rev_episode_ai").apply()
     }
 
     // ---------------------------------------------------------------- push
@@ -193,6 +193,15 @@ class SyncEngine(private val app: EarshotApp) {
     private fun missingSchema(e: SupabaseException): Boolean {
         val m = e.message ?: ""
         return e.status == 404 || m.contains("Could not find the") || m.contains("PGRST204") || m.contains("PGRST205")
+    }
+
+    /** Like [phase6], for the episode_ai table (006_ai.sql), which only the server writes. */
+    private suspend fun phase11(block: suspend () -> Int): Int = try {
+        block()
+    } catch (e: SupabaseException) {
+        if (!missingSchema(e)) throw e
+        Log.w(TAG, "Sync: episode_ai table missing (run 006_ai.sql)")
+        0
     }
 
     /** Like [phase6], for the playlists and listens tables (003_automation_playlists.sql). */
@@ -329,6 +338,7 @@ class SyncEngine(private val app: EarshotApp) {
             .put("skipForwardMs", d.skipForwardMs)
             .put("inboxDays", t.inboxDays)
             .put("inboxKeep", t.inboxKeep)
+            .put("adSkip", Settings.adSkip(app).value)
         supabase.upsert("settings", "user_id", JSONArray().put(JSONObject().put("playback", playback).put("changed_at", changedAt)))
         Settings.markPlaybackClean(app, Settings.playbackChangedAt(app))
         return 1
@@ -367,6 +377,7 @@ class SyncEngine(private val app: EarshotApp) {
             )
         } }
         n += phase6 { pullTable("bookmarks", "rev_bookmarks") { applyBookmark(it) } }
+        n += phase11 { pullTable("episode_ai", "rev_episode_ai", pageSize = 50) { app.ai.applyRemote(it) } }
         if (anyEpisode) app.transcripts.fetchMissingInBackground("sync")
         return n
     }
@@ -580,6 +591,7 @@ class SyncEngine(private val app: EarshotApp) {
             inboxKeep = p.optInt("inboxKeep", tidy.inboxKeep),
         )
         Settings.applyRemoteTidy(app, newTidy)
+        if (p.has("adSkip")) Settings.applyRemoteAdSkip(app, p.optString("adSkip"))
         Settings.applyRemotePlayback(
             app,
             PlaybackDefaults(

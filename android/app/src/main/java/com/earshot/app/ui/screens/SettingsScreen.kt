@@ -162,6 +162,17 @@ fun SettingsScreen(vm: AppViewModel) {
             ) { vm.updateNewEpisodeNotify(it) }
             divider()
 
+            SectionHeader("AI from transcripts")
+            val adSkip by vm.adSkip.collectAsStateWithLifecycle()
+            ChoiceRow(
+                "Found ads",
+                "In the player, AI > Find ads lists an episode's ads. Then they're skipped, or a Skip ad button shows.",
+                adSkip,
+                listOf(com.earshot.app.data.ai.AdSkip.AUTO, com.earshot.app.data.ai.AdSkip.BUTTON, com.earshot.app.data.ai.AdSkip.OFF),
+                { com.earshot.app.data.ai.AdSkip.label(it) },
+            ) { vm.updateAdSkip(it) }
+            divider()
+
             SectionHeader("About")
             Text(
                 "Earshot ${com.earshot.app.BuildConfig.VERSION_NAME} (${com.earshot.app.BuildConfig.VERSION_CODE}, " +

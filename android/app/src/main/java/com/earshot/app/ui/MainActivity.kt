@@ -120,6 +120,7 @@ fun EarshotRoot(vm: AppViewModel) {
                 val inbox by vm.inbox.collectAsStateWithLifecycle()
                 Column {
                     if (!vm.showPlayer) JumpBackChip(vm)
+                    if (!vm.showPlayer) com.earshot.app.ui.screens.SkipAdChip(vm)
                     if (now.episodeId != null) {
                         GlowMiniPlayer(
                             now = now,
@@ -142,6 +143,7 @@ fun EarshotRoot(vm: AppViewModel) {
             } else if (now.episodeId != null) {
                 Column {
                     if (!vm.showPlayer) JumpBackChip(vm)
+                    if (!vm.showPlayer) com.earshot.app.ui.screens.SkipAdChip(vm)
                     MiniPlayer(
                         now = now,
                         onOpen = { vm.showPlayer = true },

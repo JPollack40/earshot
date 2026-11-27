@@ -26,6 +26,10 @@ import com.earshot.app.data.transcript.LoadedTranscript
 import com.earshot.app.data.transcript.TranscribeState
 import com.earshot.app.data.transcript.TranscriptHit
 import com.earshot.app.data.feed.Chapter
+import com.earshot.app.data.ai.AdSkip
+import com.earshot.app.data.ai.AdSpan
+import com.earshot.app.data.ai.AiKinds
+import com.earshot.app.data.ai.EpisodeAiState
 import com.earshot.app.data.search.Directory
 import com.earshot.app.data.search.SearchSource
 import com.earshot.app.data.search.SearchResult
@@ -147,8 +151,60 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val chapters: StateFlow<List<Chapter>> = currentEpisode
         .map { it?.episode }
         .distinctUntilChanged { a, b -> a?.id == b?.id && a?.chaptersUrl == b?.chaptersUrl }
+        // Phase 11: loaded again when chapters are generated for it.
+        .combine(app.chapters.changes) { ep, _ -> ep }
         .mapLatest { ep -> if (ep == null) emptyList() else app.chapters.load(ep) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ---- Phase 11: AI from transcripts ----
+
+    /** Chapters, summary and ads made for the playing episode so far. */
+    val ai: StateFlow<EpisodeAiState> = currentEpisode
+        .map { it?.episode?.id }
+        .distinctUntilChanged()
+        .flatMapLatest { id -> if (id == null) flowOf(EpisodeAiState()) else app.ai.observe(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EpisodeAiState())
+
+    /** "episodeId|kind" for everything being made right now. */
+    val aiRunning: StateFlow<Set<String>> = app.ai.running
+
+    /** What found ads do: "auto", "button" or "off" (synced). */
+    val adSkip: StateFlow<String> = Settings.adSkip(app)
+
+    fun updateAdSkip(mode: String) {
+        Settings.setAdSkip(app, mode)
+        app.sync.request("settings")
+    }
+
+    /** The found ad playing now, when ads are set to show a Skip ad button. */
+    val currentAd: StateFlow<AdSpan?> = combine(ai, nowPlaying, adSkip) { a, np, mode ->
+        if (mode != AdSkip.BUTTON) null else AdSkip.current(a.ads.orEmpty(), np.positionMs)
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun skipAd() {
+        val ad = currentAd.value ?: return
+        player.skipBy(ad.endMs - nowPlaying.value.positionMs)
+    }
+
+    /** Makes chapters, a summary or the ad list for an episode from its transcript (Gemini, on the server). */
+    fun generateAi(item: EpisodeWithPodcast, kind: String) {
+        viewModelScope.launch {
+            try {
+                app.ai.generate(item.episode, item.podcastTitle, kind)
+                when (kind) {
+                    AiKinds.ADS -> {
+                        val n = app.ai.ads(item.episode.id).size
+                        say(if (n == 0) "No ads found in this episode" else "Found $n ad${if (n == 1) "" else "s"}")
+                    }
+                    AiKinds.CHAPTERS -> say("Chapters made from the transcript")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                say(e.message ?: "That didn't work")
+            }
+        }
+    }
 
     /** Phase 10: trim ads stitched onto this podcast's episodes ("start", "end" or null = off). Synced. */
     fun setAdTrim(podcastId: Long, mode: String?) {

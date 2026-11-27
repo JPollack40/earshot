@@ -146,6 +146,32 @@ object Settings {
         prefs(context).edit().putInt("inbox_days", t.inboxDays).putInt("inbox_keep", t.inboxKeep).apply()
     }
 
+    // ---- Found ads (phase 11), synced in the same settings row: "auto", "button" or "off" ----
+
+    private var adSkipFlow: MutableStateFlow<String>? = null
+
+    fun adSkip(context: Context): StateFlow<String> = adSkipState(context).asStateFlow()
+
+    private fun adSkipState(context: Context): MutableStateFlow<String> = synchronized(this) {
+        adSkipFlow ?: MutableStateFlow(prefs(context).getString("ad_skip", "auto") ?: "auto").also { adSkipFlow = it }
+    }
+
+    fun setAdSkip(context: Context, mode: String) {
+        adSkipState(context).value = mode
+        prefs(context).edit()
+            .putString("ad_skip", mode)
+            .putLong("playback_changed_at", System.currentTimeMillis())
+            .putBoolean("playback_dirty", true)
+            .apply()
+    }
+
+    /** Changed on another device (called with [applyRemotePlayback]). */
+    fun applyRemoteAdSkip(context: Context, mode: String) {
+        if (mode !in listOf("auto", "button", "off")) return
+        adSkipState(context).value = mode
+        prefs(context).edit().putString("ad_skip", mode).apply()
+    }
+
     // ---- Time saved ----
 
     private var timeSaved: MutableStateFlow<TimeSaved>? = null

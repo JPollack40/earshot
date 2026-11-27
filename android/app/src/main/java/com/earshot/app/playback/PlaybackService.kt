@@ -30,6 +30,10 @@ import androidx.media3.session.SessionResult
 import com.earshot.app.EarshotApp
 import com.earshot.app.R
 import com.earshot.app.data.AdTrim
+import com.earshot.app.data.ai.AdSkip
+import com.earshot.app.data.ai.AdSpan
+import com.earshot.app.data.ai.AiKinds
+import com.earshot.app.data.ai.EpisodeAiStore
 import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.feed.SkippedChapters
 import com.earshot.app.data.PlaylistJson
@@ -234,6 +238,31 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
         }
+        // Phase 11: chapters generated (here or on another device) replace the empty list.
+        scope.launch {
+            app.chapters.changes.drop(1).collect {
+                val ep = loaded ?: return@collect
+                chapterJob?.cancel()
+                chapterJob = scope.launch { chapters = app.chapters.load(ep.episode) }
+            }
+        }
+        // Phase 11: ads found in the transcript, for automatic skipping.
+        scope.launch {
+            loadedEpisodeId
+                .flatMapLatest<String?, Pair<String?, List<AdSpan>>> { id ->
+                    if (id == null) flowOf(null to emptyList())
+                    else app.db.episodeAi().observe(id).map { rows ->
+                        id to rows.firstOrNull { it.kind == AiKinds.ADS }?.let { EpisodeAiStore.parseAds(it.dataJson) }.orEmpty()
+                    }
+                }
+                .collect { (id, list) ->
+                    if (id != adsFor) {
+                        adsFor = id
+                        adsSkipped = emptySet()
+                    }
+                    ads = list
+                }
+        }
         scope.launch {
             while (isActive) {
                 delay(500)
@@ -288,6 +317,10 @@ class PlaybackService : MediaLibraryService() {
     private var chapterJob: Job? = null
     private var skippedJson: String? = null
     private var skipped: Set<Long> = emptySet()
+    private var adsFor: String? = null
+    private var ads: List<AdSpan> = emptyList()
+    /** Ads (by start) already skipped while this episode is loaded; going back into one plays it. */
+    private var adsSkipped: Set<Long> = emptySet()
 
     /**
      * Runs twice a second while playing. Jumps over unticked chapters (carrying on past any that
@@ -318,6 +351,21 @@ class PlaybackService : MediaLibraryService() {
         if (ep.episode.skippedChapters != skippedJson) {
             skippedJson = ep.episode.skippedChapters
             skipped = SkippedChapters.parse(skippedJson)
+        }
+        if (ads.isNotEmpty() && adsFor == id && Settings.adSkip(app).value == AdSkip.AUTO) {
+            val to = AdSkip.skipTarget(ads, pos, adsSkipped)
+            if (to != null) {
+                adsSkipped = adsSkipped + ads.filter { it.startMs in pos - 1..to }.map { it.startMs } +
+                    listOfNotNull(AdSkip.current(ads, pos)?.startMs)
+                if (to >= endAt - 500) {
+                    Log.i(TAG, "Found ad runs to the end: finishing \"${ep.episode.title}\"")
+                    finishCurrent(id, playNext = true, atEnd = false)
+                } else {
+                    Log.i(TAG, "Skipping ad: $pos -> $to ms")
+                    player.seekTo(to)
+                }
+                return
+            }
         }
         val target = SkippedChapters.skipTarget(chapters, skipped, pos, duration) ?: return
         if (target >= endAt - 500) {

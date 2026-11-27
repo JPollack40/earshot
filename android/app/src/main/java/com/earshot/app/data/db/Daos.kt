@@ -543,3 +543,15 @@ interface ListenDao {
     @Query("UPDATE listens SET dirty = 1, changedAt = :now WHERE changedAt = 0")
     suspend fun finishOrphans(now: Long): Int
 }
+
+@Dao
+interface EpisodeAiDao {
+    @Query("SELECT * FROM episode_ai WHERE episodeId = :episodeId AND kind = :kind")
+    suspend fun get(episodeId: String, kind: String): EpisodeAi?
+
+    @Query("SELECT * FROM episode_ai WHERE episodeId = :episodeId")
+    fun observe(episodeId: String): Flow<List<EpisodeAi>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: EpisodeAi)
+}

@@ -7,8 +7,9 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Podcast::class, Episode::class, Transcript::class, Bookmark::class, Playlist::class, Listen::class],
-    version = 8, exportSchema = false)
+@Database(entities = [Podcast::class, Episode::class, Transcript::class, Bookmark::class, Playlist::class, Listen::class,
+    EpisodeAi::class],
+    version = 9, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun podcasts(): PodcastDao
     abstract fun episodes(): EpisodeDao
@@ -16,6 +17,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookmarks(): BookmarkDao
     abstract fun playlists(): PlaylistDao
     abstract fun listens(): ListenDao
+    abstract fun episodeAi(): EpisodeAiDao
 
     companion object {
         /** v2: episodes.downloadedAt, used to expire old downloads. Existing downloads are backfilled by the cleanup. */
@@ -138,12 +140,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v9 (phase 11): chapters, summaries and ad spans made from transcripts (a new table only). */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `episode_ai` (`episodeId` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`dataJson` TEXT NOT NULL, `model` TEXT NOT NULL, `createdAt` INTEGER NOT NULL DEFAULT 0, " +
+                        "`changedAt` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`episodeId`, `kind`))",
+                )
+            }
+        }
+
         /** Episodes published within this window are uploaded even without listening state. */
         const val RECENT_MS = 60L * 24 * 60 * 60 * 1000
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "earshot.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 // Upgrades must always migrate (subscriptions live here). Only a downgrade, which
                 // only happens when installing an older dev build, may start from scratch.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)

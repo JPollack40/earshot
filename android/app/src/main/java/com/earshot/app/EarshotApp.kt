@@ -38,6 +38,9 @@ class EarshotApp : Application() {
     /** Chapters from the feed, the audio file, or (phase 11) the transcript (phase 10). */
     val chapters: com.earshot.app.data.ChapterLoader by lazy { com.earshot.app.data.ChapterLoader(this) }
 
+    /** Chapters, summaries and ad spans made from transcripts (phase 11). */
+    val ai: com.earshot.app.data.ai.EpisodeAiStore by lazy { com.earshot.app.data.ai.EpisodeAiStore(this) }
+
     /** Transcripts and bookmarks (phase 6). */
     val transcripts: Transcripts by lazy { Transcripts(this) }
 
@@ -45,6 +48,8 @@ class EarshotApp : Application() {
         super.onCreate()
         db = AppDatabase.build(this)
         repository = Repository(this, db)
+        // Generated chapters (phase 11) are used when the feed and the audio file have none.
+        chapters.fallback = { ep -> ai.chapters(ep.id) }
         importer = OpmlImporter(repository, appScope)
         getSystemService(NotificationManager::class.java)?.run {
             createNotificationChannel(NotificationChannel(CHANNEL_DOWNLOADS, "Downloads", NotificationManager.IMPORTANCE_LOW))

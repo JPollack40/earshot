@@ -78,6 +78,7 @@ import com.earshot.app.ui.theme.LocalGlow
 import com.earshot.app.ui.theme.rememberArtColor
 import com.earshot.app.ui.AppViewModel
 import com.earshot.app.ui.Screen
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.automirrored.outlined.Subject
 import com.earshot.app.ui.formatClock
@@ -103,6 +104,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     var skipDialog by remember { mutableStateOf<Boolean?>(null) }
     var sleepMenu by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
+    var aiDialog by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     var chaptersTop by remember { mutableIntStateOf(0) }
@@ -195,6 +197,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             }
 
             JumpBackChip(vm)
+            SkipAdChip(vm)
 
             // ---- Transport ----
             Spacer(Modifier.height(8.dp))
@@ -281,6 +284,14 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         onClick = { showNotes = true },
                         label = { Text("Notes") },
                         leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null, Modifier.size(18.dp)) },
+                    )
+                }
+                // Phase 11: summary, chapters and ads made from the transcript.
+                if (episode != null) {
+                    AssistChip(
+                        onClick = { aiDialog = true },
+                        label = { Text("AI") },
+                        leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp)) },
                     )
                 }
                 // Only once chapters have actually loaded; jumps down to the list.
@@ -372,6 +383,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val ep = episode
     if (showNotes) {
         EpisodeSheetFor(vm, ep) { showNotes = false }
+    }
+    if (aiDialog && ep != null) {
+        AiDialog(vm, ep) { aiDialog = false }
     }
 
     val pod = podcast
