@@ -670,6 +670,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (enabled) app.cleanupDownloads("setting changed")
     }
 
+    /** Phase 14: downloaded episode count and bytes, for Settings. */
+    suspend fun downloadsUsage(): Pair<Int, Long> = repo.downloadsUsage()
+
+    /** Phase 14: Settings > Downloads > Delete all downloads. [done] runs afterwards (to refresh the size). */
+    fun deleteAllDownloads(done: () -> Unit = {}) {
+        viewModelScope.launch {
+            val n = repo.deleteAllDownloads()
+            say(if (n == 0) "No downloads to delete" else "Deleted all downloads ($n ${if (n == 1) "file" else "files"})")
+            done()
+        }
+    }
+
     fun updateExpireDays(days: Int) {
         Settings.setExpireDays(app, days)
         expireDays = days

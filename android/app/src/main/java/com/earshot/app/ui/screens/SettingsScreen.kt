@@ -155,6 +155,8 @@ fun SettingsScreen(vm: AppViewModel) {
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             ExpirySetting(vm.expireDays, vm::updateExpireDays)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            DeleteAllDownloads(vm)
             divider()
 
             SectionHeader("Notifications")
@@ -197,6 +199,52 @@ fun SettingsScreen(vm: AppViewModel) {
             ) { Text("What's new in this version") }
         }
     }
+}
+
+/** Phase 14: deletes every downloaded episode at once, after a confirmation. */
+@Composable
+private fun DeleteAllDownloads(vm: AppViewModel) {
+    var refresh by remember { mutableStateOf(0) }
+    var usage by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    androidx.compose.runtime.LaunchedEffect(refresh) { usage = vm.downloadsUsage() }
+    var confirm by remember { mutableStateOf(false) }
+    val (count, bytes) = usage ?: (0 to 0L)
+    SettingRow(
+        title = "Delete all downloads",
+        subtitle = when {
+            usage == null -> "Frees the space downloaded episodes take."
+            count == 0 && bytes == 0L -> "No downloads right now."
+            else -> "$count ${if (count == 1) "episode" else "episodes"}, ${formatBytes(bytes)}. Your queue and progress stay."
+        },
+        onClick = { confirm = true },
+    ) {}
+    if (confirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Delete all downloads?") },
+            text = {
+                Text(
+                    "Deletes every downloaded episode file" + (if (count > 0) " ($count, ${formatBytes(bytes)})" else "") +
+                        ". Episodes stay in your library and queue, and stream or download again when played.",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirm = false
+                    vm.deleteAllDownloads { refresh++ }
+                }) { Text("Delete all") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000_000L -> String.format(java.util.Locale.US, "%.1f GB", bytes / 1e9)
+    bytes >= 1_000_000L -> "${bytes / 1_000_000} MB"
+    else -> "${(bytes / 1_000).coerceAtLeast(if (bytes > 0) 1 else 0)} KB"
 }
 
 @Composable

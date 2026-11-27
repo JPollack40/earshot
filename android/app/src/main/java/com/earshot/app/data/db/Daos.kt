@@ -373,6 +373,10 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE downloadState = ${DownloadState.DONE}")
     suspend fun completedDownloads(): List<Episode>
 
+    /** Phase 14: every episode with a download (done, waiting, running or failed), for "Delete all downloads". */
+    @Query("SELECT * FROM episodes WHERE downloadState != ${DownloadState.NONE} OR localPath IS NOT NULL")
+    suspend fun anyDownloads(): List<Episode>
+
     // ---- Sync ----
 
     @Query("SELECT * FROM episodes WHERE dirty = 1 LIMIT :limit")

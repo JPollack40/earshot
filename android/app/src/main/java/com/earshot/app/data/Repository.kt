@@ -725,6 +725,34 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         episodes.clearDownload(id)
     }
 
+    /** Phase 14: how many episodes are downloaded and the space the downloads folder takes, in bytes. */
+    suspend fun downloadsUsage(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+        val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")
+        val bytes = dir.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
+        episodes.completedDownloads().size to bytes
+    }
+
+    /**
+     * Phase 14: Settings > Downloads > Delete all downloads. Stops waiting and running downloads, deletes
+     * every downloaded file (and anything else in the downloads folder) and marks the episodes not
+     * downloaded. Nothing else changes: queue, positions and played state stay. Returns files deleted.
+     */
+    suspend fun deleteAllDownloads(): Int = withContext(Dispatchers.IO) {
+        cleanupLock.withLock {
+            androidx.work.WorkManager.getInstance(context).cancelAllWorkByTag("download")
+            var n = 0
+            for (e in episodes.anyDownloads()) {
+                DownloadWorker.cancel(context, e.id)
+                if (e.localPath?.let { File(it).delete() } == true) n++
+                episodes.clearDownload(e.id)
+            }
+            val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")
+            dir.listFiles()?.forEach { if (it.isFile && it.delete()) n++ }
+            Log.i(TAG, "Deleted all downloads ($n files)")
+            n
+        }
+    }
+
     private val cleanupLock = Mutex()
 
     /**
