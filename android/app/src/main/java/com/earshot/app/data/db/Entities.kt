@@ -31,6 +31,11 @@ data class Podcast(
     val voiceBoost: Boolean? = null,
     val skipBackMs: Long? = null,
     val skipForwardMs: Long? = null,
+    /** Pinned podcasts sort first in the Podcasts list (v5). */
+    @ColumnInfo(defaultValue = "0") val pinned: Boolean = false,
+    // Sync (v5): a user change sets dirty and changedAt (ms); a sync uploads dirty rows and clears dirty.
+    @ColumnInfo(defaultValue = "0") val dirty: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(
@@ -78,6 +83,9 @@ data class Episode(
     val queuePosition: Long? = null,
     /** Listening time saved on this episode by speed and Smart Speed, in ms (v4). */
     @ColumnInfo(defaultValue = "0") val timeSavedMs: Long = 0,
+    // Sync (v5), as on Podcast.
+    @ColumnInfo(defaultValue = "0") val dirty: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = 0,
 )
 
 object DownloadState {

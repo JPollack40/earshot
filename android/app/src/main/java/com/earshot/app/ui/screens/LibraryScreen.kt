@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -81,7 +83,7 @@ fun LibraryScreen(vm: AppViewModel) {
         Column(Modifier.padding(padding).fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { TabLabel("Queue", queue.size) })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { TabLabel("Inbox", inbox.size) })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { TabLabel("New Episodes", inbox.size) })
                 Tab(selected = tab == 2, onClick = { tab = 2 }, text = { TabLabel("Latest", 0) })
                 Tab(selected = tab == 3, onClick = { tab = 3 }, text = { TabLabel("Podcasts", library.size) })
             }
@@ -140,6 +142,13 @@ private fun PodcastList(vm: AppViewModel, library: List<PodcastWithCount>) {
                     Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) {
                         Text(row.unplayedCount.toString())
                     }
+                }
+                IconButton(onClick = { vm.setPinned(row.podcast.id, !row.podcast.pinned) }) {
+                    Icon(
+                        if (row.podcast.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                        contentDescription = if (row.podcast.pinned) "Unpin" else "Pin to top",
+                        tint = if (row.podcast.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 TextButton(onClick = { confirmUnsubscribe = row }) { Text("Unsubscribe", style = MaterialTheme.typography.labelSmall) }
             }

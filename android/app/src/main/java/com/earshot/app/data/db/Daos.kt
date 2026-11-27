@@ -7,6 +7,12 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+/** Current time in ms, in SQL, for stamping a user change ([Episode.changedAt], [Podcast.changedAt]). */
+private const val NOW_MS = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
+
+/** Marks a row as changed by the user, so the next sync uploads it. */
+private const val TOUCH = "dirty = 1, changedAt = $NOW_MS"
+
 private const val EPISODE_JOIN =
     "SELECT e.*, p.title AS podcastTitle, p.imageUrl AS podcastImageUrl " +
         "FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId"
@@ -15,11 +21,11 @@ private const val EPISODE_JOIN =
 interface PodcastDao {
     @Query(
         "SELECT p.*, (SELECT COUNT(*) FROM episodes e WHERE e.podcastId = p.id AND e.played = 0) AS unplayedCount " +
-            "FROM podcasts p WHERE p.subscribed = 1 ORDER BY p.sortOrder, p.title COLLATE NOCASE",
+            "FROM podcasts p WHERE p.subscribed = 1 ORDER BY p.pinned DESC, p.title COLLATE NOCASE",
     )
     fun observeAllWithCounts(): Flow<List<PodcastWithCount>>
 
-    @Query("SELECT * FROM podcasts WHERE subscribed = 1 ORDER BY title COLLATE NOCASE")
+    @Query("SELECT * FROM podcasts WHERE subscribed = 1 ORDER BY pinned DESC, title COLLATE NOCASE")
     suspend fun getAll(): List<Podcast>
 
     @Query("SELECT * FROM podcasts WHERE id = :id")
@@ -49,7 +55,7 @@ interface PodcastDao {
 
     @Query(
         "UPDATE podcasts SET speed = :speed, smartSpeed = :smartSpeed, voiceBoost = :voiceBoost, " +
-            "skipBackMs = :skipBackMs, skipForwardMs = :skipForwardMs WHERE id = :id",
+            "skipBackMs = :skipBackMs, skipForwardMs = :skipForwardMs, $TOUCH WHERE id = :id",
     )
     suspend fun updatePlayback(
         id: Long,
@@ -66,8 +72,46 @@ interface PodcastDao {
     @Query("SELECT id FROM podcasts WHERE subscribed = 0")
     suspend fun unsubscribedIds(): List<Long>
 
-    @Query("UPDATE podcasts SET subscribed = :subscribed WHERE id = :id")
+    // Only a real change counts (tidying a hidden podcast mustn't overwrite a newer change made elsewhere).
+    @Query(
+        "UPDATE podcasts SET dirty = CASE WHEN subscribed IS NOT :subscribed THEN 1 ELSE dirty END, " +
+            "changedAt = CASE WHEN subscribed IS NOT :subscribed THEN $NOW_MS ELSE changedAt END, " +
+            "subscribed = :subscribed WHERE id = :id",
+    )
     suspend fun setSubscribed(id: Long, subscribed: Boolean)
+
+    @Query("UPDATE podcasts SET pinned = :pinned, $TOUCH WHERE id = :id")
+    suspend fun setPinned(id: Long, pinned: Boolean)
+
+    // ---- Sync ----
+
+    @Query("SELECT * FROM podcasts WHERE dirty = 1")
+    suspend fun dirty(): List<Podcast>
+
+    @Query("SELECT COUNT(*) FROM podcasts WHERE dirty = 1")
+    fun observeDirtyCount(): Flow<Int>
+
+    /** Clears dirty only if the row hasn't changed again since it was read for upload. */
+    @Query("UPDATE podcasts SET dirty = 0 WHERE id = :id AND changedAt = :changedAt")
+    suspend fun markClean(id: Long, changedAt: Long)
+
+    /** Applies a change from another device (not marked dirty). */
+    @Query(
+        "UPDATE podcasts SET subscribed = :subscribed, pinned = :pinned, speed = :speed, smartSpeed = :smartSpeed, " +
+            "voiceBoost = :voiceBoost, skipBackMs = :skipBackMs, skipForwardMs = :skipForwardMs, changedAt = :changedAt " +
+            "WHERE id = :id",
+    )
+    suspend fun applyRemote(
+        id: Long,
+        subscribed: Boolean,
+        pinned: Boolean,
+        speed: Float?,
+        smartSpeed: Boolean?,
+        voiceBoost: Boolean?,
+        skipBackMs: Long?,
+        skipForwardMs: Long?,
+        changedAt: Long,
+    )
 
     /** Unsubscribed podcasts are kept only while one of their episodes is queued. */
     @Query(
@@ -107,10 +151,11 @@ interface EpisodeDao {
     @Query("$EPISODE_JOIN WHERE e.inInbox = 1 ORDER BY e.pubDate DESC")
     suspend fun getInbox(): List<EpisodeWithPodcast>
 
-    @Query("UPDATE episodes SET inInbox = :inInbox WHERE id = :id")
+    @Query("UPDATE episodes SET inInbox = :inInbox, dirty = CASE WHEN inInbox IS NOT :inInbox THEN 1 ELSE dirty END, " +
+            "changedAt = CASE WHEN inInbox IS NOT :inInbox THEN $NOW_MS ELSE changedAt END WHERE id = :id")
     suspend fun setInInbox(id: String, inInbox: Boolean)
 
-    @Query("UPDATE episodes SET inInbox = 0 WHERE inInbox = 1")
+    @Query("UPDATE episodes SET inInbox = 0, $TOUCH WHERE inInbox = 1")
     suspend fun archiveInbox(): Int
 
     // ---- Queue ----
@@ -127,7 +172,8 @@ interface EpisodeDao {
     @Query("SELECT id FROM episodes WHERE queuePosition IS NOT NULL ORDER BY queuePosition")
     suspend fun queueIds(): List<String>
 
-    @Query("UPDATE episodes SET queuePosition = :position WHERE id = :id")
+    @Query("UPDATE episodes SET dirty = CASE WHEN queuePosition IS NOT :position THEN 1 ELSE dirty END, " +
+            "changedAt = CASE WHEN queuePosition IS NOT :position THEN $NOW_MS ELSE changedAt END, queuePosition = :position WHERE id = :id")
     suspend fun setQueuePosition(id: String, position: Long?)
 
     /** Episodes of a podcast that are neither queued nor [keepId]; used when unsubscribing. */
@@ -176,7 +222,7 @@ interface EpisodeDao {
         transcriptType: String?,
     )
 
-    @Query("UPDATE episodes SET positionMs = :positionMs, lastPlayedAt = :at WHERE id = :id")
+    @Query("UPDATE episodes SET positionMs = :positionMs, lastPlayedAt = :at, $TOUCH WHERE id = :id")
     suspend fun savePosition(id: String, positionMs: Long, at: Long)
 
     @Query("UPDATE episodes SET timeSavedMs = timeSavedMs + :ms WHERE id = :id")
@@ -189,7 +235,7 @@ interface EpisodeDao {
     @Query(
         "UPDATE episodes SET played = :played, positionMs = 0, " +
             "inInbox = CASE WHEN :played THEN 0 ELSE inInbox END, " +
-            "queuePosition = CASE WHEN :played THEN NULL ELSE queuePosition END WHERE id = :id",
+            "queuePosition = CASE WHEN :played THEN NULL ELSE queuePosition END, $TOUCH WHERE id = :id",
     )
     suspend fun setPlayed(id: String, played: Boolean)
 
@@ -216,4 +262,37 @@ interface EpisodeDao {
 
     @Query("SELECT * FROM episodes WHERE downloadState = ${DownloadState.DONE}")
     suspend fun completedDownloads(): List<Episode>
+
+    // ---- Sync ----
+
+    @Query("SELECT * FROM episodes WHERE dirty = 1 LIMIT :limit")
+    suspend fun dirty(limit: Int): List<Episode>
+
+    @Query("SELECT COUNT(*) FROM episodes WHERE dirty = 1")
+    fun observeDirtyCount(): Flow<Int>
+
+    /** After subscribing to a previewed podcast: upload its recent episodes for the web player's Latest tab. */
+    @Query(
+        "UPDATE episodes SET dirty = 1, changedAt = CASE WHEN changedAt = 0 THEN $NOW_MS ELSE changedAt END " +
+            "WHERE podcastId = :podcastId AND pubDate > :since",
+    )
+    suspend fun markRecentForUpload(podcastId: Long, since: Long)
+
+    @Query("UPDATE episodes SET dirty = 0 WHERE id = :id AND changedAt = :changedAt")
+    suspend fun markClean(id: String, changedAt: Long)
+
+    /** Applies listening state from another device (not marked dirty). */
+    @Query(
+        "UPDATE episodes SET positionMs = :positionMs, played = :played, lastPlayedAt = :lastPlayedAt, " +
+            "inInbox = :inInbox, queuePosition = :queuePosition, changedAt = :changedAt WHERE id = :id",
+    )
+    suspend fun applyRemote(
+        id: String,
+        positionMs: Long,
+        played: Boolean,
+        lastPlayedAt: Long,
+        inInbox: Boolean,
+        queuePosition: Long?,
+        changedAt: Long,
+    )
 }

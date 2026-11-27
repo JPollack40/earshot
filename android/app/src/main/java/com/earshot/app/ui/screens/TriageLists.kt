@@ -59,7 +59,7 @@ fun InboxList(vm: AppViewModel, modifier: Modifier = Modifier) {
     var openId by remember { mutableStateOf<String?>(null) }
 
     if (inbox.isEmpty()) {
-        EmptyMessage("Inbox zero", "New episodes from your podcasts show up here. Swipe right to queue, left to archive.", modifier)
+        EmptyMessage("All caught up", "New episodes from your podcasts show up here. Swipe right to queue, left to archive.", modifier)
         return
     }
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(bottom = 8.dp)) {
@@ -122,7 +122,7 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
     if (local.isEmpty()) {
         EmptyMessage(
             "Queue is empty",
-            "Swipe right on an Inbox episode, or use Play next / Play last in any episode's details.",
+            "Swipe right on a new episode, or use Play next / Play last in any episode's details.",
             modifier,
         )
         return

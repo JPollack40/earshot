@@ -52,6 +52,12 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Pick up changes made in the web player while the app was in the background.
+        (application as com.earshot.app.EarshotApp).sync.request("app resumed")
+    }
 }
 
 @Composable

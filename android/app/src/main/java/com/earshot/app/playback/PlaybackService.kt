@@ -353,7 +353,7 @@ class PlaybackService : MediaLibraryService() {
             val folder = when {
                 mediaId == EpisodeMedia.ROOT -> EpisodeMedia.folder(EpisodeMedia.ROOT, "Earshot")
                 mediaId == EpisodeMedia.QUEUE -> EpisodeMedia.folder(EpisodeMedia.QUEUE, "Queue")
-                mediaId == EpisodeMedia.INBOX -> EpisodeMedia.folder(EpisodeMedia.INBOX, "Inbox")
+                mediaId == EpisodeMedia.INBOX -> EpisodeMedia.folder(EpisodeMedia.INBOX, "New Episodes")
                 mediaId == EpisodeMedia.LATEST -> EpisodeMedia.folder(EpisodeMedia.LATEST, "Latest")
                 mediaId == EpisodeMedia.PODCASTS ->
                     EpisodeMedia.folder(EpisodeMedia.PODCASTS, "Podcasts", MediaMetadata.MEDIA_TYPE_FOLDER_PODCASTS)
@@ -379,7 +379,7 @@ class PlaybackService : MediaLibraryService() {
             val items: List<MediaItem> = when {
                 parentId == EpisodeMedia.ROOT -> listOf(
                     EpisodeMedia.folder(EpisodeMedia.QUEUE, "Queue"),
-                    EpisodeMedia.folder(EpisodeMedia.INBOX, "Inbox"),
+                    EpisodeMedia.folder(EpisodeMedia.INBOX, "New Episodes"),
                     EpisodeMedia.folder(EpisodeMedia.LATEST, "Latest"),
                     EpisodeMedia.folder(EpisodeMedia.PODCASTS, "Podcasts", MediaMetadata.MEDIA_TYPE_FOLDER_PODCASTS),
                 )

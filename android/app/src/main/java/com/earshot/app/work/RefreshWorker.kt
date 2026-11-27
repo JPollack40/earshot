@@ -17,6 +17,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val app = applicationContext as EarshotApp
         return try {
             app.repository.refreshAll()
+            app.sync.sync("feed refresh")
             Result.success()
         } catch (e: Exception) {
             Result.retry()
