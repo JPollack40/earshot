@@ -11,10 +11,15 @@
 //   NEW_EPISODES_SECRET                     random text; the schedule sends it in x-earshot-cron
 //   FCM_SERVICE_ACCOUNT                     optional: the Firebase service account JSON (whole file).
 //                                           Without it, episodes are still added; no notifications.
+//   GEMINI_API_KEY, GEMINI_FALLBACK_MODEL   (already there for "ai") phase 14: bookmark titles.
 // Provided by Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEYS).
 // Settings: turn "Verify JWT" OFF for this function (the schedule sends its own secret, not a JWT).
 //
-// Returns { feeds, lookedUp, checked, found, added, notified, errors }.
+// Phase 14: afterwards, while time allows, it also titles bookmarks that still have no title (Gemini was
+// busy or the app was closed when their transcript arrived). Needs supabase/migrations/008_bookmark_titles.sql;
+// without it this step is skipped quietly.
+//
+// Returns { feeds, lookedUp, checked, found, added, notified, titled, errors }.
 
 const API = "https://api.podcastindex.org/api/1.0";
 const BATCH = 200; // Podcast Index's limit of feed ids per byfeedid call
@@ -172,12 +177,88 @@ async function notify(added: Added[], errors: string[]): Promise<number> {
 
 // ---------------------------------------------------------------- the check
 
+// ------------------------------------------------------------------ bookmark titles (phase 14)
+
+const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
+const DEFAULT_MODEL = "gemini-3.8-flash"; // same default as the "ai" function
+const TITLES_PER_RUN = 10;
+
+interface TitleTodo { user_id: string; id: string; episode_id: string; episode_title: string; podcast_title: string; passage: string }
+
+/** One short title from Gemini, light model first (same prompt as the "ai" function's "title"). */
+async function geminiTitle(todo: TitleTodo): Promise<string> {
+  const key = Deno.env.get("GEMINI_API_KEY");
+  if (!key) throw new Error("GEMINI_API_KEY secret is not set");
+  const main = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+  const light = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const models = light && light !== main ? [light, main] : [main];
+  const context = [todo.podcast_title ? `Podcast: ${todo.podcast_title}` : "", todo.episode_title ? `Episode: ${todo.episode_title}` : ""].filter(Boolean).join("\n");
+  const prompt =
+    "Write a short, specific title (3 to 8 words) for this moment of a podcast, as a note to find it again later. " +
+    "Name the topic or claim, not the speaker's manner. No quotation marks, no final full stop.\n\n" +
+    `${context}\n\nPassage:\n${todo.passage}`;
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { title: { type: "STRING" } }, required: ["title"] }, temperature: 0.3 },
+  });
+  let last = "";
+  for (const m of models) {
+    const res = await fetch(`${GEMINI}/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body });
+    if (!res.ok) {
+      last = `Gemini ${m} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`;
+      continue;
+    }
+    // deno-lint-ignore no-explicit-any
+    const out: any = await res.json();
+    const text = out?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+    try {
+      const title = String(JSON.parse(text)?.title ?? "").replace(/^["'“”]+|["'“”.]+$/g, "").trim().slice(0, 80);
+      if (title) return title;
+    } catch (_) {
+      // unreadable: try the next model
+    }
+    last = `Gemini ${m}: no title in the answer`;
+  }
+  throw new Error(last || "No title");
+}
+
+/** Titles untitled bookmarks until [deadline] (ms since epoch). Returns how many got a title. */
+async function titleBookmarks(deadline: number, errors: string[]): Promise<number> {
+  let todo: TitleTodo[];
+  try {
+    todo = await db("rpc/bookmark_titles_todo", { method: "POST", body: JSON.stringify({ max_rows: TITLES_PER_RUN }) }) as TitleTodo[];
+  } catch (e) {
+    // 008_bookmark_titles.sql not run yet: nothing to do.
+    if (/bookmark_titles_todo|PGRST202|404/.test((e as Error).message)) return 0;
+    throw e;
+  }
+  let titled = 0;
+  for (const t of todo) {
+    if (Date.now() > deadline) break;
+    const who = { p_user: t.user_id, p_id: t.id };
+    if (!t.passage.trim()) {
+      await db("rpc/bookmark_title_failed", { method: "POST", body: JSON.stringify(who) });
+      continue;
+    }
+    try {
+      const title = await geminiTitle(t);
+      const saved = await db("rpc/bookmark_title_set", { method: "POST", body: JSON.stringify({ ...who, p_title: title }) });
+      if (saved === true) titled++;
+    } catch (e) {
+      errors.push(`Bookmark title ${t.id}: ${(e as Error).message}`);
+      await db("rpc/bookmark_title_failed", { method: "POST", body: JSON.stringify(who) }).catch(() => null);
+    }
+  }
+  return titled;
+}
+
 Deno.serve(async (req: Request) => {
   const expected = Deno.env.get("NEW_EPISODES_SECRET");
   if (!expected || req.headers.get("x-earshot-cron") !== expected) return json({ error: "Not allowed" }, 401);
 
   const errors: string[] = [];
-  const now = Math.floor(Date.now() / 1000);
+  const started = Date.now();
+  const now = Math.floor(started / 1000);
   let lookedUp = 0;
   let checked = 0;
   let found = 0;
@@ -276,7 +357,14 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     errors.push(`Notifications: ${(e as Error).message}`);
   }
-  const result = { feeds: feedCount, lookedUp, checked, found, added: added.length, notified, errors: errors.slice(0, 20) };
+  // Phase 14: bookmark titles with the time left (edge functions stop at about 150 s).
+  let titled = 0;
+  try {
+    titled = await titleBookmarks(started + 100_000, errors);
+  } catch (e) {
+    errors.push(`Bookmark titles: ${(e as Error).message}`);
+  }
+  const result = { feeds: feedCount, lookedUp, checked, found, added: added.length, notified, titled, errors: errors.slice(0, 20) };
   console.log(JSON.stringify(result));
   return json(result, errors.length && !checked ? 500 : 200);
 });

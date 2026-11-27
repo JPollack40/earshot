@@ -20,6 +20,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             // Free feed transcripts for queued, new and played episodes (never Gemini).
             runCatching { app.transcripts.fetchMissingFeedTranscripts() }
             app.sync.sync("feed refresh")
+            // Phase 14: any bookmark still without a title gets another try.
+            BookmarkTitleWorker.enqueue(app)
             Result.success()
         } catch (e: Exception) {
             Result.retry()

@@ -468,6 +468,21 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE id = :id")
     suspend fun get(id: String): Bookmark?
 
+    /**
+     * Phase 14: bookmarks with no title yet whose episode has a timed transcript on this phone, so a
+     * title can be made for them (newest first).
+     */
+    @Query(
+        "SELECT b.* FROM bookmarks b JOIN transcripts t ON t.episodeId = b.episodeId " +
+            "WHERE b.deleted = 0 AND (b.title IS NULL OR b.title = '') AND t.timed = 1 " +
+            "ORDER BY b.createdAt DESC LIMIT :limit",
+    )
+    suspend fun untitledWithTranscript(limit: Int): List<Bookmark>
+
+    /** Phase 14: how many bookmarks of [episodeId] have no title yet. */
+    @Query("SELECT COUNT(*) FROM bookmarks WHERE episodeId = :episodeId AND deleted = 0 AND (title IS NULL OR title = '')")
+    suspend fun untitledCount(episodeId: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(b: Bookmark)
 

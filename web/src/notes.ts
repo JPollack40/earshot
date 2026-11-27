@@ -118,6 +118,8 @@ export async function pullNotes() {
       if (data.length < 1000) break;
     }
     state.available = true;
+    // Phase 14: bookmarks still without a title get one now that their transcript may be here.
+    titleUntitledSoon();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (missingTable(msg)) state.available = false;
@@ -131,6 +133,7 @@ export function resetNotes() {
   state = { bookmarks: new Map(), transcripts: new Map(), transcribing: new Map(), available: true, version: state.version + 1 };
   lastRev.bookmarks = lastRev.transcripts = 0;
   loaded.clear();
+  titleGaveUp.clear();
   for (const l of listeners) l();
 }
 
@@ -145,7 +148,12 @@ export async function flushNotes() {
   pendingBookmarks.clear();
   if (!rows.length) return;
   const { error } = await supabase.from("bookmarks").upsert(
-    rows.map(({ rev: _rev, ...r }) => ({ ...r, title: r.title ?? null })),
+    // Phase 14: the server's own retry columns (title_tries, title_next_at) come in with select("*")
+    // but are never sent back.
+    rows.map(({ rev: _rev, ...r }) => {
+      const { title_tries: _tries, title_next_at: _next, ...row } = r as BookmarkRow & { title_tries?: unknown; title_next_at?: unknown };
+      return { ...row, title: r.title ?? null };
+    }),
     { onConflict: "user_id,id" },
   );
   if (error) {
@@ -201,7 +209,7 @@ export function addBookmark(e: EpisodeRow, podcastTitle: string, podcastImage: s
     .catch(() => null)
     .then((t) => t ?? loadTranscript(e.id))
     .then((t) => (t?.timed ? titleBookmark(b.id, false) : undefined))
-    .catch(() => {});
+    .catch(() => titleUntitledSoon()); // Phase 14: tried again in the background
   return b;
 }
 
@@ -224,6 +232,67 @@ export async function titleBookmark(id: string, force: boolean): Promise<string 
   if (!cur || cur.deleted) return null;
   putBookmark({ ...cur, title });
   return title;
+}
+
+// Phase 14: automatic titles for every untitled bookmark whose episode has a timed transcript (one
+// made here, on the phone, or fetched from the feed). Runs after each pull and when a transcript is
+// saved. When Gemini is busy or the network drops, it tries again after 2, 4, 8, 16, then every 30
+// minutes while the page is open. A bookmark that can't get a title (no transcript text at that
+// moment) isn't tried again until its transcript changes. The server also titles leftovers every
+// 15 minutes, so a title can arrive with the next pull instead.
+const titleGaveUp = new Map<string, number>(); // bookmark id -> transcript changed_at when it failed for good
+let titleRunning = false;
+let titleAgain = false;
+let titleRetryAt = 0;
+let titleRetryDelay = 2 * 60_000;
+let titleTimer: number | undefined;
+
+function titleFailedForGood(message: string) {
+  return /no transcript text at this bookmark|has no timings|needs a timed transcript/i.test(message);
+}
+
+export function titleUntitledSoon() {
+  if (titleRunning) {
+    titleAgain = true;
+    return;
+  }
+  if (Date.now() < titleRetryAt) return;
+  titleRunning = true;
+  void titleUntitled().finally(() => {
+    titleRunning = false;
+    if (titleAgain) {
+      titleAgain = false;
+      titleUntitledSoon();
+    }
+  });
+}
+
+async function titleUntitled() {
+  const todo = bookmarks().filter((b) => {
+    if (b.title) return false;
+    const t = state.transcripts.get(b.episode_id);
+    return !!t?.timed && titleGaveUp.get(b.id) !== t.changed_at;
+  }).slice(0, 20);
+  let retry = 0;
+  for (const b of todo) {
+    try {
+      await titleBookmark(b.id, false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (titleFailedForGood(msg)) titleGaveUp.set(b.id, state.transcripts.get(b.episode_id)?.changed_at ?? 0);
+      else retry++;
+      console.warn(`Bookmark title for ${b.id} failed${titleFailedForGood(msg) ? "" : " (will try again)"}: ${msg}`);
+    }
+  }
+  window.clearTimeout(titleTimer);
+  if (retry > 0) {
+    titleRetryAt = Date.now() + titleRetryDelay;
+    titleTimer = window.setTimeout(titleUntitledSoon, titleRetryDelay + 1_000);
+    titleRetryDelay = Math.min(titleRetryDelay * 2, 30 * 60_000);
+  } else {
+    titleRetryAt = 0;
+    titleRetryDelay = 2 * 60_000;
+  }
 }
 
 export function updateBookmark(b: BookmarkRow, patch: Partial<Pick<BookmarkRow, "start_ms" | "end_ms" | "note">>) {
@@ -266,6 +335,7 @@ async function saveTranscript(episodeId: string, source: string, segments: Segme
   loaded.set(episodeId, t);
   state.transcripts.set(episodeId, { episode_id: episodeId, source, timed, changed_at: t.changed_at });
   emit();
+  if (timed) titleUntitledSoon();
   return t;
 }
 

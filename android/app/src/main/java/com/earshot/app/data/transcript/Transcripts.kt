@@ -9,6 +9,7 @@ import com.earshot.app.data.db.Episode
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.data.db.Transcript
 import com.earshot.app.data.net.Http
+import com.earshot.app.work.BookmarkTitleWorker
 import com.earshot.app.work.TranscribeWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +101,7 @@ class Transcripts(private val app: EarshotApp) {
                 changedAt = System.currentTimeMillis(),
             ),
         )
+        if (timed) titleBookmarksLater(episodeId)
     }
 
     /** A transcript from another device (not uploaded again). */
@@ -118,6 +120,7 @@ class Transcripts(private val app: EarshotApp) {
                 changedAt = changedAt,
             ),
         )
+        if (timed) titleBookmarksLater(episodeId)
     }
 
     // ------------------------------------------------------------ feed transcripts
@@ -322,12 +325,15 @@ class Transcripts(private val app: EarshotApp) {
                 Log.w(TAG, "Couldn't fetch the feed transcript after bookmarking", e)
             }
             // Phase 13: a short title from the passage, when there's a timed transcript to read it from.
+            // Phase 14: if that fails (Gemini busy, no network), the background job tries again; if
+            // there's no timed transcript yet, it runs when one arrives (see save / applyRemote).
             try {
                 autoTitle(b, force = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Couldn't title the bookmark", e)
+                Log.w(TAG, "Couldn't title the bookmark, trying again in the background", e)
+                BookmarkTitleWorker.enqueue(app)
             }
         }
         return b
@@ -367,6 +373,63 @@ class Transcripts(private val app: EarshotApp) {
         if (cur.deleted) return null
         bookmarkDao.upsert(cur.copy(title = title, dirty = true, changedAt = System.currentTimeMillis()))
         return title
+    }
+
+    /**
+     * Phase 14: when a timed transcript arrives for [episodeId] (fetched, transcribed or synced) and
+     * it has untitled bookmarks, titles them in the background.
+     */
+    private suspend fun titleBookmarksLater(episodeId: String) {
+        if (!app.sync.canSync) return
+        if (bookmarkDao.untitledCount(episodeId) > 0) BookmarkTitleWorker.enqueue(app)
+    }
+
+    /** What [titleUntitled] did: titles made, failures worth another try soon, failures that aren't. */
+    data class TitleRun(val titled: Int, val retryable: Int, val failed: Int)
+
+    /**
+     * Phase 14: titles every untitled bookmark that has a timed transcript, up to [limit]. A bookmark
+     * whose title failed for good (for example no transcript text at that moment) isn't tried again
+     * until its transcript changes. Busy or offline failures count as retryable.
+     */
+    suspend fun titleUntitled(limit: Int = 20): TitleRun {
+        if (!app.sync.canSync) return TitleRun(0, 0, 0)
+        var titled = 0
+        var retryable = 0
+        var failed = 0
+        for (b in bookmarkDao.untitledWithTranscript(limit * 2)) {
+            if (titled + retryable + failed >= limit) break
+            val stamp = dao.get(b.episodeId)?.changedAt ?: continue
+            if (prefs.getLong("title_failed_${b.id}", -1) == stamp) continue
+            try {
+                if (autoTitle(b, force = false) != null) titled++
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (isRetryable(e)) {
+                    retryable++
+                    Log.w(TAG, "Bookmark title for ${b.id} failed, will try again: ${e.message}")
+                } else {
+                    failed++
+                    prefs.edit().putLong("title_failed_${b.id}", stamp).apply()
+                    Log.w(TAG, "Bookmark title for ${b.id} failed: ${e.message}")
+                }
+            }
+        }
+        if (titled + retryable + failed > 0) Log.i(TAG, "Bookmark titles: $titled made, $retryable to retry, $failed failed")
+        return TitleRun(titled, retryable, failed)
+    }
+
+    /** Busy (429, 5xx), timeouts and network trouble are worth another go; a 400 (no text there) isn't. */
+    private fun isRetryable(e: Exception): Boolean {
+        if (e is com.earshot.app.data.sync.SupabaseException) {
+            // "no transcript yet" means the server hasn't got this phone's transcript (sync pending).
+            return e.status == 429 || e.status >= 500 || e.status == 401 ||
+                e.message.orEmpty().contains("no transcript yet", ignoreCase = true)
+        }
+        if (e is java.io.IOException) return true
+        val m = e.message.orEmpty()
+        return m.contains("No title came back") || m.contains("Try again", ignoreCase = true)
     }
 
     suspend fun updateBookmark(b: Bookmark) {
