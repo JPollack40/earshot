@@ -131,6 +131,8 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(buttons())
             .build()
+        // Phase 12 scaffold: the templated car app (same process) hands this to the car host.
+        platformToken = session?.platformToken
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
@@ -969,6 +971,7 @@ class PlaybackService : MediaLibraryService() {
             release()
         }
         session = null
+        platformToken = null
         super.onDestroy()
     }
 
@@ -982,6 +985,11 @@ class PlaybackService : MediaLibraryService() {
          */
         @Volatile
         var protectedEpisodeId: String? = null
+            private set
+
+        /** The session's platform token while the service runs (phase 12 car app scaffold). */
+        @Volatile
+        var platformToken: android.media.session.MediaSession.Token? = null
             private set
     }
 }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 12 scaffold: merged into the twoIcons and lab variants only (build with -Pearshot.carApp=true). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="androidx.car.app.MEDIA_TEMPLATES" />
+
+    <application>
+        <!-- Templated media apps need Car App Library API level 8. -->
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="8" />
+
+        <service
+            android:name="com.earshot.app.car.EarshotCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.MEDIA" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
