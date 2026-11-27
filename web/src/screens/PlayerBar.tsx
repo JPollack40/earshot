@@ -5,7 +5,7 @@ import * as store from "../store";
 import { SKIPS_MS, SPEEDS, type PlaybackDefaults, type PodcastRow } from "../types";
 import { formatClock, hasOwnAudio, skipName, speedName } from "../util";
 import { setAppearance, useAppearance, useArtColor } from "../appearance";
-import { Art, type Nav } from "./common";
+import { Art, PlayerError, type Nav } from "./common";
 import { Icon } from "./Icons";
 
 const chapterCache = new Map<string, Chapter[]>();
@@ -88,7 +88,11 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
           </button>
           <div className="grow ellipsis-col">
             <div className="g-title ellipsis">{e.title}</div>
-            <div className="meta ellipsis">{[chapter?.title, podcast?.title].filter(Boolean).join(" · ")}</div>
+            {p.error ? (
+              <PlayerError className="g-error" />
+            ) : (
+              <div className="meta ellipsis">{[chapter?.title, podcast?.title].filter(Boolean).join(" · ")}</div>
+            )}
           </div>
           <button className="icon g-mobile-panel" title="Now playing" onClick={() => setAppearance({ nowPanel: true })}>
             <Icon name="panel" />
@@ -131,7 +135,6 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
               {!p.effectsAvailable && <div className="muted small">Smart Speed and Voice Boost aren't available for this episode: its host doesn't allow browsers to process the audio.</div>}
             </div>
           )}
-          {p.error && <div className="error small">{p.error}</div>}
         </div>
       </footer>
     );
@@ -203,7 +206,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         />
         <span className="time">-{formatClock(Math.max(0, duration - pos))}</span>
       </div>
-      {p.error && <div className="error small">{p.error}</div>}
+      <PlayerError />
       {more && (
         <div className="panel">
           <label>

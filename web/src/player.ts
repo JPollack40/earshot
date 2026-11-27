@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from "react";
 import type { EpisodeRow, PlaybackDefaults } from "./types";
 
-// One <audio> element plus, when the audio host allows it (CORS), a Web Audio chain:
+// Two <audio> elements. "fx" is cross-origin and feeds a Web Audio chain:
 //   Voice Boost = compressor + make-up gain, Smart Speed = speed up through silences.
-// Hosts that don't allow it still play, with speed only (effects shown as unavailable).
+// Hosts that don't allow cross-origin access (CORS) fail on "fx", so the episode moves to "plain",
+// which plays with speed only (effects shown as unavailable). Two elements are needed because once an
+// element feeds Web Audio, audio it plays without CORS comes out silent.
 
 export interface PlayerState {
   episode: EpisodeRow | null;
@@ -15,6 +17,8 @@ export interface PlayerState {
   sleepEndsAt: number | null; // ms, or null
   sleepAtEnd: boolean;
   error: string | null;
+  /** Everything known about the last error, for the Copy button (and kept in the error log). */
+  errorDetails: string | null;
 }
 
 let state: PlayerState = {
@@ -27,12 +31,16 @@ let state: PlayerState = {
   sleepEndsAt: null,
   sleepAtEnd: false,
   error: null,
+  errorDetails: null,
 };
 const listeners = new Set<() => void>();
 function set(patch: Partial<PlayerState>) {
   state = { ...state, ...patch };
   for (const l of listeners) l();
 }
+/** The current state, outside React. */
+export const snapshot = (): PlayerState => state;
+
 export function usePlayer(): PlayerState {
   return useSyncExternalStore(
     (l) => {
@@ -43,10 +51,16 @@ export function usePlayer(): PlayerState {
   );
 }
 
-const audio = new Audio();
-audio.preload = "auto";
+const fx = new Audio();
+fx.preload = "auto";
+fx.crossOrigin = "anonymous";
+const plain = new Audio();
+plain.preload = "auto";
+/** The element playing the current episode. */
+let audio: HTMLAudioElement = fx;
+/** Whether the user wants it playing (so a switch to the plain element keeps going). */
+let wantPlaying = false;
 let prefs: PlaybackDefaults = { speed: 1, smartSpeed: false, voiceBoost: false, skipBackMs: 15_000, skipForwardMs: 30_000 };
-let triedWithoutCors = false;
 
 // Callbacks into the app (wired in App.tsx).
 export const hooks = {
@@ -66,9 +80,9 @@ let silentSince = 0;
 let skipping = false;
 
 function buildGraph() {
-  if (ctx || audio.crossOrigin !== "anonymous") return;
+  if (ctx) return;
   ctx = new AudioContext();
-  source = ctx.createMediaElementSource(audio);
+  source = ctx.createMediaElementSource(fx);
   analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   compressor = ctx.createDynamicsCompressor();
@@ -100,7 +114,7 @@ function applyVoiceBoost() {
 // Smart Speed: while the level stays below the threshold for more than 0.15 s, play much faster.
 const buf = new Float32Array(2048);
 window.setInterval(() => {
-  if (!ctx || !prefs.smartSpeed || audio.paused) {
+  if (!ctx || audio !== fx || !prefs.smartSpeed || audio.paused) {
     if (skipping) {
       skipping = false;
       audio.playbackRate = prefs.speed;
@@ -127,55 +141,137 @@ window.setInterval(() => {
   }
 }, 40);
 
-// ---- element events ----
+// ---- element events (only the active element's count) ----
 let lastSaved = 0;
-audio.addEventListener("timeupdate", () => {
-  const ms = audio.currentTime * 1000;
-  set({ positionMs: ms });
-  if (state.episode && Math.abs(ms - lastSaved) > 5000) {
-    lastSaved = ms;
-    hooks.onPosition(state.episode.id, ms, false);
+
+/** Why an <audio> element failed, in words. */
+function mediaErrorText(el: HTMLAudioElement): string {
+  switch (el.error?.code) {
+    case 2:
+      return "This episode couldn't be played: the network failed while loading it.";
+    case 3:
+      return "This episode couldn't be played: the audio file seems to be damaged.";
+    case 4:
+      return "This episode couldn't be played: its server refused the request or the file is missing. Try again later, or play it on the phone.";
+    default:
+      return "This episode couldn't be played.";
   }
-  if (state.sleepEndsAt && Date.now() >= state.sleepEndsAt) {
-    pause();
-    set({ sleepEndsAt: null });
-  }
-});
-audio.addEventListener("durationchange", () => {
-  if (isFinite(audio.duration)) {
-    set({ durationMs: audio.duration * 1000 });
-    if (state.episode) hooks.onDuration(state.episode.id, audio.duration * 1000);
-  }
-});
-audio.addEventListener("playing", () => set({ playing: true, buffering: false, error: null }));
-audio.addEventListener("pause", () => {
-  set({ playing: false });
-  if (state.episode) hooks.onPosition(state.episode.id, audio.currentTime * 1000, true);
-});
-audio.addEventListener("waiting", () => set({ buffering: true }));
-audio.addEventListener("ended", () => {
+}
+
+for (const el of [fx, plain]) {
+  const active = () => el === audio;
+  el.addEventListener("timeupdate", () => {
+    if (!active()) return;
+    const ms = el.currentTime * 1000;
+    set({ positionMs: ms });
+    if (state.episode && Math.abs(ms - lastSaved) > 5000) {
+      lastSaved = ms;
+      hooks.onPosition(state.episode.id, ms, false);
+    }
+    if (state.sleepEndsAt && Date.now() >= state.sleepEndsAt) {
+      pause();
+      set({ sleepEndsAt: null });
+    }
+  });
+  el.addEventListener("durationchange", () => {
+    if (active() && isFinite(el.duration)) {
+      set({ durationMs: el.duration * 1000 });
+      if (state.episode) hooks.onDuration(state.episode.id, el.duration * 1000);
+    }
+  });
+  el.addEventListener("playing", () => active() && set({ playing: true, buffering: false, error: null, errorDetails: null }));
+  el.addEventListener("pause", () => {
+    if (!active()) return;
+    set({ playing: false });
+    if (state.episode) hooks.onPosition(state.episode.id, el.currentTime * 1000, true);
+  });
+  el.addEventListener("waiting", () => active() && set({ buffering: true }));
+  el.addEventListener("ended", () => {
+    if (!active()) return;
+    const e = state.episode;
+    wantPlaying = false;
+    set({ playing: false });
+    if (!e) return;
+    const stop = state.sleepAtEnd;
+    if (stop) set({ sleepAtEnd: false });
+    hooks.onEnded(e, stop);
+  });
+  el.addEventListener("error", () => {
+    if (!active() || !el.getAttribute("src")) return;
+    // The host refused cross-origin access: play on the plain element, without effects.
+    if (el === fx && state.episode) {
+      const at = state.positionMs;
+      fx.removeAttribute("src");
+      fx.load();
+      audio = plain;
+      set({ effectsAvailable: false });
+      plain.src = state.episode.audio_url;
+      plain.currentTime = at / 1000;
+      plain.playbackRate = prefs.speed;
+      if (wantPlaying) void plain.play().catch(playFailed);
+      return;
+    }
+    wantPlaying = false;
+    fail(mediaErrorText(el), { "Media error": el.error ? `code ${el.error.code}${el.error.message ? `, ${el.error.message}` : ""}` : "none", "Tried with effects first": el === plain ? "yes, then without" : "no" });
+  });
+}
+
+/** Shows an error under the player and records it, with the details needed to look into it. */
+function fail(message: string, extra: Record<string, unknown> = {}) {
+  if (state.error === message) return; // already showing (the error event and play() can both report it)
   const e = state.episode;
-  set({ playing: false });
-  if (!e) return;
-  const stop = state.sleepAtEnd;
-  if (stop) set({ sleepAtEnd: false });
-  hooks.onEnded(e, stop);
-});
-audio.addEventListener("error", () => {
-  // The host refused cross-origin access: play without effects instead.
-  if (audio.crossOrigin === "anonymous" && !triedWithoutCors && state.episode) {
-    triedWithoutCors = true;
-    const at = state.positionMs;
-    const wasPlaying = true;
-    audio.removeAttribute("crossorigin");
-    set({ effectsAvailable: false });
-    audio.src = state.episode.audio_url;
-    audio.currentTime = at / 1000;
-    if (wasPlaying) void audio.play().catch(() => {});
+  const details = [
+    `Earshot web player error, ${new Date().toISOString()}`,
+    `Message: ${message}`,
+    e ? `Episode: ${e.title} (id ${e.id})` : null,
+    e ? `Feed: ${e.feed_url}` : null,
+    e ? `Audio: ${e.audio_url}` : null,
+    `Element: ${audio === fx ? "cross-origin (effects)" : "plain (no effects)"}, network state ${audio.networkState}, ready state ${audio.readyState}`,
+    ...Object.entries(extra).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`),
+    `Browser: ${navigator.userAgent}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  console.warn(details);
+  logError(details);
+  set({ error: message, errorDetails: details, playing: false, buffering: false });
+}
+
+const ERROR_LOG = "earshot.errorLog";
+
+/** Keeps the last 30 errors in this browser (localStorage), newest first. */
+function logError(details: string) {
+  try {
+    const log = JSON.parse(localStorage.getItem(ERROR_LOG) ?? "[]") as string[];
+    localStorage.setItem(ERROR_LOG, JSON.stringify([details, ...log].slice(0, 30)));
+  } catch {
+    // Storage blocked: the Copy button still has it.
+  }
+}
+
+/** The saved error log, newest first. */
+export function errorLog(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(ERROR_LOG) ?? "[]") as string[];
+  } catch {
+    return [];
+  }
+}
+
+/** play() was refused. An interrupted play (a new source loading) isn't an error. */
+function playFailed(err: unknown) {
+  if (err instanceof DOMException && err.name === "AbortError") return;
+  if (err instanceof DOMException && err.name === "NotAllowedError") {
+    fail("The browser blocked playback. Click Play to start it.", { Reason: String(err) });
     return;
   }
-  set({ error: "This episode couldn't be played.", playing: false, buffering: false });
-});
+  // NotSupportedError: the element's own "error" event explains (and falls back), unless it already fired.
+  if (err instanceof DOMException && err.name === "NotSupportedError") {
+    if (audio === plain && audio.error) fail(mediaErrorText(audio), { Reason: String(err) });
+    return;
+  }
+  fail(`This episode couldn't be played: ${String(err)}`, { Reason: String(err) });
+}
 
 // ---- controls ----
 
@@ -186,14 +282,19 @@ export function load(e: EpisodeRow, autoplay: boolean) {
     return;
   }
   if (state.episode && !audio.paused) hooks.onPosition(state.episode.id, audio.currentTime * 1000, true);
-  triedWithoutCors = false;
-  // Once the graph exists the element must stay cross-origin; otherwise try it, falling back on error.
-  audio.crossOrigin = "anonymous";
+  // Always try the cross-origin element first; its error handler moves to the plain one.
+  audio.pause();
+  if (audio === plain) {
+    plain.removeAttribute("src");
+    plain.load();
+  }
+  audio = fx;
+  wantPlaying = autoplay;
   audio.src = e.audio_url;
   const start = e.played ? 0 : e.position_ms;
   audio.currentTime = start / 1000;
   lastSaved = start;
-  set({ episode: e, positionMs: start, durationMs: e.duration_ms, effectsAvailable: true, error: null, playing: false });
+  set({ episode: e, positionMs: start, durationMs: e.duration_ms, effectsAvailable: true, error: null, errorDetails: null, playing: false });
   audio.playbackRate = prefs.speed;
   updateMediaSession(e);
   if (autoplay) play();
@@ -201,15 +302,30 @@ export function load(e: EpisodeRow, autoplay: boolean) {
 
 export function play() {
   if (!state.episode) return;
-  if (audio.crossOrigin === "anonymous") {
+  wantPlaying = true;
+  // After a failure, try again from the start of the chain (the host may be back, or allow CORS now).
+  if (audio.error) {
+    const at = state.positionMs;
+    if (audio === plain) {
+      plain.removeAttribute("src");
+      plain.load();
+    }
+    audio = fx;
+    fx.src = state.episode.audio_url;
+    fx.currentTime = at / 1000;
+    fx.playbackRate = prefs.speed;
+    set({ effectsAvailable: true });
+  }
+  if (audio === fx) {
     buildGraph();
     void ctx?.resume();
   }
-  set({ buffering: true });
-  void audio.play().catch((err) => set({ error: String(err), buffering: false }));
+  set({ buffering: true, error: null, errorDetails: null });
+  void audio.play().catch(playFailed);
 }
 
 export function pause() {
+  wantPlaying = false;
   audio.pause();
 }
 
