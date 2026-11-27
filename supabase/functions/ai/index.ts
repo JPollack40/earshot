@@ -132,8 +132,8 @@ function normalise(kind: Kind, o: any, lastMs: number): unknown {
 }
 
 /**
- * Asks Gemini for JSON matching [schema]. Gemini answers 503 ("high demand") or 500 at busy times: try
- * again once after a pause, then the fallback model (GEMINI_FALLBACK_MODEL secret) if one is set. The
+ * Asks Gemini for JSON matching [schema]. Gemini answers 503 ("high demand") or 500 at busy times, or
+ * hangs: go to the fallback model (GEMINI_FALLBACK_MODEL secret) if one is set. The
  * fallback is also used when the main model's per-minute free limit is reached (429), since each model
  * has its own limit. Edge functions are stopped after about 150 s, so only try again while there's time.
  * Returns the OK response and the model that gave it, or a ready error response.
@@ -148,25 +148,42 @@ async function gemini(key: string, prompt: string, schema: unknown, temperature:
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature },
   });
-  const ask = (m: string) =>
-    fetch(`${GEMINI}/${m}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: request,
-    });
+  // Phase 14: each try has its own time limit, so a main model that hangs (it once took 95 s and then
+  // answered 503, leaving no time for the fallback) can't use up the function's ~150 s. A hung try
+  // counts as a 503.
+  const ask = async (m: string, limitMs: number): Promise<Response> => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), Math.max(5_000, limitMs));
+    try {
+      return await fetch(`${GEMINI}/${m}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: request,
+        signal: ctl.signal,
+      });
+    } catch (e) {
+      console.error(`Gemini ${m}: no answer within ${Math.round(limitMs / 1000)} s (${(e as Error).message})`);
+      return new Response(JSON.stringify({ error: { code: 503, message: "No answer in time" } }), { status: 503 });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const started = Date.now();
-  const timeLeft = () => Date.now() - started < 60_000;
-  let res = await ask(model);
-  if ((res.status === 503 || res.status === 500) && timeLeft()) {
+  const elapsed = () => Date.now() - started;
+  const fallback = light && lightModel ? (Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL) : Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const busy = (r: Response) => r.status === 503 || r.status === 500;
+  // With a fallback, the first model gets 70 s; without one, it may use most of the time.
+  let res = await ask(model, fallback && fallback !== model ? 70_000 : 120_000);
+  // Same model again only when it said "busy" quickly and there's no fallback to go to instead.
+  if (busy(res) && (!fallback || fallback === model) && elapsed() < 60_000) {
     console.error(`Gemini ${model} HTTP ${res.status}, trying again: ${(await res.text()).slice(0, 300)}`);
     await new Promise((r) => setTimeout(r, 5_000));
-    res = await ask(model);
+    res = await ask(model, 130_000 - elapsed());
   }
-  const fallback = light && lightModel ? (Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL) : Deno.env.get("GEMINI_FALLBACK_MODEL");
-  if ((res.status === 503 || res.status === 500 || res.status === 404 || res.status === 429) && fallback && fallback !== model && timeLeft()) {
+  if ((busy(res) || res.status === 404 || res.status === 429) && fallback && fallback !== model && elapsed() < 125_000) {
     console.error(`Gemini ${model} HTTP ${res.status}, using ${fallback}: ${(await res.text()).slice(0, 300)}`);
     model = fallback;
-    res = await ask(model);
+    res = await ask(model, 140_000 - elapsed());
   }
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 800);
