@@ -1,5 +1,6 @@
 package com.earshot.app.data.transcript
 
+import androidx.core.content.edit
 import android.content.Context
 import android.util.Log
 import com.earshot.app.EarshotApp
@@ -160,7 +161,7 @@ class Transcripts(private val app: EarshotApp) {
                 throw ex
             } catch (ex: Exception) {
                 Log.w(TAG, "Couldn't fetch the feed transcript for ${e.title}", ex)
-                prefs.edit().putLong("failed_${e.id}", now).apply()
+                prefs.edit { putLong("failed_${e.id}", now) }
             }
         }
         if (saved > 0) Log.i(TAG, "Saved $saved feed transcripts")
@@ -411,7 +412,7 @@ class Transcripts(private val app: EarshotApp) {
                     Log.w(TAG, "Bookmark title for ${b.id} failed, will try again: ${e.message}")
                 } else {
                     failed++
-                    prefs.edit().putLong("title_failed_${b.id}", stamp).apply()
+                    prefs.edit { putLong("title_failed_${b.id}", stamp) }
                     Log.w(TAG, "Bookmark title for ${b.id} failed: ${e.message}")
                 }
             }

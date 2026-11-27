@@ -2,6 +2,7 @@
 
 package com.earshot.app.ui.screens
 
+import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -258,7 +261,7 @@ private fun isIgnoringBatteryOptimizations(context: android.content.Context): Bo
  * prompt isn't available): the app's info page, where Battery shows Unrestricted and can be changed.
  */
 private fun openBatterySettings(context: android.content.Context, exempt: Boolean) {
-    val pkg = android.net.Uri.parse("package:${context.packageName}")
+    val pkg = "package:${context.packageName}".toUri()
     val tries = buildList {
         if (!exempt) add(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg))
         add(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
@@ -273,9 +276,9 @@ private fun openBatterySettings(context: android.content.Context, exempt: Boolea
 /** Phase 14: deletes every downloaded episode at once, after a confirmation. */
 @Composable
 private fun DeleteAllDownloads(vm: AppViewModel) {
-    var refresh by remember { mutableStateOf(0) }
+    var refresh by remember { mutableIntStateOf(0) }
     var usage by remember { mutableStateOf<Pair<Int, Long>?>(null) }
-    var cacheBytes by remember { mutableStateOf(0L) }
+    var cacheBytes by remember { mutableLongStateOf(0L) }
     androidx.compose.runtime.LaunchedEffect(refresh) {
         usage = vm.downloadsUsage()
         cacheBytes = vm.streamCacheBytes()

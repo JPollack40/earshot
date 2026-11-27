@@ -1,5 +1,6 @@
 package com.earshot.app.data
 
+import androidx.core.content.edit
 import android.content.Context
 import com.earshot.app.BuildConfig
 import com.earshot.app.data.net.Http
@@ -35,13 +36,13 @@ object Updates {
     fun dismissed(context: Context): String? = prefs(context).getString("dismissed", null)
 
     fun dismiss(context: Context, version: String) {
-        prefs(context).edit().putString("dismissed", version).apply()
+        prefs(context).edit { putString("dismissed", version) }
     }
 
     /** Asks GitHub. Returns the newer release, or null if this build is up to date. Throws if offline. */
     suspend fun check(context: Context): UpdateInfo? {
         val text = Http.getText(API, mapOf("Accept" to "application/vnd.github+json"))
-        prefs(context).edit().putLong("checked_at", System.currentTimeMillis()).apply()
+        prefs(context).edit { putLong("checked_at", System.currentTimeMillis()) }
         val o = JSONObject(text)
         val tag = o.optString("tag_name").removePrefix("v")
         if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) return null
@@ -74,7 +75,7 @@ object Updates {
     }
 
     fun markWhatsNewSeen(context: Context) {
-        prefs(context).edit().putString("whats_new_seen", BuildConfig.VERSION_NAME).apply()
+        prefs(context).edit { putString("whats_new_seen", BuildConfig.VERSION_NAME) }
     }
 
     /** This version's release notes; a dev build (no release of its own) gets the latest release's. */

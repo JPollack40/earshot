@@ -126,7 +126,7 @@ class EpisodeAiStore(private val app: EarshotApp) {
             }
         }
         // Phase 14: without Find ads, the ad breaks in generated chapters count as found ads.
-        if (s.ads == null && s.chapters != null) s = s.copy(ads = AdSkip.fromChapters(s.chapters!!.map { it.startMs to it.title }))
+        if (s.ads == null && s.chapters != null) s = s.copy(ads = AdSkip.fromChapters(s.chapters.map { it.startMs to it.title }))
         s
     }
 

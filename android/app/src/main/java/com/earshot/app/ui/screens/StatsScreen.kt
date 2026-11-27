@@ -298,7 +298,8 @@ private fun StatsBody(vm: AppViewModel, r: StatsResult, art: Map<String, String>
         if (r.activeDays < 3) {
             Hint("Shows your pattern after 3 days of listening (${r.activeDays} so far).")
         } else {
-            val names = (1..7).map { java.time.DayOfWeek.of(it).getDisplayName(TextStyle.SHORT, Locale.getDefault()) }
+            val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+            val names = (1..7).map { java.time.DayOfWeek.of(it).getDisplayName(TextStyle.SHORT, locale) }
             Bars(r.weekdays.toList(), description = "Listening by day of the week, most on ${names[r.weekdays.indices.maxBy { r.weekdays[it] }]}")
             Row(Modifier.fillMaxWidth()) {
                 names.forEach {

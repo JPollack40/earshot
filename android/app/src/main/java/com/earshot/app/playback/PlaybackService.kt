@@ -1,5 +1,6 @@
 package com.earshot.app.playback
 
+import androidx.core.net.toUri
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -28,6 +29,7 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.earshot.app.EarshotApp
 import com.earshot.app.R
@@ -866,7 +868,7 @@ class PlaybackService : MediaLibraryService() {
                     Log.i(TAG, "AI sweep requested for $it")
                     com.earshot.app.work.AiSweepWorker.enqueue(app, it)
                 }
-                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
@@ -937,7 +939,7 @@ class PlaybackService : MediaLibraryService() {
             }
             val item = folder ?: repo.episodes.getWithPodcast(mediaId)?.let(EpisodeMedia::item)
             if (item != null) LibraryResult.ofItem(item, null)
-            else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+            else LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
         }
 
         override fun onGetChildren(
@@ -983,7 +985,7 @@ class PlaybackService : MediaLibraryService() {
                     if (p == null || p.deleted) emptyList()
                     else repo.playlistEpisodes(PlaylistJson.parse(p.filtersJson)).map { EpisodeMedia.item(it) }
                 }
-                else -> return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                else -> return@future LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
             }
             LibraryResult.ofItemList(pageOf(items, page, pageSize), params)
         }
@@ -1098,7 +1100,7 @@ class PlaybackService : MediaLibraryService() {
         )
     }
 
-    private fun iconUri(res: Int): Uri = Uri.parse("android.resource://$packageName/$res")
+    private fun iconUri(res: Int): Uri = "android.resource://$packageName/$res".toUri()
 
     private fun likePattern(query: String): String =
         "%" + query.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

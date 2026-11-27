@@ -1,5 +1,6 @@
 package com.earshot.app.data
 
+import androidx.core.content.edit
 import android.content.Context
 import com.earshot.app.data.db.Podcast
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,7 +53,7 @@ object Settings {
     fun newEpisodeNotify(context: Context): String = prefs(context).getString("new_episode_notify", NOTIFY_ALL) ?: NOTIFY_ALL
 
     fun setNewEpisodeNotify(context: Context, mode: String) {
-        prefs(context).edit().putString("new_episode_notify", mode).apply()
+        prefs(context).edit { putString("new_episode_notify", mode) }
     }
 
     /** Skip lengths offered by the long-press picker and the settings screens. */
@@ -104,7 +105,7 @@ object Settings {
     fun playbackDirty(context: Context): Boolean = prefs(context).getBoolean("playback_dirty", true)
 
     fun markPlaybackClean(context: Context, changedAt: Long) {
-        if (playbackChangedAt(context) == changedAt) prefs(context).edit().putBoolean("playback_dirty", false).apply()
+        if (playbackChangedAt(context) == changedAt) prefs(context).edit { putBoolean("playback_dirty", false) }
     }
 
     /** Defaults changed on another device. */
@@ -143,7 +144,7 @@ object Settings {
     fun applyRemoteTidy(context: Context, t: TidyDefaults) {
         val flow = tidyFlow(context)
         synchronized(this) { flow.value = t }
-        prefs(context).edit().putInt("inbox_days", t.inboxDays).putInt("inbox_keep", t.inboxKeep).apply()
+        prefs(context).edit { putInt("inbox_days", t.inboxDays).putInt("inbox_keep", t.inboxKeep) }
     }
 
     // ---- Found ads (phase 11), synced in the same settings row: "auto", "button" or "off" ----
@@ -173,14 +174,14 @@ object Settings {
         val p = prefs(context)
         if (p.getBoolean("ad_skip_button_default", false)) return
         if (adSkip(context).value == "auto") setAdSkip(context, "button")
-        p.edit().putBoolean("ad_skip_button_default", true).apply()
+        p.edit { putBoolean("ad_skip_button_default", true) }
     }
 
     /** Changed on another device (called with [applyRemotePlayback]). */
     fun applyRemoteAdSkip(context: Context, mode: String) {
         if (mode !in listOf("auto", "button", "off")) return
         adSkipState(context).value = mode
-        prefs(context).edit().putString("ad_skip", mode).apply()
+        prefs(context).edit { putString("ad_skip", mode) }
     }
 
     // ---- Rewind after a pause or interruption (phase 13), synced in the same settings row ----
@@ -205,7 +206,7 @@ object Settings {
     /** Changed on another device (called with [applyRemotePlayback]). */
     fun applyRemoteResumeRewind(context: Context, on: Boolean) {
         resumeRewindState(context).value = on
-        prefs(context).edit().putBoolean("resume_rewind", on).apply()
+        prefs(context).edit { putBoolean("resume_rewind", on) }
     }
 
     // ---- Time saved ----
@@ -229,7 +230,7 @@ object Settings {
             val o = flow.value
             TimeSaved(o.bySpeedMs + bySpeedMs, o.bySmartSpeedMs + bySmartSpeedMs).also { flow.value = it }
         }
-        prefs(context).edit().putLong("saved_speed_ms", t.bySpeedMs).putLong("saved_smart_ms", t.bySmartSpeedMs).apply()
+        prefs(context).edit { putLong("saved_speed_ms", t.bySpeedMs).putLong("saved_smart_ms", t.bySmartSpeedMs) }
     }
 
     // ---- Appearance (this phone only; not synced) ----
@@ -248,7 +249,7 @@ object Settings {
 
     fun setAppTheme(context: Context, value: String) {
         themeFlow(context).value = value
-        prefs(context).edit().putString("app_theme", value).apply()
+        prefs(context).edit { putString("app_theme", value) }
     }
 
     // ---- Downloads ----
@@ -260,7 +261,7 @@ object Settings {
     fun deleteWhenFinished(context: Context): Boolean = prefs(context).getBoolean("delete_when_finished", true)
 
     fun setDeleteWhenFinished(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean("delete_when_finished", enabled).apply()
+        prefs(context).edit { putBoolean("delete_when_finished", enabled) }
     }
 
     /**
@@ -270,7 +271,7 @@ object Settings {
     fun expireDays(context: Context): Int = prefs(context).getInt("expire_days", 7)
 
     fun setExpireDays(context: Context, days: Int) {
-        prefs(context).edit().putInt("expire_days", days).apply()
+        prefs(context).edit { putInt("expire_days", days) }
     }
 
     /**
@@ -280,13 +281,13 @@ object Settings {
     fun downloadWifiOnly(context: Context): Boolean = prefs(context).getBoolean("download_wifi_only", false)
 
     fun setDownloadWifiOnly(context: Context, wifiOnly: Boolean) {
-        prefs(context).edit().putBoolean("download_wifi_only", wifiOnly).apply()
+        prefs(context).edit { putBoolean("download_wifi_only", wifiOnly) }
     }
 
     /** Download an episode as soon as it's added to the queue. */
     fun autoDownloadQueued(context: Context): Boolean = prefs(context).getBoolean("auto_download_queued", true)
 
     fun setAutoDownloadQueued(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean("auto_download_queued", enabled).apply()
+        prefs(context).edit { putBoolean("auto_download_queued", enabled) }
     }
 }

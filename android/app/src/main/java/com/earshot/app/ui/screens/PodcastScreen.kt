@@ -57,6 +57,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -98,7 +99,7 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
     var descExpanded by remember { mutableStateOf(false) }
     // Phase 13: Episodes | You might like.
-    var podTab by rememberSaveable(podcastId) { mutableStateOf(0) }
+    var podTab by rememberSaveable(podcastId) { mutableIntStateOf(0) }
     val browseExcluded = rememberBrowseExcluded(vm)
 
     // ---- Search within this podcast (titles and show notes, on the phone) ----
