@@ -12,7 +12,7 @@ import kotlin.math.abs
 
 /**
  * The extra buttons on the playing screen in Android Auto (and in the phone's media notification):
- * Bookmark and Mark played, custom session commands handled by the service. Speed lives in its own list in the
+ * AI sweep (phase 14), Bookmark and Mark played, custom session commands handled by the service. Speed lives in its own list in the
  * car (a row at the top of the Queue tab); there's no sleep timer there (the listener is driving).
  */
 object PlayerButtons {
@@ -24,6 +24,9 @@ object PlayerButtons {
     val markPlayedCommand = SessionCommand(MARK_PLAYED, Bundle.EMPTY)
     val bookmarkCommand = SessionCommand(BOOKMARK, Bundle.EMPTY)
     val skipAdCommand = SessionCommand(SKIP_AD, Bundle.EMPTY)
+    /** Phase 14: "AI sweep" (broom): transcript, chapters and ads for the playing episode in one go. */
+    const val AI_SWEEP = "com.earshot.app.AI_SWEEP"
+    val aiSweepCommand = SessionCommand(AI_SWEEP, Bundle.EMPTY)
 
     /** "1.3x", "2x" */
     fun speedLabel(speed: Float): String =
@@ -68,6 +71,15 @@ object PlayerButtons {
                 } else {
                     skips[1]
                 },
+            )
+            .add(
+                // Phase 14: AI sweep, left of Bookmark. A second tap while one runs for the episode does nothing.
+                CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                    .setCustomIconResId(R.drawable.ic_ai_sweep)
+                    .setSessionCommand(aiSweepCommand)
+                    .setDisplayName("AI sweep")
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
+                    .build(),
             )
             .add(
                 CommandButton.Builder(if (bookmarked) CommandButton.ICON_BOOKMARK_FILLED else CommandButton.ICON_BOOKMARK_UNFILLED)

@@ -813,6 +813,7 @@ class PlaybackService : MediaLibraryService() {
                         .add(PlayerButtons.markPlayedCommand)
                         .add(PlayerButtons.bookmarkCommand)
                         .add(PlayerButtons.skipAdCommand)
+                        .add(PlayerButtons.aiSweepCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -830,6 +831,10 @@ class PlaybackService : MediaLibraryService() {
                 }
                 PlayerButtons.BOOKMARK -> bookmarkNow()
                 PlayerButtons.SKIP_AD -> skipAdNow()
+                PlayerButtons.AI_SWEEP -> player.currentMediaItem?.mediaId?.let {
+                    Log.i(TAG, "AI sweep requested for $it")
+                    com.earshot.app.work.AiSweepWorker.enqueue(app, it)
+                }
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
