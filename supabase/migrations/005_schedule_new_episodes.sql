@@ -5,17 +5,31 @@
 -- BEFORE running, replace the two placeholders below:
 --   <PROJECT_URL>   https://drdpgrdewxcquswuuzfw.supabase.co
 --   <CRON_SECRET>   the same random text you saved as the function secret NEW_EPISODES_SECRET
--- Both are kept in Supabase Vault (encrypted), not in the schedule's text.
+-- Both are kept in Supabase Vault (encrypted), not in the schedule's text. The file stops with an error
+-- if they weren't replaced. To fix values later without re-running it:
+--   select vault.update_secret((select id from vault.secrets where name = 'earshot_project_url'), 'https://...');
+--   select vault.update_secret((select id from vault.secrets where name = 'earshot_new_episodes_secret'), '...');
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
 -- Vault entries (replaced if they already exist).
 do $$
+declare
+  -- The two values to fill in (each appears only here):
+  project_url text := '<PROJECT_URL>';
+  cron_secret text := '<CRON_SECRET>';
 begin
+  -- Stop if they weren't filled in (the schedule would call "<PROJECT_URL>/functions/...").
+  if project_url not like 'https://%' then
+    raise exception 'Put your project URL (https://...supabase.co) in place of the PROJECT_URL placeholder first';
+  end if;
+  if left(cron_secret, 1) = '<' or length(cron_secret) < 8 then
+    raise exception 'Put your NEW_EPISODES_SECRET in place of the CRON_SECRET placeholder first';
+  end if;
   delete from vault.secrets where name in ('earshot_project_url', 'earshot_new_episodes_secret');
-  perform vault.create_secret('<PROJECT_URL>', 'earshot_project_url');
-  perform vault.create_secret('<CRON_SECRET>', 'earshot_new_episodes_secret');
+  perform vault.create_secret(rtrim(project_url, '/'), 'earshot_project_url');
+  perform vault.create_secret(cron_secret, 'earshot_new_episodes_secret');
 end;
 $$;
 

@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.text.format.DateFormat
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -323,6 +324,18 @@ class PlaybackService : MediaLibraryService() {
     private var ads: List<AdSpan> = emptyList()
     /** Ads (by start) already skipped while this episode is loaded; going back into one plays it. */
     private var adsSkipped: Set<Long> = emptySet()
+    /** Episode whose ad trim result was already shown, so the notice appears once per episode. */
+    private var adTrimReportedFor: String? = null
+
+    /** Says what ad trim did, once per episode, so it's clear whether it acted. */
+    private fun reportAdTrim(id: String, text: String) {
+        if (adTrimReportedFor == id) return
+        adTrimReportedFor = id
+        Log.i(TAG, "Ad trim: $text")
+        Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
+    }
+
+    private fun mmss(ms: Long): String = "%d:%02d".format(ms / 60_000, ms / 1000 % 60)
 
     /**
      * Runs twice a second while playing. Jumps over unticked chapters (carrying on past any that
@@ -339,9 +352,18 @@ class PlaybackService : MediaLibraryService() {
             AdTrim.START, AdTrim.END -> AdTrim.extraMs(ep.episode.feedDurationMs, duration)
             else -> 0L
         }
+        if (ep.podcastAdTrim == AdTrim.START || ep.podcastAdTrim == AdTrim.END) {
+            when {
+                ep.episode.feedDurationMs <= 0 -> reportAdTrim(id, "Ad trim: the feed doesn't give this episode's length yet. Refresh the podcast and try again.")
+                extra == 0L -> reportAdTrim(id, "Ad trim: no inserted ads found (file ${mmss(duration)}, feed says ${mmss(ep.episode.feedDurationMs)})")
+                ep.podcastAdTrim == AdTrim.END -> reportAdTrim(id, "Ad trim: will skip the last ${mmss(extra)} (inserted ads)")
+            }
+        }
         if (extra > 0 && ep.podcastAdTrim == AdTrim.START && pos < extra - 1_000) {
             Log.i(TAG, "Ad trim: skipping the first ${extra / 1000} s")
             player.seekTo(extra)
+            adTrimReportedFor = null
+            reportAdTrim(id, "Skipped ${mmss(extra)} of inserted ads at the start")
             return
         }
         val endAt = if (extra > 0 && ep.podcastAdTrim == AdTrim.END) duration - extra else duration

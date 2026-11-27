@@ -7,7 +7,8 @@
 // Reads the user's saved transcript (it must have timings), asks Gemini, checks the answer, saves it in
 // public.episode_ai (006_ai.sql) as the user, and returns { kind, data, model }.
 //
-// Secrets: GEMINI_API_KEY (already set). Optional GEMINI_MODEL (default below).
+// Secrets: GEMINI_API_KEY (already set). Optional GEMINI_MODEL (default below) and
+// GEMINI_FALLBACK_MODEL (used when the main model is overloaded or not offered).
 // Verify JWT: on (the default). The function also checks the sign-in itself.
 // Errors: 400 no usable transcript, 401 not signed in, 429 Gemini's limit reached (try later), 502 Gemini failed.
 
@@ -153,7 +154,7 @@ Deno.serve(async (req: Request) => {
 
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return json({ error: "GEMINI_API_KEY secret is not set" }, 500);
-  const model = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+  let model = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
 
   // The user's own transcript (row-level security keeps it to theirs).
   const tr = await fetch(`${base}/rest/v1/transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
@@ -167,18 +168,52 @@ Deno.serve(async (req: Request) => {
   const context = [body.podcast ? `Podcast: ${body.podcast}` : "", body.title ? `Episode: ${body.title}` : ""].filter(Boolean).join("\n");
   const prompt = `${PROMPTS[kind]}\nTimestamps are h:mm:ss or m:ss, exactly as written at the start of the transcript lines.\n\n${context}\n\nTranscript:\n${transcriptText(t.segments)}`;
 
-  const res = await fetch(`${GEMINI}/${model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMAS[kind], temperature: 0.2 },
-    }),
+  const request = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMAS[kind], temperature: 0.2 },
   });
+  const ask = (m: string) =>
+    fetch(`${GEMINI}/${m}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: request,
+    });
+  // Gemini answers 503 ("high demand") or 500 at busy times: try again once after a pause, then the
+  // fallback model (GEMINI_FALLBACK_MODEL secret) if one is set. The fallback is also used when the main
+  // model's per-minute free limit is reached (429), since each model has its own limit.
+  // Edge functions are stopped after about 150 s, so only try again while there's time left.
+  const started = Date.now();
+  const timeLeft = () => Date.now() - started < 60_000;
+  let res = await ask(model);
+  if ((res.status === 503 || res.status === 500) && timeLeft()) {
+    console.error(`Gemini ${model} HTTP ${res.status}, trying again: ${(await res.text()).slice(0, 300)}`);
+    await new Promise((r) => setTimeout(r, 5_000));
+    res = await ask(model);
+  }
+  const fallback = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  if ((res.status === 503 || res.status === 500 || res.status === 404 || res.status === 429) && fallback && fallback !== model && timeLeft()) {
+    console.error(`Gemini ${model} HTTP ${res.status}, using ${fallback}: ${(await res.text()).slice(0, 300)}`);
+    model = fallback;
+    res = await ask(model);
+  }
   if (!res.ok) {
-    const detail = (await res.text()).slice(0, 400);
+    const detail = (await res.text()).slice(0, 800);
+    // Shows in Supabase > Edge Functions > ai > Logs.
+    console.error(`Gemini ${model} HTTP ${res.status}: ${detail}`);
     if (res.status === 429) return json({ error: "Gemini's free limit is used up for now. Try again later (limits reset over the day).", detail }, 429);
-    return json({ error: `Gemini returned HTTP ${res.status}`, detail }, 502);
+    let reason = "";
+    try {
+      reason = String(JSON.parse(detail)?.error?.message ?? "").slice(0, 200);
+    } catch (_) {
+      // not JSON
+    }
+    if (res.status === 503 || res.status === 500) {
+      return json({ error: "Gemini is overloaded right now (Google's side). Try again in a few minutes.", detail }, 503);
+    }
+    if (res.status === 404) {
+      return json({ error: `Gemini doesn't offer the model "${model}" to this key. Set the GEMINI_MODEL secret to one it does.`, detail }, 502);
+    }
+    return json({ error: `Gemini returned HTTP ${res.status}${reason ? `: ${reason}` : ""}`, detail }, 502);
   }
   // deno-lint-ignore no-explicit-any
   const out: any = await res.json();
@@ -188,9 +223,11 @@ Deno.serve(async (req: Request) => {
   try {
     parsed = JSON.parse(text);
   } catch (_) {
+    console.error(`Gemini ${model}: unreadable answer (finishReason ${out?.candidates?.[0]?.finishReason}): ${JSON.stringify(out).slice(0, 800)}`);
     return json({ error: "Gemini's answer wasn't readable. Try again.", detail: text.slice(0, 300) }, 502);
   }
   const data = normalise(kind, parsed, lastMs);
+  console.log(`Gemini ${model}: ${kind} for ${episodeId} OK`);
   if (kind === "chapters" && (data as { chapters: unknown[] }).chapters.length < 2) return json({ error: "Gemini couldn't find chapters in this episode." }, 502);
 
   const now = Date.now();
