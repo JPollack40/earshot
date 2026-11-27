@@ -197,22 +197,23 @@ class Transcripts(private val app: EarshotApp) {
     private fun partsFile(episodeId: String) = File(File(app.filesDir, "transcribe").apply { mkdirs() }, "$episodeId.json")
 
     /**
-     * Transcribes [episode] with Gemini through the "transcribe" Edge Function, 15 minutes at a time,
-     * then saves it. Parts already done are kept in a file, so a retry carries on where it stopped.
+     * Transcribes [episode] with Deepgram through the "transcribe" Edge Function, then saves it. The
+     * function answers in parts (one, with Deepgram); parts already done are kept in a file for a retry.
      */
     suspend fun transcribeWithGemini(episode: Episode, onPart: suspend (done: Int, parts: Int) -> Unit) {
         val supabase = app.sync.supabase
-        if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to transcribe with Gemini")
+        if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to transcribe episodes")
         val file = partsFile(episode.id)
         val saved = withContext(Dispatchers.IO) { if (file.exists()) runCatching { JSONObject(file.readText()) }.getOrNull() else null }
         val segments = JSONArray()
         var part = 0
-        if (saved != null && saved.optString("audioUrl") == episode.audioUrl) {
+        // Parts saved by the first (Gemini) build are ignored: they used a different engine.
+        if (saved != null && saved.optString("audioUrl") == episode.audioUrl && saved.optString("engine") == SOURCE_DEEPGRAM) {
             val s = saved.optJSONArray("segments") ?: JSONArray()
             for (i in 0 until s.length()) segments.put(s.get(i))
             part = saved.optInt("next", 0)
         }
-        var parts = if (episode.durationMs > 0) ((episode.durationMs + PART_MS - 1) / PART_MS).toInt() else 0
+        var parts = 1 // Deepgram does the whole episode in one call; the function says if there are more
         onPart(part, parts)
         while (true) {
             val res = supabase.function(
@@ -231,17 +232,17 @@ class Transcripts(private val app: EarshotApp) {
             part++
             val done = res.optBoolean("done", false)
             withContext(Dispatchers.IO) {
-                file.writeText(JSONObject().put("audioUrl", episode.audioUrl).put("next", part).put("segments", segments).toString())
+                file.writeText(JSONObject().put("audioUrl", episode.audioUrl).put("engine", SOURCE_DEEPGRAM).put("next", part).put("segments", segments).toString())
             }
             onPart(part, if (done) part else maxOf(parts, part + 1))
             if (done) break
             if (part > 200) throw IllegalStateException("The episode seems endless; stopped after 200 parts")
         }
         val list = TranscriptFormat.fromJsonArray(segments)
-        if (list.isEmpty()) throw IllegalStateException("Gemini found no speech in this episode")
-        save(episode.id, SOURCE_GEMINI, list, timed = true)
+        if (list.isEmpty()) throw IllegalStateException("No speech was found in this episode")
+        save(episode.id, SOURCE_DEEPGRAM, list, timed = true)
         withContext(Dispatchers.IO) { file.delete() }
-        Log.i(TAG, "Gemini transcript saved for ${episode.title}: ${list.size} segments in $part parts")
+        Log.i(TAG, "Deepgram transcript saved for ${episode.title}: ${list.size} segments in $part parts")
         app.sync.request("transcript")
     }
 
@@ -362,7 +363,15 @@ class Transcripts(private val app: EarshotApp) {
 
     companion object {
         const val SOURCE_FEED = "feed"
-        const val SOURCE_GEMINI = "gemini"
+        const val SOURCE_GEMINI = "gemini" // earlier transcripts (phase 6 first build)
+        const val SOURCE_DEEPGRAM = "deepgram"
+
+        /** Where a transcript came from, for the transcript page. */
+        fun sourceLabel(source: String) = when (source) {
+            SOURCE_DEEPGRAM -> "Transcribed by Deepgram"
+            SOURCE_GEMINI -> "Transcribed by Gemini"
+            else -> "From the podcast's feed"
+        }
         const val QUOTE_BEFORE_MS = 60_000L
         const val QUOTE_AFTER_MS = 5_000L
         const val PART_MS = 15 * 60 * 1000L

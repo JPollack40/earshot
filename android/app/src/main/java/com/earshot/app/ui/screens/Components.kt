@@ -296,12 +296,12 @@ fun EpisodeSheet(
                         },
                     )
                 }
-                // Gemini only when asked, and only when the feed has no transcript of its own.
+                // Cloud transcription only when asked, and only when the feed has no transcript of its own.
                 if (!hasTranscript && e.transcriptUrl == null && !transcribing) {
                     OutlinedButton(onClick = { onTranscribe(); onDismiss() }) {
                         Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Transcribe with Gemini")
+                        Text("Transcribe")
                     }
                 }
             }

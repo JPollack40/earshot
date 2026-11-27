@@ -52,7 +52,6 @@ export interface NotesState {
 /** Bookmark quote window: 60 s before the moment to 5 s after (same as the phone). */
 export const QUOTE_BEFORE_MS = 60_000;
 export const QUOTE_AFTER_MS = 5_000;
-const PART_MS = 15 * 60_000;
 
 let state: NotesState = { bookmarks: new Map(), transcripts: new Map(), transcribing: new Map(), available: true, version: 0 };
 const listeners = new Set<() => void>();
@@ -273,7 +272,7 @@ function setTranscribing(id: string, s: TranscribeState | null) {
 
 const cancelled = new Set<string>();
 
-/** Stops a Gemini transcription after the part it's on (finished parts are kept for a retry). */
+/** Stops a cloud transcription (its result is ignored if it arrives later). */
 export function cancelTranscription(id: string) {
   cancelled.add(id);
   setTranscribing(id, null);
@@ -282,9 +281,9 @@ export function cancelTranscription(id: string) {
 const PARTS_KEY = (id: string) => `earshot.transcribe.${id}`;
 
 /**
- * Transcribes an episode with Gemini 3.5 Transcribe through the "transcribe" function, 15 minutes at
- * a time. Keep the page open until it's done; finished parts are kept in this browser, so a retry
- * carries on where it stopped.
+ * Transcribes an episode with Deepgram through the "transcribe" function. Keep the page open until it's
+ * done (usually about a minute). The function answers in parts (one, with Deepgram); finished parts
+ * are kept in this browser, so a retry carries on where it stopped.
  */
 export async function transcribeWithGemini(e: EpisodeRow) {
   if (state.transcribing.get(e.id)?.kind === "running") return;
@@ -292,15 +291,15 @@ export async function transcribeWithGemini(e: EpisodeRow) {
   let segments: Segment[] = [];
   let part = 0;
   try {
-    const saved = JSON.parse(localStorage.getItem(PARTS_KEY(e.id)) ?? "null") as { audioUrl: string; next: number; segments: Segment[] } | null;
-    if (saved && saved.audioUrl === e.audio_url) {
+    const saved = JSON.parse(localStorage.getItem(PARTS_KEY(e.id)) ?? "null") as { audioUrl: string; engine?: string; next: number; segments: Segment[] } | null;
+    if (saved && saved.audioUrl === e.audio_url && saved.engine === "deepgram") {
       segments = saved.segments;
       part = saved.next;
     }
   } catch {
     // No saved parts.
   }
-  let parts = e.duration_ms > 0 ? Math.ceil(e.duration_ms / PART_MS) : 0;
+  let parts = 1;
   setTranscribing(e.id, { kind: "running", part, parts });
   try {
     for (;;) {
@@ -325,7 +324,7 @@ export async function transcribeWithGemini(e: EpisodeRow) {
       if (res.parts && res.parts > 0) parts = res.parts;
       part++;
       try {
-        localStorage.setItem(PARTS_KEY(e.id), JSON.stringify({ audioUrl: e.audio_url, next: part, segments }));
+        localStorage.setItem(PARTS_KEY(e.id), JSON.stringify({ audioUrl: e.audio_url, engine: "deepgram", next: part, segments }));
       } catch {
         // Storage full or blocked: a retry starts over.
       }
@@ -333,8 +332,8 @@ export async function transcribeWithGemini(e: EpisodeRow) {
       if (part > 200) throw new Error("The episode seems endless; stopped after 200 parts");
       setTranscribing(e.id, { kind: "running", part, parts: Math.max(parts, part + 1) });
     }
-    if (!segments.length) throw new Error("Gemini found no speech in this episode");
-    await saveTranscript(e.id, "gemini", segments, true);
+    if (!segments.length) throw new Error("No speech was found in this episode");
+    await saveTranscript(e.id, "deepgram", segments, true);
     try {
       localStorage.removeItem(PARTS_KEY(e.id));
     } catch {

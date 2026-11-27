@@ -128,7 +128,7 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
                                 DropdownMenuItem(text = { Text("Export bookmarks (Markdown)") }, onClick = { menu = false; vm.exportEpisodeBookmarks(episodeId) })
                             }
                             if (transcript == null && item != null && state == null) {
-                                DropdownMenuItem(text = { Text("Transcribe with Gemini") }, onClick = { menu = false; vm.transcribeWithGemini(episodeId) })
+                                DropdownMenuItem(text = { Text("Transcribe") }, onClick = { menu = false; vm.transcribeWithGemini(episodeId) })
                             }
                         }
                     }
@@ -175,7 +175,7 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
             LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                 item(key = "source") {
                     Text(
-                        (if (t.source == Transcripts.SOURCE_GEMINI) "Transcribed by Gemini" else "From the podcast's feed") +
+                        Transcripts.sourceLabel(t.source) +
                             (if (!t.timed) " · no timings, so lines can't be played or followed" else " · tap a line to play from there"),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -274,13 +274,13 @@ private fun NoTranscript(
         when {
             state is TranscribeState.Waiting || state is TranscribeState.Running -> {
                 val running = state as? TranscribeState.Running
-                Text("Transcribing with Gemini", style = MaterialTheme.typography.titleMedium)
+                Text("Transcribing with Deepgram", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 if (running != null && running.parts > 0) {
                     LinearProgressIndicator(progress = { running.part.toFloat() / running.parts }, modifier = Modifier.fillMaxWidth(0.7f))
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Part ${minOf(running.part + 1, running.parts)} of ${running.parts} (15 minutes each)",
+                        "Part ${minOf(running.part + 1, running.parts)} of ${running.parts}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -309,7 +309,7 @@ private fun NoTranscript(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onRetryFeed) { Text("Try again") }
-                    if (inLibrary) Button(onClick = onTranscribe) { Text("Transcribe with Gemini") }
+                    if (inLibrary) Button(onClick = onTranscribe) { Text("Transcribe") }
                 }
             }
             else -> {
@@ -321,7 +321,7 @@ private fun NoTranscript(
                     Text("No transcript for this episode", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        if (inLibrary) "The podcast doesn't publish one. Gemini can make one (free; takes a few minutes for a long episode)."
+                        if (inLibrary) "The podcast doesn't publish one. Deepgram can make one (uses your free credit; about a minute)."
                         else "This episode isn't in your library any more, so it can't be transcribed.",
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
@@ -333,7 +333,7 @@ private fun NoTranscript(
                     Button(onClick = onTranscribe) {
                         Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(if (state is TranscribeState.Failed) "Try again" else "Transcribe with Gemini")
+                        Text(if (state is TranscribeState.Failed) "Try again" else "Transcribe")
                     }
                 }
             }

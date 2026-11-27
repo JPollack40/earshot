@@ -129,13 +129,13 @@ export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow
             </button>
             {!hasTranscript && !e.transcript_url && transcribing?.kind !== "running" && (
               <button
-                title="Uses your free Gemini API key; keep the page open while it runs"
+                title="Uses your free Deepgram credit; keep the page open while it runs (about a minute)"
                 onClick={act(() => {
                   void notes.transcribeWithGemini(e);
                   navHolder.current?.open({ name: "transcript", episodeId: e.id });
                 })}
               >
-                Transcribe with Gemini
+                Transcribe
               </button>
             )}
           </div>

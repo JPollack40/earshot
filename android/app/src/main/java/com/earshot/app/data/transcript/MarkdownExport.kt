@@ -86,7 +86,7 @@ object MarkdownExport {
     fun fullTranscript(e: EpisodeInfo, t: TranscriptInfo, bookmarks: List<Bookmark>): String = buildString {
         append(header(e))
         append("## Transcript\n\n")
-        append(if (t.source == "gemini") "_Transcribed by Gemini._\n\n" else "_Transcript from the podcast's feed._\n\n")
+        append(if (t.source == "deepgram") "_Transcribed by Deepgram._\n\n" else if (t.source == "gemini") "_Transcribed by Gemini._\n\n" else "_Transcript from the podcast's feed._\n\n")
         val pending = bookmarks.sortedBy { it.positionMs }.toMutableList()
         var lastSpeaker: String? = null
         for ((i, s) in t.segments.withIndex()) {

@@ -21,7 +21,7 @@ import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
- * Transcribes one episode with Gemini (only when asked, from the episode's menu or its transcript
+ * Transcribes one episode with Deepgram (only when asked, from the episode's menu or its transcript
  * page). Runs as a foreground job with a progress notification, because a long episode takes several
  * minutes (one call per 15 minutes of audio). Parts already done survive a retry.
  */
@@ -46,7 +46,7 @@ class TranscribeWorker(context: Context, params: WorkerParameters) : CoroutineWo
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("Earshot", "Gemini transcription failed for ${episode.title} (attempt ${runAttemptCount + 1})", e)
+            Log.w("Earshot", "Transcription failed for ${episode.title} (attempt ${runAttemptCount + 1})", e)
             val message = e.message ?: e.toString()
             // Rate limits and network hiccups are worth another go; a refusal isn't.
             val retryable = message.contains("429") || message.contains("HTTP 5") || message.contains("timeout", ignoreCase = true) ||

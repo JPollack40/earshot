@@ -541,7 +541,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         transcripts.requestTranscription(episodeId)
-        say("Transcribing with Gemini. This takes a few minutes; you can leave the app")
+        say("Transcribing with Deepgram. This takes about a minute; you can leave the app")
     }
 
     fun cancelTranscription(episodeId: String) = transcripts.cancelTranscription(episodeId)

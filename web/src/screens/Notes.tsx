@@ -255,7 +255,7 @@ export function TranscriptPage({ episodeId, focusMs, nav }: { episodeId: string;
         <div className="grow ellipsis-col">
           <h1 className="ellipsis">{info.title}</h1>
           <div className="meta ellipsis">
-            {[info.podcastTitle, t ? (t.source === "gemini" ? "Transcribed by Gemini" : "Transcript from the feed") : null].filter(Boolean).join(" · ")}
+            {[info.podcastTitle, t ? (t.source === "deepgram" ? "Transcribed by Deepgram" : t.source === "gemini" ? "Transcribed by Gemini" : "Transcript from the feed") : null].filter(Boolean).join(" · ")}
           </div>
         </div>
         {isLoaded && <BookmarkButton className="icon" iconOnly />}
@@ -263,7 +263,7 @@ export function TranscriptPage({ episodeId, focusMs, nav }: { episodeId: string;
           items={[
             { label: "Export bookmarks (.md)", onClick: run(() => exportEpisodeBookmarks(episodeId)) },
             { label: "Export transcript (.md)", onClick: run(() => exportTranscript(episodeId)), hidden: !t },
-            { label: t?.source === "gemini" ? "Transcribe again with Gemini" : "Transcribe with Gemini", onClick: () => e && void notes.transcribeWithGemini(e), hidden: !canTranscribe },
+            { label: t && t.source !== "feed" ? "Transcribe again with Deepgram" : "Transcribe with Deepgram", onClick: () => e && void notes.transcribeWithGemini(e), hidden: !canTranscribe },
             { label: "Play from the start", onClick: () => setMessage(playFrom(episodeId, 0)), hidden: !e },
           ]}
         />
@@ -283,7 +283,7 @@ export function TranscriptPage({ episodeId, focusMs, nav }: { episodeId: string;
         <div className="notice">
           <span className="g-spin" aria-hidden="true" />
           <span className="grow">
-            Transcribing with Gemini{transcribing.parts ? `: part ${Math.min(transcribing.part + 1, transcribing.parts)} of ${transcribing.parts}` : "…"}. Keep this page open; each 15-minute part takes a minute or two.
+            Transcribing with Deepgram{transcribing.parts > 1 ? `: part ${Math.min(transcribing.part + 1, transcribing.parts)} of ${transcribing.parts}` : "…"}. Keep this page open; it usually takes about a minute.
           </span>
           <button className="text" onClick={() => notes.cancelTranscription(episodeId)}>
             Cancel
@@ -313,9 +313,9 @@ export function TranscriptPage({ episodeId, focusMs, nav }: { episodeId: string;
               {e && transcribing?.kind !== "running" && (
                 <>
                   <button className="primary" onClick={() => void notes.transcribeWithGemini(e)}>
-                    Transcribe with Gemini
+                    Transcribe with Deepgram
                   </button>
-                  <p className="small">Uses your free Gemini API key. Google may use free-tier audio to improve its products.</p>
+                  <p className="small">Uses your free Deepgram credit (about a minute per episode).</p>
                 </>
               )}
               {!e && <p className="small">This episode isn't in your library any more, so it can't be transcribed.</p>}

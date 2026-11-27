@@ -137,7 +137,7 @@ function tidy(segments: Segment[]): Segment[] {
   return out;
 }
 
-/** Gemini labels speakers "spk_1", "spk_2": shown as "Speaker 1". Feed names are shown as they are. */
+/** Cloud transcripts label speakers "spk_1", "spk_2": shown as "Speaker 1". Feed names are shown as they are. */
 export function speakerName(sp: string): string {
   const m = /^spk_(\d+)$/.exec(sp);
   return m ? `Speaker ${m[1]}` : sp;
@@ -292,7 +292,7 @@ export function allBookmarksMd(groups: { episode: ExportEpisode; bookmarks: Expo
  */
 export function fullTranscriptMd(e: ExportEpisode, t: ExportTranscript, bookmarks: ExportBookmark[]): string {
   let out = header(e) + "## Transcript\n\n";
-  out += t.source === "gemini" ? "_Transcribed by Gemini._\n\n" : "_Transcript from the podcast's feed._\n\n";
+  out += t.source === "deepgram" ? "_Transcribed by Deepgram._\n\n" : t.source === "gemini" ? "_Transcribed by Gemini._\n\n" : "_Transcript from the podcast's feed._\n\n";
   const pending = [...bookmarks].sort((a, b) => a.position_ms - b.position_ms);
   let lastSpeaker: string | null = null;
   t.segments.forEach((s, i) => {
