@@ -146,7 +146,15 @@ fun SettingsScreen(vm: AppViewModel) {
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             ExpirySetting(vm.expireDays, vm::updateExpireDays)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            divider()
+
+            SectionHeader("About")
+            Text(
+                "Earshot ${com.earshot.app.BuildConfig.VERSION_NAME} (${com.earshot.app.BuildConfig.VERSION_CODE}, " +
+                    "${com.earshot.app.BuildConfig.BUILD_TYPE})",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
         }
     }
 }
