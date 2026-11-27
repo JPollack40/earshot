@@ -1,0 +1,44 @@
+/* Stats page (screens/Stats.tsx). Colours come from the theme variables, so Glow and Classic both work. */
+.stats { padding: 10px 0 90px; max-width: 760px; }
+.st-hero-actions { display: flex; align-items: center; gap: 2px; color: #fff; }
+.st-hero-actions .icon { color: #fff; }
+.st-ranges { margin: 0 14px 12px; flex-wrap: wrap; }
+.st-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 14px; }
+@media (min-width: 720px) { .st-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.st-tile { background: var(--surface2); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.st-value { font-size: 22px; font-weight: 600; font-family: var(--display, inherit); font-variant-numeric: tabular-nums; }
+.st-fact { margin: 8px 14px 0; }
+.st-section { padding: 0 14px; margin-top: 20px; }
+.st-section h2, .st-highlights h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; font-family: var(--display, inherit); }
+.st-sub { font-size: 12px; font-weight: 500; color: var(--muted); margin: 12px 0 2px; }
+.st-list { list-style: none; margin: 0; padding: 0; }
+.st-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 6px 0; min-width: 0; }
+button.st-row { border-radius: 8px; }
+button.st-row:hover { background: var(--surface2); }
+.st-row .grow { display: flex; flex-direction: column; min-width: 0; }
+.st-rank { width: 18px; flex: none; text-align: right; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.st-name { font-size: 14px; }
+.st-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.st-share { display: block; height: 4px; margin-top: 4px; border-radius: 2px; background: var(--surface2); overflow: hidden; }
+.st-share span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.st-bars { display: flex; align-items: flex-end; gap: 2px; height: 80px; }
+.st-bars span { flex: 1; min-width: 1px; background: var(--accent); border-radius: 2px 2px 0 0; }
+.st-bars span.zero { height: 2px; background: var(--line); border-radius: 0; }
+.st-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.st-axis4 span, .st-axis7 span { flex: 1; }
+.st-axis7 span { text-align: center; }
+.st-devices { display: flex; gap: 2px; height: 10px; }
+.st-devices span { border-radius: 3px; min-width: 3px; }
+.st-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: 13px; }
+.st-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 2px; }
+.st-dev-phone { background: var(--accent); }
+.st-dev-car { background: #9ec9ff; }
+:root[data-theme="glow"] .st-dev-car { background: #c6a3ff; }
+.st-dev-web { background: var(--muted); }
+.st-new { padding: 3px 0; font-size: 14px; }
+.st-highlights { margin: 0 14px 4px; padding: 14px; background: var(--surface2); border-radius: 12px; }
+.st-highlights h2 { color: var(--accent); }
+.st-highlights p { margin: 4px 0; font-size: 14px; line-height: 1.4; }
+.st-review { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 6px; margin: 0 -6px; border-radius: 8px; }
+.st-review:hover { background: var(--surface2); }
+.st-foot { padding: 0 14px; margin-top: 24px; }

@@ -93,6 +93,7 @@ const paths: Record<string, React.ReactNode> = {
   ),
   signOut: <path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" />,
   bookmark: <path d="M7 4h10v16l-5-4-5 4z" />,
+  stats: <path d="M5 20V12M10 20V6M15 20v-9M20 20V4" />,
   bookmarkOn: <path d="M7 4h10v16l-5-4-5 4z" fill="currentColor" />,
   transcript: <path d="M5 6h14M5 10h14M5 14h9M5 18h6" />,
   sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,

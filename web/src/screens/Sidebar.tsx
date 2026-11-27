@@ -66,6 +66,10 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
           <span>Bookmarks</span>
           <span className="count">{bookmarkCount || ""}</span>
         </button>
+        <button className={`nav-item ${page === "stats" || page === "statsReview" ? "on" : ""}`} aria-current={page === "stats" ? "page" : undefined} onClick={() => nav.open({ name: "stats" })}>
+          <Icon name="stats" />
+          <span>Stats</span>
+        </button>
       </nav>
       {pinned.length > 0 && (
         <>

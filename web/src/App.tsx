@@ -16,6 +16,8 @@ import { BookmarksPage, TranscriptPage, TranscriptSearchPage } from "./screens/N
 import { navHolder } from "./screens/common";
 import { PlaylistPage } from "./screens/Playlists";
 import { startListenLog } from "./listens";
+import { StatsPage, StatsReviewPage } from "./screens/Stats";
+import type { ReviewKind } from "./stats";
 
 export type Route =
   | { name: "library" }
@@ -24,7 +26,9 @@ export type Route =
   | { name: "transcript"; episodeId: string; focusMs?: number }
   | { name: "bookmarks" }
   | { name: "search" }
-  | { name: "playlist"; id: string };
+  | { name: "playlist"; id: string }
+  | { name: "stats" }
+  | { name: "statsReview"; kind: ReviewKind; from: number };
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -115,6 +119,8 @@ export function App() {
       {route.name === "bookmarks" && <BookmarksPage nav={nav} />}
       {route.name === "search" && <TranscriptSearchPage nav={nav} />}
       {route.name === "playlist" && <PlaylistPage key={route.id} id={route.id} nav={nav} />}
+      {route.name === "stats" && <StatsPage nav={nav} />}
+      {route.name === "statsReview" && <StatsReviewPage key={`${route.kind}-${route.from}`} nav={nav} kind={route.kind} from={route.from} />}
     </>
   );
 
