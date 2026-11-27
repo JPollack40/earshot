@@ -123,6 +123,9 @@ android {
             for (flavor in listOf("twoIcons", "lab")) {
                 getByName(flavor) {
                     java.srcDir("src/carapp/java")
+                    // AGP 9 built-in Kotlin only compiles .kt files from Kotlin source dirs; without this
+                    // the car service was silently left out of the APK (crash in the head unit).
+                    kotlin.srcDir("src/carapp/java")
                     res.srcDir("src/carapp/res")
                     manifest.srcFile("src/carapp/AndroidManifest.xml")
                 }
