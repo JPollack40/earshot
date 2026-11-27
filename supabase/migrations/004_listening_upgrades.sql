@@ -30,6 +30,8 @@ create table if not exists public.push_devices (
 alter table public.push_devices enable row level security;
 revoke all on table public.push_devices from anon, authenticated;
 grant select, insert, update, delete on table public.push_devices to authenticated;
+-- The new-episodes function reads and cleans up devices as the service role (newer projects don't grant it by default).
+grant select, insert, update, delete on table public.push_devices to service_role;
 drop policy if exists "own devices" on public.push_devices;
 create policy "own devices" on public.push_devices for all to authenticated
   using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
@@ -46,6 +48,7 @@ create table if not exists public.feed_checks (
 );
 alter table public.feed_checks enable row level security;
 revoke all on table public.feed_checks from anon, authenticated;
+grant select, insert, update, delete on table public.feed_checks to service_role;
 
 -- Every subscribed feed (any user) with its check state. Finished shows are left out by the function.
 create or replace function public.new_episodes_feeds()

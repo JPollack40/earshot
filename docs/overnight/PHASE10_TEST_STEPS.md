@@ -10,7 +10,7 @@ ad trim, badges) just stay on the device that set them.
 
 Test podcasts I suggest (subscribe, unsubscribe at the end if you like):
 - **Podcasting 2.0** (Adam Curry and Dave Jones): JSON chapters with artwork, hosts and guests, a funding link.
-- **The Changelog**: chapters embedded in the MP3 file (no chapters link in the feed).
+- **The Changelog: Software Development, Open Source** by **Changelog Media** (not the Screenly one): chapters embedded in the MP3 file.
 - **Serial**: season and episode numbers.
 
 ## 1. Phone: undo a jump
@@ -40,8 +40,8 @@ Test podcasts I suggest (subscribe, unsubscribe at the end if you like):
 ## 4. Phone: trim inserted ads
 
 Works for shows whose files are longer than the length the feed states, because ads are stitched on. I suggest **Morbid**.
-1. Morbid's page > **⋮ > Trim inserted ads** > **At the start** > OK. The page shows a note about the trim.
-2. Play a Morbid episode you haven't started, from the beginning. If the file is 10 seconds to 20 minutes longer than the feed says, playback jumps straight past the start. If nothing happens, the show's lengths match (no stitched ads), which is also a correct result: tell me which.
+1. Morbid's page > pull down to refresh first (episodes added before this build don't know the feed's length until then), then **⋮ > Trim inserted ads** > **At the start** > OK. The page shows a note about the trim.
+2. Play a Morbid episode you haven't started, from the beginning. If the file is 10 seconds to 20 minutes longer than the feed says, playback jumps straight past the start and a message says **Skipped m:ss of inserted ads at the start**. If the lengths match, a message says **no inserted ads found** with both lengths, which is also a correct result: tell me which.
 3. Set it back to **Off** (or keep it if it worked).
 
 ## 5. Phone: notifications for new episodes (only if you did Firebase, step C)
