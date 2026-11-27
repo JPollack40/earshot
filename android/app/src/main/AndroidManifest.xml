@@ -52,13 +52,10 @@
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
-        <!-- Android Auto: the accent colour (colorAccent in this theme) and the monochrome icon it
-             tints for the app's media cards. -->
+        <!-- Android Auto: the accent colour (colorAccent in this theme). No attribution icon:
+             Serena preferred the playing screen without it. -->
         <meta-data
             android:name="com.google.android.gms.car.application.theme"
             android:resource="@style/Theme.Earshot.Car" />
-        <meta-data
-            android:name="androidx.car.app.TintableAttributionIcon"
-            android:resource="@drawable/ic_notification" />
     </application>
 </manifest>
