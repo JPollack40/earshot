@@ -10,7 +10,7 @@ import { feedKey } from "./util";
 
 const RECENT_MS = 60 * 24 * 60 * 60 * 1000;
 
-interface State {
+export interface State {
   podcasts: Map<string, PodcastRow>; // by feed_url
   episodes: Map<string, EpisodeRow>; // by id
   defaults: PlaybackDefaults;
