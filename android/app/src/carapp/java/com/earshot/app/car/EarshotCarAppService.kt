@@ -8,12 +8,13 @@ import androidx.car.app.CarContext
 import androidx.car.app.Screen
 import androidx.car.app.Session
 import androidx.car.app.SessionInfo
+import androidx.car.app.annotations.ExperimentalCarApi
 import androidx.car.app.media.MediaPlaybackManager
+import androidx.car.app.media.model.MediaPlaybackTemplate
 import androidx.car.app.model.Action
 import androidx.car.app.model.Header
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
-import androidx.car.app.model.MediaPlaybackTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.Template
 import androidx.car.app.validation.HostValidator
@@ -102,7 +103,13 @@ class QueueScreen(carContext: CarContext) : Screen(carContext) {
         val header = Header.Builder()
             .setTitle("Queue")
             .setStartHeaderAction(Action.APP_ICON)
-            .addEndHeaderAction(Action.MEDIA_PLAYBACK)
+            // Action.MEDIA_PLAYBACK only exists from Car App Library 1.8; on 1.7 a plain action does the job.
+            .addEndHeaderAction(
+                Action.Builder()
+                    .setTitle("Now playing")
+                    .setOnClickListener { screenManager.push(PlaybackScreen(carContext)) }
+                    .build(),
+            )
             .build()
         val builder = ListTemplate.Builder().setHeader(header)
         if (items == null) return builder.setLoading(true).build()
@@ -130,6 +137,7 @@ class QueueScreen(carContext: CarContext) : Screen(carContext) {
 
 /** The playback screen: the host draws artwork, title, progress and controls from the media session. */
 class PlaybackScreen(carContext: CarContext) : Screen(carContext) {
+    @OptIn(ExperimentalCarApi::class)
     override fun onGetTemplate(): Template =
         MediaPlaybackTemplate.Builder()
             .setHeader(
