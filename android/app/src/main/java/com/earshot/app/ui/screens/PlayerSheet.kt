@@ -40,8 +40,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -115,7 +117,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         containerColor = if (glow) tint else BottomSheetDefaults.ContainerColor,
     ) {
         Column(
@@ -165,14 +167,16 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             val duration = now.durationMs.coerceAtLeast(1L).toFloat()
             Box(Modifier.fillMaxWidth()) {
+                // Phase 15: the SliderState overload (the value-based one is deprecated); same behaviour.
+                val sliderState = remember(duration) { SliderState(0f, 0, 0f..duration) }
+                sliderState.value = (dragPosition ?: now.positionMs.toFloat()).coerceIn(0f, duration)
                 Slider(
-                    value = (dragPosition ?: now.positionMs.toFloat()).coerceIn(0f, duration),
+                    state = sliderState,
                     onValueChange = { dragPosition = it },
                     onValueChangeFinished = {
                         dragPosition?.let { vm.player.seekTo(it.toLong()) }
                         dragPosition = null
                     },
-                    valueRange = 0f..duration,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 // Glow: a tick on the track at each chapter start.
