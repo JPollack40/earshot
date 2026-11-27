@@ -111,13 +111,17 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     }
 
     /**
-     * Removes the podcast, except episodes that are queued or loaded in the player ([keepId]):
-     * those stay (podcast hidden, no refreshes) until played or removed from the queue.
+     * Removes the podcast, except episodes that are queued, partly played (Continue listening) or
+     * loaded in the player ([keepId]): those stay (podcast hidden, no refreshes) until played or
+     * removed from the queue.
      */
     suspend fun unsubscribe(podcastId: Long, keepId: String?) = withContext(Dispatchers.IO) {
         queueLock.withLock {
             val keep = keepId.orEmpty()
             val dropping = episodes.unqueuedForPodcast(podcastId, keep)
+            // Already hidden with nothing to drop (a show kept for its queued or half-played episodes,
+            // checked again at every app start): nothing to do.
+            if (dropping.isEmpty() && podcasts.get(podcastId)?.subscribed == false) return@withLock
             for (e in dropping) {
                 if (e.downloadState != DownloadState.NONE) {
                     DownloadWorker.cancel(context, e.id)

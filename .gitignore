@@ -26,3 +26,6 @@ dist/
 
 # Firebase config (phase 10). Not secret, but kept out of the public repo.
 google-services.json
+
+# TypeScript build cache
+*.tsbuildinfo
