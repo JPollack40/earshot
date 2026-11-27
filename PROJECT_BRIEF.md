@@ -18,6 +18,10 @@ A personal podcast app for Serena, used only by her. Native Android app, a web p
 | UI | Compact and dense, dark by default (Castro-like rows, many episodes per screen) |
 | Dev setup | Android Studio for daily development, plus GitHub Actions later for signed release APKs |
 | Directory | Podcast Index through the Supabase edge function `podcast-search` (since phase 5), so the key and secret stay server-side. Apple's keyless iTunes Search API is the fallback when Podcast Index isn't configured or fails |
+| Web player hosting (phase 5b) | GitHub Pages, built and deployed by GitHub Actions from main (the repo is public, so it's free and needs no new account). Not VM-only: Serena wants it reachable from any computer. Vercel was the fallback option |
+| What syncs (phase 5b) | Everything that's Serena's: subscriptions (with pins and per-podcast settings), queue and order, New Episodes, played/archived state, play positions, app-wide playback settings. Downloads stay per device |
+| Web player scope (phase 5b) | Same as the phone minus downloads and Android Auto: Queue, New Episodes, Latest, Podcasts tabs; podcast pages with search and preview; add podcasts (search, feed URL, OPML); player with speed, skip lengths, sleep timer, chapters, Smart Speed and Voice Boost (Web Audio approximations) |
+| Sign-in (phase 5b) | Supabase email + password, one account (Serena's); new sign-ups switched off after it's created. Stay signed in on each device. Google sign-in maybe later (open issue) |
 | Phase 5 split (2026-11-26) | Serena chose to do phase 5 in two parts: **5a** = Podcast Index search + search within a podcast + preview without subscribing (done); **5b** = Supabase schema and auth, two-way sync, React web player (next, its own thread) |
 | Preview (phase 5a) | Tapping a search result opens the podcast without subscribing. Its episodes can be played, queued and downloaded; queued ones stay until played (like unsubscribing). Leaving the page removes everything else |
 | Inbox (phase 3) | Every newly released episode found by a refresh goes to the Inbox. Subscribing to one podcast adds only its newest episode; OPML imports add nothing |
@@ -118,6 +122,7 @@ Podcast Index API: version 1.12.1 of its OpenAPI spec (github.com/Podcastindex-o
 ## 8. Open issues and decisions
 
 - **Voice Boost: shelved as "assumed working"** (Serena, 2026-11-26). She couldn't find a suitable episode to judge it by ear, and no specific verified test episode has been found. The automated check on synthetic audio passes (section 7). If it ever seems too subtle in real use, raise `MAX_GAIN` / `TARGET_RMS` in `VoiceBoostProcessor.kt`.
+- **Sign in with Google** (Serena, 2026-11-26): worth adding later. Needs a Google Cloud OAuth client set up by hand.
 - **Test-step documents:** always include the exact Desktop Head Unit launch commands (start the head unit server on the phone, `adb forward tcp:5277 tcp:5277`, then run `desktop-head-unit.exe`, each in its own block). The first phase 5a steps left them out, and Serena had to copy them from phase 4.
 - The publishable key ships inside the APK, so anyone who extracted it could call `podcast-search` and use up the Podcast Index quota. That's low risk for a personal app. Once phase 5b adds sign-in, the function can require a signed-in user's token.
 - In-podcast search covers the episodes stored on the phone, which is everything in the feed. Some feeds only carry their latest N episodes, so older ones can't be found.
