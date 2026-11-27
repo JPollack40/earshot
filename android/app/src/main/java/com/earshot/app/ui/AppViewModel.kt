@@ -62,6 +62,8 @@ sealed interface Screen {
     data object TranscriptSearch : Screen
     /** A smart playlist's episodes (phase 7). */
     data class PlaylistDetail(val playlistId: String) : Screen
+    /** "Set up for your car" (phase 9): getting Earshot into Android Auto. */
+    data object CarSetup : Screen
 }
 
 /** Library tabs. Phase 7: Playlists added; the app opens on Podcasts. */
@@ -234,8 +236,98 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _messages.trySend(msg)
     }
 
+    // ---- Phase 9: updates and backup ----
+
+    /** A newer release on GitHub, shown as a banner until installed or dismissed. */
+    var update by mutableStateOf<com.earshot.app.data.UpdateInfo?>(null)
+        private set
+    var updateChecking by mutableStateOf(false)
+        private set
+
+    /** Checks GitHub for a newer release. [manual] = the Settings button (always says what it found). */
+    fun checkForUpdate(manual: Boolean) {
+        if (updateChecking) return
+        updateChecking = true
+        viewModelScope.launch {
+            try {
+                val u = com.earshot.app.data.Updates.check(app)
+                if (u == null) {
+                    if (manual) say("Earshot is up to date (${com.earshot.app.BuildConfig.VERSION_NAME})")
+                } else if (manual || com.earshot.app.data.Updates.dismissed(app) != u.version) {
+                    update = u
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Earshot", "Update check failed", e)
+                if (manual) {
+                    say(if (e.message?.contains("HTTP 404") == true) "No release has been published yet" else "Couldn't check for updates: ${e.message}")
+                }
+            } finally {
+                updateChecking = false
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        update?.let { com.earshot.app.data.Updates.dismiss(app, it.version) }
+        update = null
+    }
+
+    /** A backup chosen for restoring, checked and waiting for confirmation. */
+    var restoreCandidate by mutableStateOf<com.earshot.app.data.Backup.Info?>(null)
+        private set
+    var backupBusy by mutableStateOf(false)
+        private set
+
+    fun exportBackup(uri: Uri) {
+        backupBusy = true
+        viewModelScope.launch {
+            try {
+                val info = com.earshot.app.data.Backup.export(app, uri)
+                say("Backed up ${info.podcasts} podcasts and ${info.episodes} episodes")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                say("Backup failed: ${e.message}")
+            } finally {
+                backupBusy = false
+            }
+        }
+    }
+
+    fun inspectBackup(uri: Uri) {
+        backupBusy = true
+        viewModelScope.launch {
+            try {
+                restoreCandidate = com.earshot.app.data.Backup.inspect(app, uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                say(e.message ?: "Couldn't read that backup")
+            } finally {
+                backupBusy = false
+            }
+        }
+    }
+
+    fun cancelRestore() {
+        restoreCandidate = null
+    }
+
+    /** Replaces everything on this phone with the chosen backup and restarts the app. */
+    fun confirmRestore() {
+        restoreCandidate = null
+        try {
+            com.earshot.app.data.Backup.restoreAndRestart(app)
+        } catch (e: Exception) {
+            say("Restore failed: ${e.message}")
+        }
+    }
+
     init {
         player.connect()
+        if (com.earshot.app.data.Updates.due(app)) checkForUpdate(manual = false)
         // Previews left open when the app was last closed. Waits a moment so the player has loaded
         // its episode (which is kept), and skips any podcast page already open again.
         viewModelScope.launch {

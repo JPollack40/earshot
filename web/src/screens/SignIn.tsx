@@ -38,6 +38,9 @@ export function SignIn() {
       <button className="primary" disabled={busy || !email || !password}>
         {busy ? "Signing in…" : "Sign in"}
       </button>
+      <p className="muted small">
+        On Android? <a href="https://github.com/JPollack40/earshot/releases/latest" target="_blank" rel="noreferrer">Get the Earshot app</a> (open the .apk on your phone).
+      </p>
     </form>
   );
 }

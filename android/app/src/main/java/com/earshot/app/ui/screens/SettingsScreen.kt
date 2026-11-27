@@ -173,6 +173,8 @@ fun SettingsScreen(vm: AppViewModel) {
             ) { vm.updateAdSkip(it) }
             divider()
 
+            ShareSettings(vm, divider)
+
             SectionHeader("About")
             Text(
                 "Earshot ${com.earshot.app.BuildConfig.VERSION_NAME} (${com.earshot.app.BuildConfig.VERSION_CODE}, " +

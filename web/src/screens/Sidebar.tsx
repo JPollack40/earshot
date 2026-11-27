@@ -97,6 +97,9 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
           {s.syncing ? "Syncing…" : s.error ? <span className="error">Sync problem</span> : "Sync"}
         </button>
         <AppearanceMenu />
+        <a className="side-small" href={ANDROID_APP_URL} target="_blank" rel="noreferrer" title="Download the Android app (latest release on GitHub)">
+          ⬇ Get the Android app
+        </a>
         <button className="side-small" title="Sign out" onClick={signOut}>
           <Icon name="signOut" size={16} />
           Sign out
@@ -105,6 +108,9 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
     </aside>
   );
 }
+
+/** The latest release-signed APK (phase 9). Opening it on an Android phone downloads the newest Earshot. */
+export const ANDROID_APP_URL = "https://github.com/JPollack40/earshot/releases/latest";
 
 /** Glow at phone width: the five sections as a bottom tab bar, like the Android app. */
 export function BottomTabs({ tab, nav }: { tab: Tab | null; nav: Nav }) {

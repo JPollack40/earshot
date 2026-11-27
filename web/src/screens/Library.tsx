@@ -5,7 +5,7 @@ import * as store from "../store";
 import { formatDuration } from "../util";
 import { Art, EpisodeItem, type Nav } from "./common";
 import { Glyph, Icon } from "./Icons";
-import { AppearanceMenu, Hero, newCounts, signOut } from "./Sidebar";
+import { ANDROID_APP_URL, AppearanceMenu, Hero, newCounts, signOut } from "./Sidebar";
 import { PlaylistsTab, TidyPanel, tidyLabel } from "./Playlists";
 
 export type Tab = "queue" | "new" | "latest" | "playlists" | "podcasts";
@@ -73,6 +73,9 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
           <Icon name="plus" />
         </button>
         <AppearanceMenu />
+        <a className="icon" href={ANDROID_APP_URL} target="_blank" rel="noreferrer" title="Get the Android app">
+          ⬇
+        </a>
         <button className="icon" title="Sign out" onClick={signOut}>
           <Icon name="signOut" />
         </button>
@@ -101,6 +104,9 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
           ＋
         </button>
         <AppearanceMenu />
+        <a className="text" href={ANDROID_APP_URL} target="_blank" rel="noreferrer" title="Download the Android app (latest release on GitHub)">
+          Android app
+        </a>
         <button className="text" title="Sign out" onClick={signOut}>
           Sign out
         </button>

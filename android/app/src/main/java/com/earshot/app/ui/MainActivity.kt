@@ -165,9 +165,11 @@ fun EarshotRoot(vm: AppViewModel) {
                     Screen.Bookmarks -> BookmarksScreen(vm)
                     Screen.TranscriptSearch -> TranscriptSearchScreen(vm)
                     is Screen.PlaylistDetail -> PlaylistScreen(vm, screen.playlistId)
+                    Screen.CarSetup -> com.earshot.app.ui.screens.CarSetupScreen(vm)
                 }
             }
             ImportBanner(vm)
+            com.earshot.app.ui.screens.UpdateBanner(vm)
         }
     }
 
