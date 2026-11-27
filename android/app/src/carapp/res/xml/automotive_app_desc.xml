@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Phase 12 scaffold: the media service (as today) plus a templated car app. -->
-<automotiveApp>
-    <uses name="media" />
-    <uses name="template" />
-</automotiveApp>

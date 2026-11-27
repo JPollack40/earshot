@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Phase 12 scaffold: the separate "Earshot Lab" app installed beside Earshot. -->
-    <string name="app_name">Earshot Lab</string>
-</resources>
