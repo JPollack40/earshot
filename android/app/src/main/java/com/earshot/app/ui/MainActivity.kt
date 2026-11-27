@@ -38,7 +38,11 @@ import com.earshot.app.ui.screens.LibraryScreen
 import com.earshot.app.ui.screens.MiniPlayer
 import com.earshot.app.ui.screens.PlayerSheet
 import com.earshot.app.ui.screens.PodcastScreen
+import com.earshot.app.data.Settings
+import com.earshot.app.ui.screens.GlowMiniPlayer
+import com.earshot.app.ui.screens.GlowNavBar
 import com.earshot.app.ui.theme.EarshotTheme
+import com.earshot.app.ui.theme.LocalGlow
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
@@ -47,7 +51,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            EarshotTheme {
+            val theme by vm.appTheme.collectAsStateWithLifecycle()
+            EarshotTheme(glow = theme == Settings.THEME_GLOW) {
                 EarshotRoot(vm)
             }
         }
@@ -78,7 +83,31 @@ fun EarshotRoot(vm: AppViewModel) {
         contentWindowInsets = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (now.episodeId != null) {
+            if (LocalGlow.current) {
+                // Glow: floating mini player above a bottom bar with the four library sections.
+                val prefs by vm.currentPrefs.collectAsStateWithLifecycle()
+                val queue by vm.queue.collectAsStateWithLifecycle()
+                val inbox by vm.inbox.collectAsStateWithLifecycle()
+                Column {
+                    if (now.episodeId != null) {
+                        GlowMiniPlayer(
+                            now = now,
+                            skipBackMs = prefs.skipBackMs,
+                            skipForwardMs = prefs.skipForwardMs,
+                            onOpen = { vm.showPlayer = true },
+                            onTogglePlay = vm.player::togglePlay,
+                            onSkipBack = vm::skipBack,
+                            onSkipForward = vm::skipForward,
+                        )
+                    }
+                    GlowNavBar(
+                        selected = if (vm.backStack.last() == Screen.Library) vm.libraryTab else -1,
+                        queueCount = queue.size,
+                        newCount = inbox.size,
+                        onSelect = vm::showTab,
+                    )
+                }
+            } else if (now.episodeId != null) {
                 MiniPlayer(
                     now = now,
                     onOpen = { vm.showPlayer = true },

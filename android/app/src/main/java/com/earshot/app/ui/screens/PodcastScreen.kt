@@ -2,6 +2,14 @@
 
 package com.earshot.app.ui.screens
 
+import com.earshot.app.ui.theme.LocalGlow
+import com.earshot.app.ui.theme.rememberArtColor
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -221,20 +229,53 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                     }
                 } else if (p != null) {
                     item(key = "header") {
-                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Artwork(p.imageUrl, 72, corner = 8)
+                        val glow = LocalGlow.current
+                        val tint = rememberArtColor(p.imageUrl, p.feedUrl)
+                        val bg = MaterialTheme.colorScheme.background
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                // Glow: the header fades from the artwork colour, with larger artwork and title.
+                                .then(if (glow) Modifier.background(Brush.verticalGradient(0f to tint, 0.75f to tint.copy(alpha = 0.35f).compositeOver(bg), 1f to bg)) else Modifier)
+                                .padding(if (glow) 16.dp else 12.dp),
+                        ) {
+                            Row(verticalAlignment = if (glow) Alignment.Bottom else Alignment.CenterVertically) {
+                                Artwork(p.imageUrl, if (glow) 104 else 72, corner = if (glow) 10 else 8)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(p.title, style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        p.title,
+                                        style = if (glow) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                                        color = if (glow) Color.White else Color.Unspecified,
+                                    )
                                     if (p.author.isNotBlank()) {
-                                        Text(p.author, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            p.author,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (glow) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                     }
                                     Text(
                                         "${episodes.size} episodes",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (glow) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                }
+                            }
+                            if (glow && !previewing) {
+                                // Pin and playback settings as visible buttons (they're also in the menu).
+                                Spacer(Modifier.height(10.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilledTonalButton(onClick = { vm.setPinned(podcastId, !p.pinned) }) {
+                                        Icon(if (p.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(if (p.pinned) "Pinned" else "Pin to top")
+                                    }
+                                    FilledTonalButton(onClick = { showPlayback = true }) {
+                                        Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Playback")
+                                    }
                                 }
                             }
                             if (previewing) {

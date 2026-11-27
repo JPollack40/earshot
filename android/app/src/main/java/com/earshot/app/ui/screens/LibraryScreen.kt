@@ -40,10 +40,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +52,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.data.db.PodcastWithCount
 import com.earshot.app.ui.AppViewModel
 import com.earshot.app.ui.Screen
+import com.earshot.app.ui.formatDuration
+import com.earshot.app.ui.theme.LocalGlow
+import com.earshot.app.ui.theme.rememberArtColor
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun LibraryScreen(vm: AppViewModel) {
@@ -61,7 +65,66 @@ fun LibraryScreen(vm: AppViewModel) {
     val latest by vm.latest.collectAsStateWithLifecycle()
     val inbox by vm.inbox.collectAsStateWithLifecycle()
     val queue by vm.queue.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val tab = vm.libraryTab
+    val glow = LocalGlow.current
+    val now by vm.nowPlaying.collectAsStateWithLifecycle()
+
+    val content: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier.fillMaxSize()) {
+            if (!glow) {
+                PrimaryTabRow(selectedTabIndex = tab) {
+                    Tab(selected = tab == 0, onClick = { vm.libraryTab = 0 }, text = { TabLabel("Queue", queue.size) })
+                    Tab(selected = tab == 1, onClick = { vm.libraryTab = 1 }, text = { TabLabel("New Episodes", inbox.size) })
+                    Tab(selected = tab == 2, onClick = { vm.libraryTab = 2 }, text = { TabLabel("Latest", 0) })
+                    Tab(selected = tab == 3, onClick = { vm.libraryTab = 3 }, text = { TabLabel("Podcasts", library.size) })
+                }
+            }
+            when {
+                tab == 0 -> QueueList(vm, Modifier.fillMaxSize())
+                tab == 1 -> InboxList(vm, Modifier.fillMaxSize())
+                library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) })
+                tab == 2 -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
+                else -> PodcastList(vm, library)
+            }
+        }
+    }
+
+    if (glow) {
+        // Glow: a header tinted from what's playing, the section title in large type, tabs in the bottom bar.
+        val tint = rememberArtColor(now.artworkUrl, now.podcastTitle.ifEmpty { "earshot" })
+        val queueLeftMs = queue.sumOf { (it.episode.durationMs - it.episode.positionMs).coerceAtLeast(0) }
+        val pinned = library.count { it.podcast.pinned }
+        Column(Modifier.fillMaxSize()) {
+            GlowHero(
+                tint = tint,
+                eyebrow = null,
+                title = listOf("Queue", "New Episodes", "Latest", "Podcasts")[tab.coerceIn(0, 3)],
+                summary = when (tab) {
+                    0 -> if (queue.isEmpty()) "Nothing queued" else "${queue.size} episode${if (queue.size == 1) "" else "s"}" +
+                        (if (queueLeftMs > 0) " · about ${formatDuration(queueLeftMs)} left" else "")
+                    1 -> if (inbox.isEmpty()) "All caught up" else "${inbox.size} new"
+                    2 -> "Newest episodes across your podcasts"
+                    else -> "${library.size} podcast${if (library.size == 1) "" else "s"}" + (if (pinned > 0) " · $pinned pinned" else "")
+                },
+                top = {
+                    Text("Earshot", style = MaterialTheme.typography.titleMedium, color = Color.White, modifier = Modifier.weight(1f))
+                },
+                actions = {
+                    CompositionLocalProvider(LocalContentColor provides Color.White) {
+                        RefreshAction(vm.refreshing) { vm.refreshAll() }
+                        IconButton(onClick = { vm.navigate(Screen.Add) }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add podcast")
+                        }
+                        IconButton(onClick = { vm.navigate(Screen.Settings) }) {
+                            Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                        }
+                    }
+                },
+            )
+            content(Modifier.weight(1f))
+        }
+        return
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -80,21 +143,7 @@ fun LibraryScreen(vm: AppViewModel) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            PrimaryTabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { TabLabel("Queue", queue.size) })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { TabLabel("New Episodes", inbox.size) })
-                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { TabLabel("Latest", 0) })
-                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { TabLabel("Podcasts", library.size) })
-            }
-            when {
-                tab == 0 -> QueueList(vm, Modifier.fillMaxSize())
-                tab == 1 -> InboxList(vm, Modifier.fillMaxSize())
-                library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) })
-                tab == 2 -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
-                else -> PodcastList(vm, library)
-            }
-        }
+        content(Modifier.padding(padding))
     }
 }
 
