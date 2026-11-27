@@ -40,7 +40,10 @@ One repo for the whole project:
 - **Look before subscribing** (phase 5a): tap a search result to open its page, then play, queue or download episodes without subscribing. Queued ones stay until played.
 - **Search inside a podcast** (phase 5a): the magnifying glass on a podcast page searches its episode titles and show notes. Every word must match, and `"quoted phrases"` must match exactly.
 
-Not in this build yet: sync and the web player (phase 5b), transcripts (phase 6).
+- **Sync and web player** (phase 5b): sign in under Settings > Sync; subscriptions, pins, queue, New Episodes, played state, positions and playback settings sync with the web player at https://jpollack40.github.io/earshot/.
+- **Pinned podcasts and "New Episodes"** (phase 5b): pin icon on the Podcasts tab; the Inbox is now called New Episodes.
+
+Not in this build yet: transcripts (phase 6).
 
 
 ---
