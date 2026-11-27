@@ -469,6 +469,7 @@ class PlaybackService : MediaLibraryService() {
             player.playbackState == Player.STATE_READY
         ) AdSkip.current(ads, player.currentPosition) else null
         if (ad != adNow) {
+            Log.i(TAG, "Skip ad button ${if (ad != null) "on (${ad.startMs}-${ad.endMs} ms)" else "off"} at ${player.currentPosition} ms")
             adNow = ad
             refreshButtons()
         }

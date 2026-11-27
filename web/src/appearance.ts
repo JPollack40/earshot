@@ -11,7 +11,7 @@ export interface Appearance {
   theme: Theme;
   density: Density;
   podcastView: PodcastView;
-  nowPanel: boolean; // the Now Playing panel (Glow only); closed until opened, then remembered
+  nowPanel: boolean; // the Now Playing panel (Glow only); opens on each visit on wide screens, closing lasts the visit
 }
 
 const KEY = "earshot.appearance";
@@ -27,7 +27,17 @@ function read(): Appearance {
   return DEFAULTS;
 }
 
-let state = read();
+// The Now Playing panel starts open on every visit where it has its own column (wider than 1100 px).
+// At narrower widths it floats over the page, so there it starts closed. Closing it lasts for the visit.
+function wide(): boolean {
+  try {
+    return window.matchMedia("(min-width: 1101px)").matches;
+  } catch {
+    return true;
+  }
+}
+
+let state: Appearance = { ...read(), nowPanel: wide() };
 const listeners = new Set<() => void>();
 
 function apply() {
