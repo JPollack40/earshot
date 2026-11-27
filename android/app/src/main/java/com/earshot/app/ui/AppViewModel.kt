@@ -676,6 +676,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (enabled) app.cleanupDownloads("setting changed")
     }
 
+    /** Phase 14b: Settings > Downloads > Download over: Wi-Fi only (true) or any network (false). */
+    var downloadWifiOnly by mutableStateOf(Settings.downloadWifiOnly(app))
+        private set
+
+    fun updateDownloadWifiOnly(wifiOnly: Boolean) {
+        if (wifiOnly == downloadWifiOnly) return
+        Settings.setDownloadWifiOnly(app, wifiOnly)
+        downloadWifiOnly = wifiOnly
+        viewModelScope.launch { repo.applyDownloadNetworkSetting() }
+    }
+
+    /** Phase 14b: bytes of streamed audio kept for rewinds and resume, for Settings. */
+    suspend fun streamCacheBytes(): Long = repo.streamCacheBytes()
+
     /** Phase 14: downloaded episode count and bytes, for Settings. */
     suspend fun downloadsUsage(): Pair<Int, Long> = repo.downloadsUsage()
 

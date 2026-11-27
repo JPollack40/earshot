@@ -732,6 +732,19 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         episodes.completedDownloads().size to bytes
     }
 
+    /** Phase 14b: space taken by streamed audio kept for rewinds and resume, in bytes. */
+    suspend fun streamCacheBytes(): Long = withContext(Dispatchers.IO) {
+        com.earshot.app.playback.StreamCache.sizeBytes(context)
+    }
+
+    /** Phase 14b: waiting downloads take the new Download over setting. */
+    suspend fun applyDownloadNetworkSetting() = withContext(Dispatchers.IO) {
+        val waiting = episodes.anyDownloads()
+            .filter { it.downloadState == DownloadState.QUEUED || it.downloadState == DownloadState.DOWNLOADING }
+            .map { it.id }
+        DownloadWorker.applyNetworkSetting(context, waiting)
+    }
+
     /**
      * Phase 14: Settings > Downloads > Delete all downloads. Stops waiting and running downloads, deletes
      * every downloaded file (and anything else in the downloads folder) and marks the episodes not
@@ -748,6 +761,8 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             }
             val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "episodes")
             dir.listFiles()?.forEach { if (it.isFile && it.delete()) n++ }
+            // Phase 14b: streamed audio kept for rewinds and resume goes too.
+            runCatching { com.earshot.app.playback.StreamCache.clear(context) }
             Log.i(TAG, "Deleted all downloads ($n files)")
             n
         }

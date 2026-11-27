@@ -20,6 +20,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaConstants
@@ -103,7 +104,10 @@ class PlaybackService : MediaLibraryService() {
                 .setAudioProcessorChain(audio)
                 .build()
         }
+        // Phase 14b: about 10 minutes buffered ahead when streaming, and a disk cache of streamed audio.
         player = ExoPlayer.Builder(this, renderers)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(StreamCache.dataSourceFactory(this)))
+            .setLoadControl(StreamCache.loadControl())
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -116,6 +120,7 @@ class PlaybackService : MediaLibraryService() {
             .build()
         player.setPauseAtEndOfMediaItems(true)
         player.addListener(listener)
+        app.appScope.launch(Dispatchers.IO) { runCatching { StreamCache.dropStale(applicationContext) } }
         listening.finishOrphans()
         skipPlayer = SkipLengthPlayer(player)
         skipPlayer.onJump = ::jumpTo
@@ -1014,6 +1019,7 @@ class PlaybackService : MediaLibraryService() {
             return Futures.immediateFailedFuture(IllegalStateException("No episode loaded for that chapter"))
         }
         val items = (0 until count).map { player.getMediaItemAt(it) }
+        skipPlayer.keepLoadedOnce = true // phase 14b: seek instead of reloading the episode
         return Futures.immediateFuture(MediaItemsWithStartPosition(items, player.currentMediaItemIndex, startMs))
     }
 
@@ -1030,6 +1036,7 @@ class PlaybackService : MediaLibraryService() {
         val count = player.mediaItemCount
         if (count > 0 && player.playbackState != Player.STATE_ENDED) {
             val items = (0 until count).map { player.getMediaItemAt(it) }
+            skipPlayer.keepLoadedOnce = true // phase 14b: carry on without reloading (no pause)
             return Futures.immediateFuture(MediaItemsWithStartPosition(items, player.currentMediaItemIndex, player.currentPosition))
         }
         return future {

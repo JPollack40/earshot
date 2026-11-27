@@ -3,6 +3,7 @@ package com.earshot.app.playback
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
@@ -30,6 +31,28 @@ class SkipLengthPlayer(player: Player) : ForwardingPlayer(player) {
     override fun seekToNextMediaItem() = seekForward()
     override fun seekToPrevious() = seekBack()
     override fun seekToPreviousMediaItem() = seekBack()
+
+    /**
+     * Phase 14b: set just before the service hands back what is already loaded (a speed or chapter
+     * picked from a list in the car). The next [setMediaItems] with the same episodes then only seeks
+     * (or does nothing for a speed), instead of reloading the episode, which paused playback while it
+     * buffered again. Used once.
+     */
+    @Volatile var keepLoadedOnce = false
+
+    override fun setMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
+        if (keepLoadedOnce) {
+            keepLoadedOnce = false
+            val state = playbackState
+            val same = mediaItems.size == mediaItemCount &&
+                mediaItems.indices.all { mediaItems[it].mediaId == getMediaItemAt(it).mediaId }
+            if (same && startIndex == currentMediaItemIndex && state != Player.STATE_IDLE && state != Player.STATE_ENDED) {
+                if (kotlin.math.abs(startPositionMs - currentPosition) > 1_000) super.seekTo(startIndex, startPositionMs)
+                return
+            }
+        }
+        super.setMediaItems(mediaItems, startIndex, startPositionMs)
+    }
 
     override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
         val jump = onJump

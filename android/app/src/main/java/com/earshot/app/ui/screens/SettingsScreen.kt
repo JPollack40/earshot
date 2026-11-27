@@ -138,6 +138,18 @@ fun SettingsScreen(vm: AppViewModel) {
             divider()
 
             SectionHeader("Downloads")
+            ChoiceRow(
+                "Download over",
+                if (vm.downloadWifiOnly) {
+                    "Downloads wait for Wi-Fi. Streaming still works on any network."
+                } else {
+                    "Downloads use Wi-Fi or mobile data."
+                },
+                vm.downloadWifiOnly,
+                listOf(false, true),
+                { if (it) "Wi-Fi only" else "Any network" },
+            ) { vm.updateDownloadWifiOnly(it) }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             SettingRow(
                 title = "Download queued episodes",
                 subtitle = "Starts a download whenever an episode is added to the queue.",
@@ -157,6 +169,10 @@ fun SettingsScreen(vm: AppViewModel) {
             ExpirySetting(vm.expireDays, vm::updateExpireDays)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             DeleteAllDownloads(vm)
+            divider()
+
+            SectionHeader("Background")
+            KeepRunningRow()
             divider()
 
             SectionHeader("Notifications")
@@ -201,12 +217,69 @@ fun SettingsScreen(vm: AppViewModel) {
     }
 }
 
+/**
+ * Phase 14b: "Keep Earshot running". Shows whether Android's battery optimisation can put Earshot to
+ * sleep (which can stop downloads, the AI sweep and transcription in the background) and opens the
+ * system prompt to allow it. Nothing asks at app start (Serena). Rechecked each time Settings shows.
+ */
+@Composable
+private fun KeepRunningRow() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var exempt by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        exempt = isIgnoringBatteryOptimizations(context)
+        onPauseOrDispose {}
+    }
+    SettingRow(
+        title = "Keep Earshot running",
+        subtitle = if (exempt) {
+            "On. Android's battery saving won't put Earshot to sleep. Tap to see the setting."
+        } else {
+            "Android's battery saving can put Earshot to sleep, which stops downloads, the AI sweep and " +
+                "transcripts in the background. Tap to allow Earshot to run."
+        },
+        onClick = { openBatterySettings(context, exempt) },
+    ) {
+        Text(
+            if (exempt) "On" else "Allow",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (exempt) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+private fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean {
+    val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager ?: return false
+    return pm.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+/**
+ * Not exempt: Android's own "Let app always run in background?" prompt. Already exempt (or the
+ * prompt isn't available): the app's info page, where Battery shows Unrestricted and can be changed.
+ */
+private fun openBatterySettings(context: android.content.Context, exempt: Boolean) {
+    val pkg = android.net.Uri.parse("package:${context.packageName}")
+    val tries = buildList {
+        if (!exempt) add(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg))
+        add(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
+        add(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }
+    for (intent in tries) {
+        val started = runCatching { context.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
+        if (started) return
+    }
+}
+
 /** Phase 14: deletes every downloaded episode at once, after a confirmation. */
 @Composable
 private fun DeleteAllDownloads(vm: AppViewModel) {
     var refresh by remember { mutableStateOf(0) }
     var usage by remember { mutableStateOf<Pair<Int, Long>?>(null) }
-    androidx.compose.runtime.LaunchedEffect(refresh) { usage = vm.downloadsUsage() }
+    var cacheBytes by remember { mutableStateOf(0L) }
+    androidx.compose.runtime.LaunchedEffect(refresh) {
+        usage = vm.downloadsUsage()
+        cacheBytes = vm.streamCacheBytes()
+    }
     var confirm by remember { mutableStateOf(false) }
     val (count, bytes) = usage ?: (0 to 0L)
     SettingRow(
@@ -215,7 +288,7 @@ private fun DeleteAllDownloads(vm: AppViewModel) {
             usage == null -> "Frees the space downloaded episodes take."
             count == 0 && bytes == 0L -> "No downloads right now."
             else -> "$count ${if (count == 1) "episode" else "episodes"}, ${formatBytes(bytes)}. Your queue and progress stay."
-        },
+        } + if (cacheBytes >= 1_000_000L) " Also clears ${formatBytes(cacheBytes)} of streamed audio kept for rewinds." else "",
         onClick = { confirm = true },
     ) {}
     if (confirm) {
@@ -225,6 +298,7 @@ private fun DeleteAllDownloads(vm: AppViewModel) {
             text = {
                 Text(
                     "Deletes every downloaded episode file" + (if (count > 0) " ($count, ${formatBytes(bytes)})" else "") +
+                        ", and the streamed audio kept for rewinds and resume" +
                         ". Episodes stay in your library and queue, and stream or download again when played.",
                 )
             },

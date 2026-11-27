@@ -163,6 +163,8 @@ dependencies {
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
+    implementation(libs.media3.datasource) // phase 14b: stream cache
+    implementation(libs.media3.database)
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

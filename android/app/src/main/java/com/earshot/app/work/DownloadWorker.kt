@@ -14,7 +14,9 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import androidx.work.OneTimeWorkRequest
 import com.earshot.app.EarshotApp
+import com.earshot.app.data.Settings
 import com.earshot.app.data.db.DownloadState
 import com.earshot.app.data.db.Episode
 import com.earshot.app.data.db.EpisodeDao
@@ -24,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
@@ -140,15 +143,38 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         private fun workName(id: String) = "download-$id"
 
-        fun enqueue(context: Context, episodeId: String) {
-            val request = OneTimeWorkRequestBuilder<DownloadWorker>()
+        /** Phase 14b: Settings > Downloads > Download over: Wi-Fi only (unmetered) or any network. */
+        private fun constraints(context: Context): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(if (Settings.downloadWifiOnly(context)) NetworkType.UNMETERED else NetworkType.CONNECTED)
+            .build()
+
+        private fun request(context: Context, episodeId: String, workId: UUID? = null): OneTimeWorkRequest =
+            OneTimeWorkRequestBuilder<DownloadWorker>()
+                .apply { if (workId != null) setId(workId) }
                 .setInputData(workDataOf(KEY_ID to episodeId))
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(constraints(context))
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .addTag("download")
                 .build()
+
+        fun enqueue(context: Context, episodeId: String) {
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(workName(episodeId), ExistingWorkPolicy.KEEP, request)
+                .enqueueUniqueWork(workName(episodeId), ExistingWorkPolicy.KEEP, request(context, episodeId))
+        }
+
+        /**
+         * Phase 14b: after the Download over setting changes, waiting downloads take the new network
+         * rule. A download already running finishes (WorkManager applies the change to its next run).
+         */
+        fun applyNetworkSetting(context: Context, episodeIds: List<String>) {
+            val wm = WorkManager.getInstance(context)
+            for (id in episodeIds) {
+                val infos = runCatching { wm.getWorkInfosForUniqueWork(workName(id)).get() }.getOrNull() ?: continue
+                for (info in infos) {
+                    if (info.state.isFinished) continue
+                    runCatching { wm.updateWork(request(context, id, info.id)).get() }
+                }
+            }
         }
 
         fun cancel(context: Context, episodeId: String) {

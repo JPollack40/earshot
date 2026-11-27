@@ -273,6 +273,16 @@ object Settings {
         prefs(context).edit().putInt("expire_days", days).apply()
     }
 
+    /**
+     * Phase 14b: download only over Wi-Fi (an unmetered network). Off by default: any network.
+     * Streaming is never limited. This phone only, kept in backups with the other settings.
+     */
+    fun downloadWifiOnly(context: Context): Boolean = prefs(context).getBoolean("download_wifi_only", false)
+
+    fun setDownloadWifiOnly(context: Context, wifiOnly: Boolean) {
+        prefs(context).edit().putBoolean("download_wifi_only", wifiOnly).apply()
+    }
+
     /** Download an episode as soon as it's added to the queue. */
     fun autoDownloadQueued(context: Context): Boolean = prefs(context).getBoolean("auto_download_queued", true)
 
