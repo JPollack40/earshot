@@ -28,6 +28,9 @@ interface PodcastDao {
     @Query("SELECT * FROM podcasts WHERE id = :id")
     suspend fun get(id: Long): Podcast?
 
+    @Query("SELECT * FROM podcasts")
+    suspend fun getAllIncludingHidden(): List<Podcast>
+
     @Query("SELECT * FROM podcasts WHERE feedUrl = :feedUrl LIMIT 1")
     suspend fun findByFeedUrl(feedUrl: String): Podcast?
 

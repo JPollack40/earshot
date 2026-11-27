@@ -59,7 +59,7 @@ import com.earshot.app.ui.AppViewModel
 fun AddScreen(vm: AppViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     val library by vm.library.collectAsStateWithLifecycle()
-    val subscribedUrls = library.map { it.podcast.feedUrl }.toSet()
+    val subscribedUrls = library.map { Repository.feedKey(it.podcast.feedUrl) }.toSet()
     val focus = LocalFocusManager.current
     val looksLikeUrl = query.trim().let { it.contains("://") || (it.contains('.') && !it.contains(' ')) }
 
@@ -135,7 +135,7 @@ fun AddScreen(vm: AppViewModel) {
             }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(vm.searchResults, key = { it.feedUrl }) { r ->
-                    val normalized = Repository.normalizeUrl(r.feedUrl)
+                    val normalized = Repository.feedKey(r.feedUrl)
                     val subscribed = normalized in subscribedUrls
                     Row(
                         Modifier

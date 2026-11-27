@@ -60,7 +60,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
      */
     suspend fun subscribe(rawUrl: String, inboxNewest: Boolean = true): Podcast = withContext(Dispatchers.IO) {
         val url = normalizeUrl(rawUrl)
-        podcasts.findByFeedUrl(url)?.let { existing ->
+        findPodcast(url)?.let { existing ->
             if (existing.subscribed) return@withContext existing
             // Was unsubscribed but kept for its queued episodes, or is being previewed: bring it back.
             podcasts.setSubscribed(existing.id, true)
@@ -134,7 +134,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     suspend fun preview(rawUrl: String): Podcast = withContext(Dispatchers.IO) {
         previewLock.withLock {
             val url = normalizeUrl(rawUrl)
-            val existing = podcasts.findByFeedUrl(url)
+            val existing = findPodcast(url)
             if (existing != null) {
                 if (!existing.subscribed) {
                     runCatching { refresh(existing, InboxMode.NONE) }
@@ -547,6 +547,24 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             if (!u.contains("://")) u = "https://$u"
             return u
         }
+
+        /**
+         * For deciding whether two feed addresses are the same feed. Directories often list a feed a
+         * little differently from how it was first added (http vs https, "www.", letter case, a
+         * trailing slash), e.g. Behind the Bastards is "www.omnycontent.com/.../D64F..." in one and
+         * "omnycontent.com/.../d64f..." in another.
+         */
+        fun feedKey(raw: String): String = normalizeUrl(raw).lowercase()
+            .substringAfter("://")
+            .removePrefix("www.")
+            .trimEnd('/')
+    }
+
+    /** The podcast with this feed (including hidden and previewed ones), matched by [feedKey]. */
+    private suspend fun findPodcast(url: String): Podcast? {
+        podcasts.findByFeedUrl(url)?.let { return it }
+        val key = feedKey(url)
+        return podcasts.getAllIncludingHidden().firstOrNull { feedKey(it.feedUrl) == key }
     }
 }
 
