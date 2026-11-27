@@ -4,6 +4,7 @@ import { fetchFeed } from "../feed";
 import * as store from "../store";
 import { normalizeUrl } from "../util";
 import { Art, type Nav } from "./common";
+import { Glyph } from "./Icons";
 
 interface Result {
   title: string;
@@ -63,7 +64,7 @@ export function AddPage({ nav }: { nav: Nav }) {
     <>
       <header className="bar">
         <button className="icon" title="Back" onClick={nav.back}>
-          ←
+          <Glyph name="arrowLeft" text="←" />
         </button>
         <h1>Add podcast</h1>
       </header>
@@ -85,7 +86,7 @@ export function AddPage({ nav }: { nav: Nav }) {
       </form>
       {message && <div className="pad muted small">{message}</div>}
       {results.length > 0 && <div className="subbar muted small">From Podcast Index. Click a podcast to look before subscribing.</div>}
-      <section>
+      <section className="list">
         {results.map((r) => {
           const sub = store.findPodcast(r.feedUrl, s)?.subscribed;
           return (

@@ -3,7 +3,9 @@ import { fetchFeed, type ParsedFeed } from "../feed";
 import * as store from "../store";
 import { SKIPS_MS, SPEEDS } from "../types";
 import { plainText, safeHtml, searchTerms, skipName, snippet, speedName } from "../util";
+import { useArtColor } from "../appearance";
 import { Art, EpisodeItem, type Nav } from "./common";
+import { Glyph } from "./Icons";
 
 export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   const s = store.useStore();
@@ -40,12 +42,13 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   const subscribed = !!podcast?.subscribed;
   const title = feed?.title || podcast?.title || url;
   const image = feed?.imageUrl ?? podcast?.image_url;
+  const tint = useArtColor(image, url);
 
   return (
     <>
       <header className="bar">
         <button className="icon" title="Back" onClick={nav.back}>
-          ←
+          <Glyph name="arrowLeft" text="←" />
         </button>
         {searchOpen ? (
           <input
@@ -61,11 +64,11 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
         )}
         <span className="spacer" />
         <button className="icon" title={searchOpen ? "Close search" : "Search this podcast"} onClick={() => (setSearchOpen(!searchOpen), setQuery(""))}>
-          {searchOpen ? "✕" : "🔍"}
+          {searchOpen ? <Glyph name="close" text="✕" /> : <Glyph name="search" text="🔍" />}
         </button>
         {subscribed && (
           <button className="icon" title="Playback settings" onClick={() => setShowSettings(!showSettings)}>
-            ⚙
+            <Glyph name="sliders" text="⚙" />
           </button>
         )}
       </header>
@@ -75,7 +78,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
           {shown.length} of {episodes.length} episodes match
         </div>
       ) : (
-        <div className="podcast-head">
+        <div className="podcast-head" style={{ "--tint": tint } as React.CSSProperties}>
           <Art url={image} size={88} />
           <div className="grow">
             <div className="big">{title}</div>
@@ -84,7 +87,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
             <div className="actions">
               {subscribed ? (
                 <>
-                  <button onClick={() => store.setPinned(podcast!.feed_url, !podcast!.pinned)}>{podcast!.pinned ? "Unpin" : "Pin to top"}</button>
+                  <button aria-pressed={podcast!.pinned} onClick={() => store.setPinned(podcast!.feed_url, !podcast!.pinned)}>{podcast!.pinned ? "Unpin" : "Pin to top"}</button>
                   <button onClick={() => confirm(`Unsubscribe from ${title}? Episodes in your queue stay until you play or remove them.`) && (store.unsubscribe(podcast!.feed_url), nav.back())}>
                     Unsubscribe
                   </button>
@@ -148,7 +151,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
       )}
       {error && <div className="error pad">Couldn't load this feed: {error}</div>}
 
-      <section>
+      <section className="list">
         {shown.map((e) => (
           <EpisodeItem key={e.id} e={e} art={image} feed={feed ?? undefined} snippet={terms.length ? snippet(index.get(e.id) ?? "", terms) : null} />
         ))}

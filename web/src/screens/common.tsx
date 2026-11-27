@@ -1,15 +1,18 @@
 import { useState } from "react";
 import type { Route } from "../App";
+import type { Tab } from "./Library";
 import type { ParsedFeed } from "../feed";
 import * as player from "../player";
 import * as store from "../store";
 import type { EpisodeRow } from "../types";
 import { episodeMeta, safeHtml } from "../util";
+import { Glyph } from "./Icons";
 
 export interface Nav {
   open: (r: Route) => void;
   back: () => void;
   home: () => void;
+  showTab: (t: Tab) => void;
 }
 
 /** Playing an episode puts it at the top of the queue, as on the phone. */
@@ -82,7 +85,7 @@ export function EpisodeItem({
           title={isCurrent && p.playing ? "Pause" : "Play"}
           onClick={() => (isCurrent ? player.toggle() : playEpisode(e, feed))}
         >
-          {isCurrent && p.playing ? "❚❚" : "▶"}
+          <Glyph name={isCurrent && p.playing ? "pause" : "play"} text={isCurrent && p.playing ? "❚❚" : "▶"} />
         </button>
       </div>
       {open && <EpisodeSheet e={store.getState().episodes.get(e.id) ?? e} podcastTitle={podcastTitle} feed={feed} onClose={() => setOpen(false)} />}

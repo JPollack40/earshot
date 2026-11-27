@@ -3,7 +3,10 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import * as store from "./store";
 import * as player from "./player";
-import { Library } from "./screens/Library";
+import { useAppearance } from "./appearance";
+import { Library, type Tab } from "./screens/Library";
+import { NowPanel } from "./screens/NowPanel";
+import { BottomTabs, Sidebar } from "./screens/Sidebar";
 import { PodcastPage } from "./screens/PodcastPage";
 import { AddPage } from "./screens/AddPage";
 import { PlayerBar } from "./screens/PlayerBar";
@@ -15,6 +18,8 @@ export type Route = { name: "library" } | { name: "podcast"; feedUrl: string } |
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [stack, setStack] = useState<Route[]>([{ name: "library" }]);
+  const [tab, setTab] = useState<Tab>("queue");
+  const look = useAppearance();
   const s = store.useStore();
   const p = player.usePlayer();
 
@@ -78,12 +83,33 @@ export function App() {
     open: (r: Route) => setStack((st) => [...st, r]),
     back: () => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st)),
     home: () => setStack([{ name: "library" }]),
+    showTab: (t: Tab) => {
+      setTab(t);
+      setStack([{ name: "library" }]);
+    },
   };
+
+  if (look.theme === "glow") {
+    const activeTab = route.name === "library" ? tab : null;
+    return (
+      <div className={`app glow-app ${look.nowPanel && p.episode ? "with-panel" : ""}`}>
+        <Sidebar tab={activeTab} nav={nav} activeFeed={route.name === "podcast" ? route.feedUrl : null} />
+        <main className="content">
+          {route.name === "library" && <Library nav={nav} tab={tab} />}
+          {route.name === "podcast" && <PodcastPage key={route.feedUrl} feedUrl={route.feedUrl} nav={nav} />}
+          {route.name === "add" && <AddPage nav={nav} />}
+        </main>
+        {look.nowPanel && p.episode && <NowPanel podcast={loadedPodcast} prefs={prefs} nav={nav} />}
+        <PlayerBar prefs={prefs} podcast={loadedPodcast} nav={nav} />
+        <BottomTabs tab={activeTab} nav={nav} />
+      </div>
+    );
+  }
 
   return (
     <div className="app">
       <main className="content">
-        {route.name === "library" && <Library nav={nav} />}
+        {route.name === "library" && <Library nav={nav} tab={tab} />}
         {route.name === "podcast" && <PodcastPage key={route.feedUrl} feedUrl={route.feedUrl} nav={nav} />}
         {route.name === "add" && <AddPage nav={nav} />}
       </main>
