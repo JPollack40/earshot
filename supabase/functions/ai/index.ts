@@ -179,7 +179,8 @@ Deno.serve(async (req: Request) => {
       body: request,
     });
   // Gemini answers 503 ("high demand") or 500 at busy times: try again once after a pause, then the
-  // fallback model (GEMINI_FALLBACK_MODEL secret) if one is set.
+  // fallback model (GEMINI_FALLBACK_MODEL secret) if one is set. The fallback is also used when the main
+  // model's per-minute free limit is reached (429), since each model has its own limit.
   // Edge functions are stopped after about 150 s, so only try again while there's time left.
   const started = Date.now();
   const timeLeft = () => Date.now() - started < 60_000;
@@ -190,7 +191,7 @@ Deno.serve(async (req: Request) => {
     res = await ask(model);
   }
   const fallback = Deno.env.get("GEMINI_FALLBACK_MODEL");
-  if ((res.status === 503 || res.status === 500 || res.status === 404) && fallback && fallback !== model && timeLeft()) {
+  if ((res.status === 503 || res.status === 500 || res.status === 404 || res.status === 429) && fallback && fallback !== model && timeLeft()) {
     console.error(`Gemini ${model} HTTP ${res.status}, using ${fallback}: ${(await res.text()).slice(0, 300)}`);
     model = fallback;
     res = await ask(model);
