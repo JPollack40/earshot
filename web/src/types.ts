@@ -79,6 +79,8 @@ export interface PlaybackDefaults {
   /** Tidy-up defaults (phase 7), synced in the same settings row: archive after N days / keep latest N; 0 = off. */
   inboxDays?: number;
   inboxKeep?: number;
+  /** Phase 11: found ads are skipped ("auto"), get a Skip ad button ("button"), or are ignored ("off"). */
+  adSkip?: string;
 }
 
 export const DEFAULT_PLAYBACK: PlaybackDefaults = {
@@ -89,6 +91,7 @@ export const DEFAULT_PLAYBACK: PlaybackDefaults = {
   skipForwardMs: 30_000,
   inboxDays: 0,
   inboxKeep: 0,
+  adSkip: "auto",
 };
 
 export const SPEEDS = [0.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 2.0, 2.5, 3.0];

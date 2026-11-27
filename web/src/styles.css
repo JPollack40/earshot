@@ -184,3 +184,12 @@ mark { background: none; color: var(--accent); font-weight: 700; }
 .chap-row .chap-link { flex: none; text-decoration: none; padding: 0 4px; }
 .badge-line { font-size: 12px; opacity: 0.8; margin-top: 4px; }
 .actions a.button, .actions select { background: var(--surface2); border-radius: 18px; padding: 6px 14px; color: inherit; text-decoration: none; display: inline-block; }
+
+/* Phase 11: AI from transcripts */
+.ai-panel { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.ai-panel h5 { margin: 10px 0 0; font-size: 0.85rem; }
+.ai-panel p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
+.ai-panel label select { margin-left: 4px; }
+.ai-time { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 3px 0; color: inherit; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.ai-time:hover { text-decoration: underline; }
+.ai-time .time { color: var(--accent, #7aa2ff); margin-right: 6px; font-variant-numeric: tabular-nums; }

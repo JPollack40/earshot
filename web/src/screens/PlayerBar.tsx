@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchChapters, type Chapter } from "../feed";
+import { currentAd, useEpisodeAi } from "../ai";
 import * as player from "../player";
 import * as store from "../store";
 import { SKIPS_MS, SPEEDS, type PlaybackDefaults, type PodcastRow } from "../types";
@@ -8,11 +9,19 @@ import { setAppearance, useAppearance, useArtColor } from "../appearance";
 import { Art, PlayerError, PodcastLink, type Nav } from "./common";
 import { Icon } from "./Icons";
 import { BookmarkButton, TranscriptButton } from "./Notes";
+import { AiPanel } from "./AiPanel";
 
 const chapterCache = new Map<string, Chapter[]>();
 
 /** The loaded episode's chapters (Podcasting 2.0 JSON), fetched once per episode. */
 export function useChapters(e: { id: string; chapters_url: string | null } | null): Chapter[] {
+  const feedChapters = useFeedChapters(e);
+  // Phase 11: chapters made from the transcript when the feed has none.
+  const generated = useEpisodeAi(e?.id).chapters;
+  return feedChapters.length ? feedChapters : (generated ?? feedChapters);
+}
+
+function useFeedChapters(e: { id: string; chapters_url: string | null } | null): Chapter[] {
   const [chapters, setChapters] = useState<Chapter[]>(() => (e?.chapters_url ? (chapterCache.get(e.chapters_url) ?? []) : []));
   useEffect(() => {
     const url = e?.chapters_url;
@@ -64,8 +73,9 @@ export function audioChanger(prefs: PlaybackDefaults, podcast: PodcastRow | unde
 }
 
 /** Hands the loaded episode's skipped chapters and its podcast's ad trim to the player (phase 10). */
-function useSkipRules(e: { id: string; duration_ms: number } | null, chapters: Chapter[], podcast: PodcastRow | undefined) {
+function useSkipRules(e: { id: string; duration_ms: number } | null, chapters: Chapter[], podcast: PodcastRow | undefined, adSkip: string) {
   const s = store.useStore();
+  const ads = useEpisodeAi(e?.id).ads;
   const skipped = e ? (store.episode(e.id)?.skipped_chapters ?? null) : null;
   const key = JSON.stringify(skipped);
   useEffect(() => {
@@ -79,9 +89,25 @@ function useSkipRules(e: { id: string; duration_ms: number } | null, chapters: C
       skipped: skipped ?? [],
       adTrim: podcast?.ad_trim ?? null,
       feedDurationMs: e.duration_ms,
+      ads,
+      adSkip,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e?.id, chapters, key, podcast?.ad_trim, s]);
+  }, [e?.id, chapters, key, podcast?.ad_trim, s, ads, adSkip]);
+}
+
+/** "Skip ad" while a found ad plays, when ads are set to show a button (phase 11). */
+export function SkipAdButton({ adSkip, className = "chip" }: { adSkip: string; className?: string }) {
+  const p = player.usePlayer();
+  const ads = useEpisodeAi(p.episode?.id).ads;
+  if (adSkip !== "button") return null;
+  const ad = currentAd(ads, p.positionMs);
+  if (!ad) return null;
+  return (
+    <button className={`${className} on`} title={`Skip to ${formatClock(ad.endMs)}`} onClick={() => player.seekTo(ad.endMs)}>
+      ⏭ Skip ad: {ad.label}
+    </button>
+  );
 }
 
 /** "Back to 12:34" for a few seconds after a big jump (phase 10). */
@@ -144,7 +170,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
   const e = p.episode;
   const chapters = useChapters(e);
   const tint = useArtColor(e ? (e.image_url ?? podcast?.image_url) : null, e?.feed_url ?? "earshot");
-  useSkipRules(e, chapters, podcast);
+  useSkipRules(e, chapters, podcast, prefs.adSkip ?? "auto");
 
   if (!e) return null;
 
@@ -198,6 +224,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         <div className="g-side">
           <div className="g-chips">
             <JumpBackButton />
+            <SkipAdButton adSkip={prefs.adSkip ?? "auto"} />
             <BookmarkButton />
             <TranscriptButton nav={nav} />
             <AudioChips prefs={prefs} podcast={podcast} />
@@ -264,6 +291,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
           Voice Boost
         </button>
         <JumpBackButton />
+        <SkipAdButton adSkip={prefs.adSkip ?? "auto"} />
         <BookmarkButton />
         <TranscriptButton nav={nav} />
         <button className="icon" title="More" onClick={() => setMore(!more)}>
@@ -336,6 +364,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
           </label>
           {!p.effectsAvailable && <div className="muted small">Smart Speed and Voice Boost aren't available for this episode: its host doesn't allow browsers to process the audio.</div>}
           <ChapterList chapters={chapters} positionMs={pos} className="chapters" />
+          <AiPanel episode={e} podcastTitle={podcast?.title ?? ""} prefs={prefs} chapters={chapters} />
         </div>
       )}
     </footer>

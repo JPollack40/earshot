@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { EpisodeRow, PlaybackDefaults } from "./types";
+import { adSkipTarget, currentAd, type AdSpan } from "./ai";
 
 // Two <audio> elements. "fx" is cross-origin and feeds a Web Audio chain:
 //   Voice Boost = compressor + make-up gain, Smart Speed = speed up through silences.
@@ -382,8 +383,13 @@ export interface SkipRules {
   adTrim: string | null;
   /** The length the feed states (ms), for the ad trim. */
   feedDurationMs: number;
+  /** Phase 11: ads found in the transcript, and what to do with them ("auto", "button" or "off"). */
+  ads?: AdSpan[];
+  adSkip?: string;
 }
 let rules: SkipRules | null = null;
+/** Ads (by start) already skipped automatically for the loaded episode; going back into one plays it. */
+let adsSkipped = { episodeId: "", starts: new Set<number>() };
 export function setSkipRules(r: SkipRules | null) {
   rules = r;
 }
@@ -425,7 +431,18 @@ function checkSkips() {
     return;
   }
   const endAt = extra > 0 && r.adTrim === "end" ? duration - extra : duration;
-  const target = endAt < duration && pos >= endAt ? endAt : skipTarget(r.chapters, r.skipped, pos, duration);
+  let target = endAt < duration && pos >= endAt ? endAt : null;
+  if (target == null && r.ads?.length && (r.adSkip ?? "auto") === "auto") {
+    if (adsSkipped.episodeId !== e.id) adsSkipped = { episodeId: e.id, starts: new Set() };
+    const to = adSkipTarget(r.ads, pos, adsSkipped.starts);
+    if (to != null) {
+      const first = currentAd(r.ads, pos);
+      if (first) adsSkipped.starts.add(first.startMs);
+      for (const a of r.ads) if (a.startMs >= pos && a.startMs <= to) adsSkipped.starts.add(a.startMs);
+      target = to;
+    }
+  }
+  target ??= skipTarget(r.chapters, r.skipped, pos, duration);
   if (target == null) return;
   if (target >= endAt - 500) {
     // The rest is skipped: finish the episode as if it had ended.

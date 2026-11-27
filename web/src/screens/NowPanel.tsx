@@ -5,7 +5,8 @@ import { episodeMeta, safeHtml } from "../util";
 import { Art, PodcastLink, type Nav } from "./common";
 import { Icon } from "./Icons";
 import { BookmarkButton, TranscriptButton } from "./Notes";
-import { AudioChips, audioChanger, ChapterList, GlowScrubber, JumpBackButton, SkipSelect, SleepSelect, useChapters } from "./PlayerBar";
+import { AudioChips, audioChanger, ChapterList, GlowScrubber, JumpBackButton, SkipAdButton, SkipSelect, SleepSelect, useChapters } from "./PlayerBar";
+import { AiPanel } from "./AiPanel";
 
 /** Glow's optional right-hand panel (full screen at phone width): artwork, chapters, settings, show notes. */
 export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefined; prefs: PlaybackDefaults; nav: Nav }) {
@@ -52,6 +53,7 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
       </div>
       <div className="g-chips np-chips np-notes-chips">
         <JumpBackButton />
+        <SkipAdButton adSkip={prefs.adSkip ?? "auto"} />
         <BookmarkButton />
         <TranscriptButton nav={nav} />
       </div>
@@ -65,6 +67,10 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
           <ChapterList chapters={chapters} positionMs={p.positionMs} itemClass="np-chap" />
         </div>
       )}
+      <div className="np-box">
+        <h4>From the transcript</h4>
+        <AiPanel episode={e} podcastTitle={podcast?.title ?? ""} prefs={prefs} chapters={chapters} />
+      </div>
       <div className="np-box np-settings">
         <h4>Playback</h4>
         <SkipSelect label="Skip back" value={prefs.skipBackMs} onChange={(v) => changeSkip({ skipBackMs: v })} />
