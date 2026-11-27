@@ -22,6 +22,8 @@ These are all in the Supabase dashboard (project `earshot`), except Firebase and
 
 ### A. SQL (SQL Editor > New query > paste the whole file > Run). Each is safe to run again.
 
+The files are on the overnight branch only (not main yet): on the VM in `C:\repos\earshot-overnight\supabase\migrations\` and `...\supabase\functions\`.
+
 1. `supabase/migrations/004_listening_upgrades.sql` (phase 10: new columns, push_devices, feed_checks, the new-episode functions)
 2. `supabase/migrations/006_ai.sql` (phase 11: the `episode_ai` table)
 3. `supabase/migrations/005_schedule_new_episodes.sql`: **only after step B1 below**, and after replacing its two placeholders:
