@@ -169,10 +169,13 @@ private fun BookmarkRow(vm: AppViewModel, b: Bookmark, onOpen: (LoadedTranscript
         Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                formatClock(b.positionMs) + (b.title?.takeIf { it.isNotBlank() }?.let { "  ·  $it" } ?: ""),
+                formatClock(b.positionMs),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
+            b.title?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             if (quote != null) {
                 Text(quote, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
             } else {

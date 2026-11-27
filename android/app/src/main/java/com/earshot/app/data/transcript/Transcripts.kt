@@ -361,6 +361,7 @@ class Transcripts(private val app: EarshotApp) {
                 .put("podcast", b.podcastTitle),
         )
         val title = res.optJSONObject("data")?.optString("title")?.trim().orEmpty()
+        Log.i(TAG, "Bookmark title for ${b.id}: ${title.ifEmpty { "(none) " + res.toString().take(300) }}")
         if (title.isEmpty()) throw IllegalStateException(res.optString("error").ifBlank { "No title came back" })
         val cur = bookmarkDao.get(b.id) ?: return null
         if (cur.deleted) return null

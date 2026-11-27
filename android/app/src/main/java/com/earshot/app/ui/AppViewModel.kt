@@ -872,7 +872,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun titleBookmark(b: Bookmark) {
         viewModelScope.launch {
             try {
-                if (transcripts.autoTitle(b, force = true) == null) say("No transcript text at this bookmark yet")
+                say("Making a title…")
+                val t = transcripts.autoTitle(b, force = true)
+                say(if (t == null) "No transcript text at this bookmark yet" else "Titled: $t")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
