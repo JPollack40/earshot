@@ -138,8 +138,12 @@ function normalise(kind: Kind, o: any, lastMs: number): unknown {
  * has its own limit. Edge functions are stopped after about 150 s, so only try again while there's time.
  * Returns the OK response and the model that gave it, or a ready error response.
  */
-async function gemini(key: string, prompt: string, schema: unknown, temperature: number): Promise<{ res: Response; model: string; error?: undefined } | { error: Response; res?: undefined; model?: undefined }> {
+async function gemini(key: string, prompt: string, schema: unknown, temperature: number, light = false): Promise<{ res: Response; model: string; error?: undefined } | { error: Response; res?: undefined; model?: undefined }> {
   let model = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+  // Small jobs (bookmark titles) go to the lighter fallback model first: it answers in seconds,
+  // while the main model is often overloaded and its retry can take over a minute.
+  const lightModel = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  if (light && lightModel) model = lightModel;
   const request = JSON.stringify({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature },
@@ -158,7 +162,7 @@ async function gemini(key: string, prompt: string, schema: unknown, temperature:
     await new Promise((r) => setTimeout(r, 5_000));
     res = await ask(model);
   }
-  const fallback = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const fallback = light && lightModel ? (Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL) : Deno.env.get("GEMINI_FALLBACK_MODEL");
   if ((res.status === 503 || res.status === 500 || res.status === 404 || res.status === 429) && fallback && fallback !== model && timeLeft()) {
     console.error(`Gemini ${model} HTTP ${res.status}, using ${fallback}: ${(await res.text()).slice(0, 300)}`);
     model = fallback;
@@ -278,11 +282,12 @@ Deno.serve(async (req: Request) => {
       "Write a short, specific title (3 to 8 words) for this moment of a podcast, as a note to find it again later. " +
       "Name the topic or claim, not the speaker's manner. No quotation marks, no final full stop.\n\n" +
       `${context}\n\nPassage:\n${passage}`;
-    const g = await gemini(key, prompt, { type: "OBJECT", properties: { title: { type: "STRING" } }, required: ["title"] }, 0.3);
+    const g = await gemini(key, prompt, { type: "OBJECT", properties: { title: { type: "STRING" } }, required: ["title"] }, 0.3, true);
     if (g.error) return g.error;
     const o = await answerOf(g.res, g.model);
     const title = String(o?.title ?? "").replace(/^["'“”]+|["'“”.]+$/g, "").trim().slice(0, 80);
     if (!title) return json({ error: "Gemini didn't give a title. Try again." }, 502);
+    console.log(`Gemini ${g.model}: title for ${episodeId} OK`);
     return json({ kind, data: { title }, model: g.model });
   }
 
