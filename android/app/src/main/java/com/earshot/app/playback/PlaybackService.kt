@@ -210,7 +210,7 @@ class PlaybackService : MediaLibraryService() {
         audio.voiceBoost.enabled = p.voiceBoost
         skipPlayer.backMs = p.skipBackMs
         skipPlayer.forwardMs = p.skipForwardMs
-        if (old.skipBackMs != p.skipBackMs || old.skipForwardMs != p.skipForwardMs || old.speed != p.speed) {
+        if (old.skipBackMs != p.skipBackMs || old.skipForwardMs != p.skipForwardMs) {
             refreshButtons()
         }
         if (old.speed != p.speed) {
@@ -220,16 +220,13 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    // ---- Playing-screen buttons: skip back / forward, Speed, Mark played ----
+    // ---- Playing-screen buttons: skip back / forward, Mark played ----
 
-    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, prefs.speed)
+    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs)
 
     private fun refreshButtons() {
         session?.setMediaButtonPreferences(buttons())
     }
-
-    /** Next speed in [PlayerButtons.SPEED_STEPS]. */
-    private fun stepSpeed() = setSpeed(PlayerButtons.nextSpeed(prefs.speed))
 
     /** Sets the speed, saved where the app would save it. */
     private fun setSpeed(speed: Float) {
@@ -494,15 +491,14 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
             // Start from Media3's defaults for this controller (full control when trusted, read-only
-            // otherwise) and add the Speed and Mark played buttons. Android Auto shows the
-            // buttons the media notification's controller has, and its taps are checked against its
-            // own controller, so every controller gets them. They only change Earshot's own settings.
+            // otherwise) and add the Mark played button. Android Auto shows the
+            // buttons the media notification's controller has, and taps are checked against its
+            // own controller, so every controller gets it. It only marks an episode played.
             val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
             val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailableSessionCommands(
                     defaults.availableSessionCommands.buildUpon()
-                        .add(PlayerButtons.speedCommand)
-                                .add(PlayerButtons.markPlayedCommand)
+                                        .add(PlayerButtons.markPlayedCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -515,7 +511,6 @@ class PlaybackService : MediaLibraryService() {
             args: Bundle,
         ): ListenableFuture<SessionResult> {
             when (customCommand.customAction) {
-                PlayerButtons.SPEED -> stepSpeed()
                 PlayerButtons.MARK_PLAYED -> player.currentMediaItem?.mediaId?.let {
                     finishCurrent(it, playNext = player.playWhenReady, atEnd = false)
                 }
