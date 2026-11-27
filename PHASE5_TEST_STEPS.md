@@ -37,9 +37,21 @@ I already checked on the phone: a "radiolab" search came from Podcast Index, Rad
 
 ## In the car (Desktop Head Unit)
 
-1. Start the head unit as usual (phone Settings > Android Auto > ⋮ > Start head unit server, then I run the DHU on the VM, or you do).
-2. **Queue** tab: Octomom (Radiolab) is at the bottom and plays from there.
-3. **Podcasts** tab: Radiolab is **not** listed (it's only in your queue, not subscribed).
+1. Phone: **Settings > Android Auto > ⋮ > Start head unit server**.
+2. On the VM, in PowerShell, run these two commands one after the other:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" forward tcp:5277 tcp:5277
+```
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\extras\google\auto\desktop-head-unit.exe"
+```
+
+3. If Spotify starts on its own, pause it, then open Earshot in the head unit.
+4. **Queue** tab: Octomom (Radiolab) is at the bottom and plays from there.
+5. **Podcasts** tab: Radiolab is **not** listed (it's only in your queue, not subscribed).
+6. Close the head unit window when you're done.
 
 ## What to tell me
 - Anything that looked wrong, with the show and search words you used.
