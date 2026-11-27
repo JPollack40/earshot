@@ -23,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -158,6 +160,8 @@ private fun EpisodeGroupHeader(vm: AppViewModel, episodeId: String, sample: Book
 private fun BookmarkRow(vm: AppViewModel, b: Bookmark, onOpen: (LoadedTranscript?) -> Unit) {
     val transcript by remember(b.episodeId) { vm.transcript(b.episodeId) }.collectAsStateWithLifecycle(null)
     val quote = transcript?.let { TranscriptFormat.quote(it.segments, it.timed, b.startMs, b.endMs) }
+    val title = b.title?.takeIf { it.isNotBlank() }
+    var expanded by remember(b.id) { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
@@ -173,22 +177,34 @@ private fun BookmarkRow(vm: AppViewModel, b: Bookmark, onOpen: (LoadedTranscript
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
-            b.title?.takeIf { it.isNotBlank() }?.let {
+            title?.let {
                 Text(it, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            if (quote != null) {
-                Text(quote, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
-            } else {
-                Text(
-                    "No transcript for this moment yet",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontStyle = FontStyle.Italic,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            // A titled bookmark shows only its title; the arrow opens the transcript text (Serena, phase 13).
+            if (title == null || expanded) {
+                if (quote != null) {
+                    Text(quote, style = MaterialTheme.typography.bodySmall, maxLines = if (expanded) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis)
+                } else {
+                    Text(
+                        "No transcript for this moment yet",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (b.note.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(b.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+            }
+        }
+        if (title != null) {
+            IconButton(onClick = { expanded = !expanded }) {
+                Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Hide the transcript text" else "Show the transcript text",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         IconButton(onClick = { vm.playAt(b.episodeId, b.startMs) }) {

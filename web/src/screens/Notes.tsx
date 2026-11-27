@@ -461,6 +461,7 @@ export function BookmarksPage({ nav }: { nav: Nav }) {
   const n = notes.useNotes();
   const [transcripts, setTranscripts] = useState<Map<string, LoadedTranscript | null>>(new Map());
   const [editing, setEditing] = useState<BookmarkRow | null>(null);
+  const [expandedBm, setExpandedBm] = useState<Set<string>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -555,13 +556,27 @@ export function BookmarksPage({ nav }: { nav: Nav }) {
                       <Glyph name="play" text="▶" />
                     </button>
                     <button className="row-main" onClick={() => setEditing(b)}>
-                      <div className="time">
-                        {formatClock(b.position_ms)}
-                        {b.title ? ` · ${b.title}` : ""}
-                      </div>
-                      {q ? <div className="bm-q">“{q}”</div> : <div className="meta">{n.transcripts.has(b.episode_id) ? "Loading quote…" : "No transcript for this moment yet."}</div>}
+                      <div className="time">{formatClock(b.position_ms)}</div>
+                      {b.title && <div className="bm-title">{b.title}</div>}
+                      {/* A titled bookmark shows only its title; the arrow opens the transcript text. */}
+                      {(!b.title || expandedBm.has(b.id)) &&
+                        (q ? <div className="bm-q">“{q}”</div> : <div className="meta">{n.transcripts.has(b.episode_id) ? "Loading quote…" : "No transcript for this moment yet."}</div>)}
                       {b.note && <div className="bm-n">{b.note}</div>}
                     </button>
+                    {b.title && (
+                      <button
+                        className="icon bm-toggle"
+                        title={expandedBm.has(b.id) ? "Hide the transcript text" : "Show the transcript text"}
+                        aria-expanded={expandedBm.has(b.id)}
+                        onClick={() => {
+                          const next = new Set(expandedBm);
+                          if (!next.delete(b.id)) next.add(b.id);
+                          setExpandedBm(next);
+                        }}
+                      >
+                        {expandedBm.has(b.id) ? "▴" : "▾"}
+                      </button>
+                    )}
                   </div>
                 );
               })}
