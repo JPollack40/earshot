@@ -413,6 +413,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 prefs.edit().putBoolean("latest_playlist_made", true).apply()
                 app.sync.request("latest playlist")
             }
+            com.earshot.app.data.Settings.adoptSkipAdButtonDefault(app)
+            app.sync.request("ad skip default")
         }
         if (com.earshot.app.data.Updates.due(app)) checkForUpdate(manual = false)
         if (com.earshot.app.data.Updates.whatsNewDue(app)) showWhatsNew(manual = false)

@@ -462,7 +462,7 @@ function checkSkips() {
   }
   const endAt = extra > 0 && r.adTrim === "end" ? duration - extra : duration;
   let target = endAt < duration && pos >= endAt ? endAt : null;
-  if (target == null && r.ads?.length && (r.adSkip ?? "auto") === "auto") {
+  if (target == null && r.ads?.length && (r.adSkip ?? "button") === "auto") {
     if (adsSkipped.episodeId !== e.id) adsSkipped = { episodeId: e.id, starts: new Set() };
     const to = adSkipTarget(r.ads, pos, adsSkipped.starts);
     if (to != null) {

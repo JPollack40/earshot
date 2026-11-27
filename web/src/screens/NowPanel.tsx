@@ -53,7 +53,7 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
       </div>
       <div className="g-chips np-chips np-notes-chips">
         <JumpBackButton />
-        <SkipAdButton adSkip={prefs.adSkip ?? "auto"} />
+        <SkipAdButton adSkip={prefs.adSkip ?? "button"} />
         <BookmarkButton />
         <TranscriptButton nav={nav} />
       </div>

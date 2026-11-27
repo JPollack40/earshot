@@ -170,7 +170,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
   const e = p.episode;
   const chapters = useChapters(e);
   const tint = useArtColor(e ? (e.image_url ?? podcast?.image_url) : null, e?.feed_url ?? "earshot");
-  useSkipRules(e, chapters, podcast, prefs.adSkip ?? "auto");
+  useSkipRules(e, chapters, podcast, prefs.adSkip ?? "button");
 
   if (!e) return null;
 
@@ -224,7 +224,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         <div className="g-side">
           <div className="g-chips">
             <JumpBackButton />
-            <SkipAdButton adSkip={prefs.adSkip ?? "auto"} />
+            <SkipAdButton adSkip={prefs.adSkip ?? "button"} />
             <BookmarkButton />
             <TranscriptButton nav={nav} />
             <AudioChips prefs={prefs} podcast={podcast} />
@@ -292,7 +292,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
           Voice Boost
         </button>
         <JumpBackButton />
-        <SkipAdButton adSkip={prefs.adSkip ?? "auto"} />
+        <SkipAdButton adSkip={prefs.adSkip ?? "button"} />
         <BookmarkButton />
         <TranscriptButton nav={nav} />
         <button className="icon" title="More" onClick={() => setMore(!more)}>

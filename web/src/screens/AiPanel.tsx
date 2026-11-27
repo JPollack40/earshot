@@ -116,7 +116,7 @@ export function AiPanel({ episode, podcastTitle, prefs, chapters }: { episode: E
       <Button kind="ads" label="Find ads" again={!!ai.ads} />
       <label className="small">
         Found ads (all episodes){" "}
-        <select value={prefs.adSkip ?? "auto"} onChange={(ev) => store.updateDefaults({ adSkip: ev.target.value })}>
+        <select value={prefs.adSkip ?? "button"} onChange={(ev) => store.updateDefaults({ adSkip: ev.target.value })}>
           {Object.entries(AD_SKIP_LABELS).map(([v, l]) => (
             <option key={v} value={v}>
               {l}

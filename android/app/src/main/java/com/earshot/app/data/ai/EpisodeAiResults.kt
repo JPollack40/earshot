@@ -21,7 +21,7 @@ data class EpisodeAnswer(val question: String, val answer: String, val quotes: L
 
 data class EpisodeSummary(val text: String, val points: List<SummaryPoint>, val model: String = "")
 
-/** "auto" skips found ads by itself; "button" shows a Skip ad button instead; "off" ignores them. */
+/** "button" (the default since phase 13) shows a Skip ad button; "auto" skips found ads by itself; "off" ignores them. */
 object AdSkip {
     const val AUTO = "auto"
     const val BUTTON = "button"

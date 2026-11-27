@@ -153,7 +153,7 @@ object Settings {
     fun adSkip(context: Context): StateFlow<String> = adSkipState(context).asStateFlow()
 
     private fun adSkipState(context: Context): MutableStateFlow<String> = synchronized(this) {
-        adSkipFlow ?: MutableStateFlow(prefs(context).getString("ad_skip", "auto") ?: "auto").also { adSkipFlow = it }
+        adSkipFlow ?: MutableStateFlow(prefs(context).getString("ad_skip", "button") ?: "button").also { adSkipFlow = it }
     }
 
     fun setAdSkip(context: Context, mode: String) {
@@ -163,6 +163,17 @@ object Settings {
             .putLong("playback_changed_at", System.currentTimeMillis())
             .putBoolean("playback_dirty", true)
             .apply()
+    }
+
+    /**
+     * Phase 13 (Serena, 2026-11-27): "Show a Skip ad button" became the default. Run once per phone:
+     * a phone still on "auto" (the old default) switches to "button", and the change syncs.
+     */
+    fun adoptSkipAdButtonDefault(context: Context) {
+        val p = prefs(context)
+        if (p.getBoolean("ad_skip_button_default", false)) return
+        if (adSkip(context).value == "auto") setAdSkip(context, "button")
+        p.edit().putBoolean("ad_skip_button_default", true).apply()
     }
 
     /** Changed on another device (called with [applyRemotePlayback]). */

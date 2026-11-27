@@ -93,7 +93,7 @@ export const DEFAULT_PLAYBACK: PlaybackDefaults = {
   skipForwardMs: 30_000,
   inboxDays: 0,
   inboxKeep: 0,
-  adSkip: "auto",
+  adSkip: "button",
   resumeRewind: true,
 };
 
