@@ -47,7 +47,9 @@ a { color: var(--accent); }
 .text { color: var(--accent); padding: 4px 8px; border-radius: 6px; }
 .text:hover { background: var(--surface2); }
 .primary, .actions button, label.button { background: var(--surface2); border-radius: 18px; padding: 6px 14px; }
-.primary { background: var(--accent); color: #1a1a1a; font-weight: 600; }
+/* Main action (Subscribe, Sign in, Search): white text with an accent outline, readable on the dark theme. */
+.primary, .actions button.primary { background: var(--surface2); border: 1px solid var(--accent); color: #fff; font-weight: 600; }
+.actions button { color: #fff; }
 label.button { cursor: pointer; }
 
 .row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); }
