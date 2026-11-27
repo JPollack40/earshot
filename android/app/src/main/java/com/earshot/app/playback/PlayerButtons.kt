@@ -19,7 +19,23 @@ object PlayerButtons {
     const val MARK_PLAYED = "com.earshot.app.MARK_PLAYED"
     const val BOOKMARK = "com.earshot.app.BOOKMARK"
 
+    /** "Add to queue" on an episode row in Android Auto (a custom browse action). */
+    const val QUEUE_ADD = "com.earshot.app.QUEUE_ADD"
+
     val markPlayedCommand = SessionCommand(MARK_PLAYED, Bundle.EMPTY)
+    val queueAddCommand = SessionCommand(QUEUE_ADD, Bundle.EMPTY)
+
+    /**
+     * The Add to queue button Android Auto shows on episode rows (Media3 turns command buttons for
+     * media items into Android Auto's custom browse actions). [icon] is a tintable vector's uri.
+     */
+    @OptIn(UnstableApi::class)
+    fun queueAdd(icon: android.net.Uri): CommandButton =
+        CommandButton.Builder(CommandButton.ICON_PLAYLIST_ADD)
+            .setSessionCommand(queueAddCommand)
+            .setDisplayName("Add to queue")
+            .setIconUri(icon)
+            .build()
     val bookmarkCommand = SessionCommand(BOOKMARK, Bundle.EMPTY)
 
     /** "1.3x", "2x" */

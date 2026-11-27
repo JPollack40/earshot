@@ -131,6 +131,8 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(buttons())
+            // Add to queue on episode rows in Android Auto.
+            .setCommandButtonsForMediaItems(listOf(PlayerButtons.queueAdd(iconUri(R.drawable.ic_car_queue_add))))
             .build()
         // Phase 12 scaffold: the templated car app (same process) hands this to the car host.
         platformToken = session?.platformToken
@@ -237,7 +239,7 @@ class PlaybackService : MediaLibraryService() {
                         chaptersFor = id
                         chapters = emptyList()
                         chapterJob?.cancel()
-                        if (ep != null) chapterJob = scope.launch { chapters = app.chapters.load(ep.episode) }
+                        if (ep != null) chapterJob = scope.launch { setChapters(app.chapters.load(ep.episode)) } else setChapters(emptyList())
                     }
                 }
         }
@@ -246,7 +248,7 @@ class PlaybackService : MediaLibraryService() {
             app.chapters.changes.drop(1).collect {
                 val ep = loaded ?: return@collect
                 chapterJob?.cancel()
-                chapterJob = scope.launch { chapters = app.chapters.load(ep.episode) }
+                chapterJob = scope.launch { setChapters(app.chapters.load(ep.episode)) }
             }
         }
         // Phase 11: ads found in the transcript, for automatic skipping.
@@ -317,6 +319,22 @@ class PlaybackService : MediaLibraryService() {
     private var loaded: EpisodeWithPodcast? = null
     private var chaptersFor: String? = null
     private var chapters: List<com.earshot.app.data.feed.Chapter> = emptyList()
+
+    /** New chapters for the loaded episode: the car's Queue tab shows (or hides) its Chapters row. */
+    private fun setChapters(list: List<com.earshot.app.data.feed.Chapter>) {
+        val changed = list.size != chapters.size || list.map { it.startMs } != chapters.map { it.startMs }
+        chapters = list
+        if (!changed) return
+        val s = session ?: return
+        s.notifyChildrenChanged(EpisodeMedia.CHAPTERS, list.size, null)
+        scope.launch { s.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 3, null) }
+    }
+
+    /** The chapter playing now (by title), for the Chapters row. */
+    private fun currentChapterIndex(): Int {
+        val pos = player.currentPosition
+        return chapters.indexOfLast { it.startMs <= pos }
+    }
     private var chapterJob: Job? = null
     private var skippedJson: String? = null
     private var skipped: Set<Long> = emptySet()
@@ -672,6 +690,10 @@ class PlaybackService : MediaLibraryService() {
             if (requested.mediaId.startsWith(EpisodeMedia.SPEED_PREFIX)) {
                 return speedPicked(requested.mediaId.removePrefix(EpisodeMedia.SPEED_PREFIX).toFloatOrNull())
             }
+            // A chapter picked from the chapters list: jump there in what's loaded.
+            if (requested.mediaId.startsWith(EpisodeMedia.CHAPTER_PREFIX)) {
+                return chapterPicked(requested.mediaId.removePrefix(EpisodeMedia.CHAPTER_PREFIX).toLongOrNull())
+            }
             // "Hey Google, play ... on Earshot" arrives with a search query and no id.
             val query = requested.requestMetadata.searchQuery
                 ?.takeIf { requested.mediaId.isEmpty() }
@@ -711,6 +733,7 @@ class PlaybackService : MediaLibraryService() {
                     defaults.availableSessionCommands.buildUpon()
                         .add(PlayerButtons.markPlayedCommand)
                         .add(PlayerButtons.bookmarkCommand)
+                        .add(PlayerButtons.queueAddCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -727,6 +750,20 @@ class PlaybackService : MediaLibraryService() {
                     finishCurrent(it, playNext = player.playWhenReady, atEnd = false)
                 }
                 PlayerButtons.BOOKMARK -> bookmarkNow()
+                PlayerButtons.QUEUE_ADD -> {
+                    // Android Auto's Add to queue on an episode row: the row's episode, at the end of the queue.
+                    val id = args.getString(MediaConstants.EXTRA_KEY_MEDIA_ID)
+                        ?: customCommand.customExtras.getString(MediaConstants.EXTRA_KEY_MEDIA_ID)
+                        ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+                    return future {
+                        if (repo.episodes.get(id) == null) SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE)
+                        else {
+                            repo.queueLast(id)
+                            Log.i(TAG, "Added to queue from the car: $id")
+                            SessionResult(SessionResult.RESULT_SUCCESS)
+                        }
+                    }
+                }
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -813,9 +850,17 @@ class PlaybackService : MediaLibraryService() {
                 parentId == EpisodeMedia.ROOT -> tabs()
                 parentId == EpisodeMedia.QUEUE ->
                     listOf(EpisodeMedia.speedFolder(prefs.speed, iconUri(PlayerButtons.speedIcon(prefs.speed)))) +
+                        listOfNotNull(chaptersRow()) +
                         listOfNotNull(moreFromLoaded()) +
                         dao.getQueue().map { EpisodeMedia.item(it) }
                 parentId == EpisodeMedia.SPEED -> Settings.SPEED_CHOICES.map { speedChoiceItem(it) }
+                parentId == EpisodeMedia.CHAPTERS -> {
+                    val current = currentChapterIndex()
+                    val icon = iconUri(R.drawable.ic_car_chapters)
+                    chapters.mapIndexed { i, c ->
+                        EpisodeMedia.chapterChoice(c.startMs, c.title.ifBlank { "Chapter ${i + 1}" }, i == current, icon)
+                    }
+                }
                 parentId == EpisodeMedia.INBOX -> EpisodeMedia.itemsByDate(dao.getInbox())
                 parentId == EpisodeMedia.LATEST -> EpisodeMedia.itemsByDate(dao.getLatest(LATEST_LIMIT))
                 parentId == EpisodeMedia.PODCASTS -> repo.podcasts.getAll().map(EpisodeMedia::podcastFolder)
@@ -869,6 +914,26 @@ class PlaybackService : MediaLibraryService() {
         val id = player.currentMediaItem?.mediaId ?: return null
         val podcastId = repo.episodes.get(id)?.podcastId ?: return null
         return repo.podcasts.get(podcastId)?.let(EpisodeMedia::moreFromFolder)
+    }
+
+    /** "Chapters (n)" at the top of the Queue tab, when the loaded episode has chapters. */
+    private fun chaptersRow(): MediaItem? {
+        if (chapters.isEmpty() || player.currentMediaItem == null) return null
+        val current = chapters.getOrNull(currentChapterIndex())?.title?.takeIf { it.isNotBlank() }
+        return EpisodeMedia.chaptersFolder(chapters.size, current, iconUri(R.drawable.ic_car_chapters))
+    }
+
+    /**
+     * Like a speed: Android Auto plays whatever is tapped, so a chapter arrives as a request to play
+     * it. Hand back what's loaded, at the chapter's start, so it carries on from there.
+     */
+    private fun chapterPicked(startMs: Long?): ListenableFuture<MediaItemsWithStartPosition> {
+        val count = player.mediaItemCount
+        if (startMs == null || count == 0 || player.playbackState == Player.STATE_ENDED) {
+            return Futures.immediateFailedFuture(IllegalStateException("No episode loaded for that chapter"))
+        }
+        val items = (0 until count).map { player.getMediaItemAt(it) }
+        return Futures.immediateFuture(MediaItemsWithStartPosition(items, player.currentMediaItemIndex, startMs))
     }
 
     private fun speedChoiceItem(speed: Float): MediaItem =

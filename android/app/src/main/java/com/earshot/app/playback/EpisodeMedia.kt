@@ -32,6 +32,9 @@ object EpisodeMedia {
     /** The speed list (a folder at the top of the Queue tab), and its entries ("speed:1.5"). */
     const val SPEED = "speed"
     const val SPEED_PREFIX = "speed:"
+    /** The loaded episode's chapters (a folder at the top of the Queue tab), and each one ("chapter:<startMs>"). */
+    const val CHAPTERS = "chapters"
+    const val CHAPTER_PREFIX = "chapter:"
 
     /**
      * A playable episode, from its download when there is one. Android Auto shows its progress
@@ -77,6 +80,8 @@ object EpisodeMedia {
                     .setIsPlayable(true)
                     .setIsBrowsable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE)
+                    // Shows the Add to queue button on the row in Android Auto.
+                    .setSupportedCommands(listOf(PlayerButtons.QUEUE_ADD))
                     .setExtras(extras)
                     .build(),
             )
@@ -239,4 +244,39 @@ object EpisodeMedia {
                     .build(),
             )
             .build()
+
+    /** "Chapters (12)", a folder holding [chapterChoice]s for the loaded episode. */
+    fun chaptersFolder(count: Int, current: String?, icon: Uri): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(CHAPTERS)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Chapters ($count)")
+                    .setSubtitle(current?.let { "Now: $it" } ?: "Tap to jump to a chapter")
+                    .setArtworkUri(icon)
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    .build(),
+            )
+            .build()
+
+    /** One chapter. Tapping it jumps there in the loaded episode and goes back to the playing screen. */
+    fun chapterChoice(startMs: Long, title: String, current: Boolean, icon: Uri): MediaItem {
+        val s = startMs / 1000
+        val time = if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
+        return MediaItem.Builder()
+            .setMediaId(CHAPTER_PREFIX + startMs)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title + if (current) "  (playing)" else "")
+                    .setSubtitle(time)
+                    .setArtworkUri(icon)
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MIXED)
+                    .build(),
+            )
+            .build()
+    }
 }
