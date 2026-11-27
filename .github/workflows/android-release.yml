@@ -1,0 +1,122 @@
+# Builds a release-signed Android APK (phase 8).
+#
+# - Push a tag like v0.8.0  -> runs the unit tests, builds a signed APK and publishes it as a GitHub Release.
+# - Actions tab > "Android release" > Run workflow -> same build, kept only as a downloadable artifact (no Release).
+#
+# Needs four repository secrets (Settings > Secrets and variables > Actions), see RELEASES.md:
+#   EARSHOT_KEYSTORE_BASE64, EARSHOT_KEYSTORE_PASSWORD, EARSHOT_KEY_ALIAS, EARSHOT_KEY_PASSWORD
+# Without them a tag build stops with an error, and a manual run builds an unsigned APK (useful to test the workflow).
+name: Android release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # to create the GitHub Release
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+
+      # Gradle's daemon toolchain (gradle/gradle-daemon-jvm.properties) asks for JDK 25.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Version from tag
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            name="${GITHUB_REF_NAME#v}"
+            if [[ ! "$name" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "::error::Tag must look like v1.2.3 (got $GITHUB_REF_NAME)"; exit 1
+            fi
+            code=$(( BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3] ))
+          else
+            name="0.0.0-ci.${GITHUB_RUN_NUMBER}"
+            code=1
+          fi
+          echo "EARSHOT_VERSION_NAME=$name" >> "$GITHUB_ENV"
+          echo "EARSHOT_VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Version $name (code $code)"
+
+      # The publishable Supabase key is public by design and already committed for the web player,
+      # so the app build reads the same two values from web/src/config.ts.
+      - name: Supabase config
+        run: |
+          url=$(sed -n 's/.*SUPABASE_URL = "\(.*\)".*/\1/p' ../web/src/config.ts)
+          key=$(sed -n 's/.*SUPABASE_KEY = "\(.*\)".*/\1/p' ../web/src/config.ts)
+          if [[ -z "$url" || -z "$key" ]]; then echo "::error::Couldn't read web/src/config.ts"; exit 1; fi
+          echo "EARSHOT_SUPABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "EARSHOT_SUPABASE_KEY=$key" >> "$GITHUB_ENV"
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.EARSHOT_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" ]]; then
+            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+              echo "::error::Secret EARSHOT_KEYSTORE_BASE64 is missing, so a release can't be signed. See RELEASES.md."; exit 1
+            fi
+            echo "::warning::No signing secrets: building an UNSIGNED test APK."
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/earshot-release.jks"
+          echo "EARSHOT_KEYSTORE_FILE=$RUNNER_TEMP/earshot-release.jks" >> "$GITHUB_ENV"
+
+      - name: Unit tests and release build
+        env:
+          EARSHOT_KEYSTORE_PASSWORD: ${{ secrets.EARSHOT_KEYSTORE_PASSWORD }}
+          EARSHOT_KEY_ALIAS: ${{ secrets.EARSHOT_KEY_ALIAS }}
+          EARSHOT_KEY_PASSWORD: ${{ secrets.EARSHOT_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon testDebugUnitTest assembleRelease < /dev/null
+
+      - name: Check signature and name the APK
+        id: apk
+        run: |
+          dir=app/build/outputs/apk/release
+          src=$(ls "$dir"/*.apk | head -1)
+          out="$dir/earshot-${{ steps.version.outputs.name }}.apk"
+          mv "$src" "$out"
+          if [[ -n "${EARSHOT_KEYSTORE_FILE:-}" ]]; then
+            apksigner=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
+            "$apksigner" verify --verbose --print-certs "$out"
+          fi
+          (cd "$dir" && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
+          echo "path=android/$out" >> "$GITHUB_OUTPUT"
+          rm -f "$RUNNER_TEMP/earshot-release.jks"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: earshot-${{ steps.version.outputs.name }}
+          path: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.apk.outputs.path }}.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: .
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.apk.outputs.path }}" "${{ steps.apk.outputs.path }}.sha256" \
+            --title "Earshot ${{ steps.version.outputs.name }}" \
+            --notes "Android app, release-signed. Install: download the .apk on your phone and open it (allow installs from this source when asked)."
