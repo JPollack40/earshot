@@ -188,7 +188,15 @@ class SyncEngine(private val app: EarshotApp) {
         var local = repo.findPodcast(feedUrl)
         if (local == null) {
             if (!subscribed) return // hidden podcasts come in with their episodes, when needed
-            repo.subscribe(feedUrl, inboxNewest = false) // fetches the feed; a failure stops this sync and it's retried
+            try {
+                repo.subscribe(feedUrl, inboxNewest = false) // fetches the feed
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A dead or unreachable feed mustn't block every later sync; it's skipped (logged).
+                Log.w(TAG, "Sync: couldn't subscribe to $feedUrl added elsewhere", e)
+                return
+            }
             local = repo.findPodcast(feedUrl) ?: return
         } else if (changedAt <= local.changedAt) {
             return // this phone's copy is as new or newer
