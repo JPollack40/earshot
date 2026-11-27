@@ -503,19 +503,19 @@ class PlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
+            // Start from Media3's defaults for this controller (full control when trusted, read-only
+            // otherwise) and add the Speed, Sleep and Mark played buttons. Android Auto shows the
+            // buttons the media notification's controller has, and its taps are checked against its
+            // own controller, so every controller gets them. They only change Earshot's own settings.
+            val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
             val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
-            // Trusted controllers (the app, the media notification, Android Auto) also get the Speed,
-            // Sleep and Mark played buttons. Android Auto sees the buttons the notification controller
-            // has, so it must get them too.
-            if (controller.isTrusted) {
-                builder.setAvailableSessionCommands(
-                    MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                .setAvailableSessionCommands(
+                    defaults.availableSessionCommands.buildUpon()
                         .add(PlayerButtons.speedCommand)
                         .add(PlayerButtons.sleepCommand)
                         .add(PlayerButtons.markPlayedCommand)
                         .build(),
                 )
-            }
             return Futures.immediateFuture(builder.build())
         }
 
