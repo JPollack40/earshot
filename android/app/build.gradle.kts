@@ -78,9 +78,21 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release")
-            // Shrinking stays off: R8 rules for Media3/Room/Coil would need their own testing pass.
-            isMinifyEnabled = false
+            // Phase 15: R8 shrinking and resource shrinking on (smaller, faster APK). Media3, Room,
+            // WorkManager, Coil and Firebase bring their own keep rules; ours are in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // Phase 15: the release build (R8 and all) installed BESIDE the normal app, to test shrinking
+        // without touching the installed app, its library or its signature. Signed with the debug key,
+        // app id com.jpollack.earshot.r8test, shows as "Earshot R8 test". Build: gradlew assembleR8test.
+        create("r8test") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".r8test"
+            versionNameSuffix = "-r8test"
+            matchingFallbacks += "release"
         }
     }
 

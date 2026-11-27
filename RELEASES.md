@@ -78,5 +78,11 @@ Restore from a backup (phase 9).
 
 ## Shrinking
 
-R8 shrinking (`isMinifyEnabled`) stays off. Turning it on needs keep rules for Media3, Room and the
-Android Auto service and a full test pass, for a smaller APK that doesn't matter much here.
+Since phase 15, release builds are shrunk by R8 (`isMinifyEnabled` and `isShrinkResources`), with
+keep rules in `android/app/proguard-rules.pro`. To test a shrunk build without touching the installed
+app, build `gradlew assembleR8test`: the same release build, signed with the debug key, installed
+beside the normal app as **Earshot R8 test** (`com.jpollack.earshot.r8test`). Sign in there, let sync
+bring the library, test, then uninstall it.
+
+Each release run also keeps R8's `mapping.txt` as a workflow artifact (`earshot-<version>-mapping`,
+not on the release page), which turns a shrunk crash report back into readable class names.
