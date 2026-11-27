@@ -62,11 +62,19 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         val url = normalizeUrl(rawUrl)
         podcasts.findByFeedUrl(url)?.let { existing ->
             if (existing.subscribed) return@withContext existing
-            // Was unsubscribed but kept for its queued episodes: bring it back.
+            // Was unsubscribed but kept for its queued episodes, or is being previewed: bring it back.
             podcasts.setSubscribed(existing.id, true)
             val podcast = existing.copy(subscribed = true)
-            runCatching { refresh(podcast, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE) }
+            runCatching { refresh(podcast, InboxMode.NONE) }
                 .onFailure { if (it is CancellationException) throw it }
+            // Same rule as a fresh subscribe: only the newest episode goes to the Inbox (when not
+            // already played or queued). A preview has already stored every episode, so the refresh
+            // above finds none "new" and can't do this itself.
+            if (inboxNewest) {
+                episodes.getForPodcast(existing.id, 1).firstOrNull()?.episode?.let { newest ->
+                    if (!newest.played && newest.queuePosition == null) episodes.setInInbox(newest.id, true)
+                }
+            }
             return@withContext podcast
         }
         val feed = fetchFeed(url)
@@ -109,6 +117,64 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 Log.i(TAG, "Unsubscribed from $podcastId, keeping ${total - dropping.size} queued/playing episode(s)")
             }
         }
+    }
+
+    // ---- Preview (look at a podcast without subscribing) ----
+
+    /** Opening and closing previews one at a time, so a quick back-and-reopen can't delete the page being opened. */
+    private val previewLock = Mutex()
+
+    /**
+     * Loads a podcast for a look before subscribing. A podcast already in the library (subscribed, or
+     * kept for its queued episodes) is reused and, if unsubscribed, refreshed so every episode shows.
+     * Otherwise the feed is stored as an unsubscribed podcast: no Inbox, no refreshes, not in the
+     * library lists. Its episodes can be played, queued and downloaded like any other.
+     * Call [closePreview] when leaving its page.
+     */
+    suspend fun preview(rawUrl: String): Podcast = withContext(Dispatchers.IO) {
+        previewLock.withLock {
+            val url = normalizeUrl(rawUrl)
+            val existing = podcasts.findByFeedUrl(url)
+            if (existing != null) {
+                if (!existing.subscribed) {
+                    runCatching { refresh(existing, InboxMode.NONE) }
+                        .onFailure { if (it is CancellationException) throw it }
+                }
+                existing
+            } else {
+                val feed = fetchFeed(url)
+                val id = podcasts.insert(
+                    Podcast(
+                        feedUrl = url,
+                        title = feed.title.ifBlank { url },
+                        author = feed.author,
+                        description = feed.description,
+                        imageUrl = feed.imageUrl,
+                        lastRefreshedAt = System.currentTimeMillis(),
+                        subscribed = false,
+                    ),
+                )
+                saveEpisodes(id, url, feed, InboxMode.NONE)
+                requireNotNull(podcasts.get(id))
+            }
+        }
+    }
+
+    /**
+     * After leaving a previewed podcast's page without subscribing: keeps only its queued episodes
+     * and the one loaded in the player ([keepId]), the same as unsubscribing; with none, removes it.
+     * Does nothing if the podcast was subscribed meanwhile.
+     */
+    suspend fun closePreview(podcastId: Long, keepId: String?) {
+        previewLock.withLock {
+            val p = podcasts.get(podcastId)
+            if (p != null && !p.subscribed) unsubscribe(podcastId, keepId)
+        }
+    }
+
+    /** Tidies previews left behind if the app was closed while one was open. */
+    suspend fun closeAllPreviews(keepId: String?, except: Set<Long>) {
+        for (id in podcasts.unsubscribedIds()) if (id !in except) closePreview(id, keepId)
     }
 
     /** Deletes unsubscribed podcasts whose last queued episode has gone. */

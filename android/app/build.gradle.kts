@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -20,6 +22,17 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        // Supabase project for Podcast Index search, from android/local.properties (never committed):
+        //   earshot.supabaseUrl=https://<project-ref>.supabase.co
+        //   earshot.supabaseKey=sb_publishable_...   (the publishable key, which is meant to ship in apps)
+        // Without them the app searches Apple's directory instead.
+        val local = Properties().apply {
+            rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        }
+        fun quoted(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        buildConfigField("String", "SUPABASE_URL", quoted(local.getProperty("earshot.supabaseUrl", "")))
+        buildConfigField("String", "SUPABASE_KEY", quoted(local.getProperty("earshot.supabaseKey", "")))
     }
 
     buildTypes {
@@ -36,6 +49,12 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    testOptions {
+        // Plain JVM unit tests (audio processing): Android framework calls return defaults instead of throwing.
+        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -66,4 +85,6 @@ dependencies {
     implementation(libs.coil.network.okhttp)
 
     implementation(libs.reorderable)
+
+    testImplementation(libs.junit)
 }

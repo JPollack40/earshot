@@ -19,7 +19,8 @@ import com.earshot.app.data.TimeSaved
 import com.earshot.app.data.db.Podcast
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.data.feed.Chapter
-import com.earshot.app.data.search.ItunesSearch
+import com.earshot.app.data.search.Directory
+import com.earshot.app.data.search.SearchSource
 import com.earshot.app.data.search.SearchResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 sealed interface Screen {
@@ -61,7 +63,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun back(): Boolean {
         if (backStack.size <= 1) return false
-        backStack.removeAt(backStack.lastIndex)
+        val left = backStack.removeAt(backStack.lastIndex)
+        // Leaving a previewed podcast without subscribing: keep only what was queued or is playing.
+        if (left is Screen.PodcastDetail && left !in backStack) {
+            viewModelScope.launch { repo.closePreview(left.podcastId, keepId = nowPlaying.value.episodeId) }
+        }
         return true
     }
 
@@ -111,6 +117,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         player.connect()
+        // Previews left open when the app was last closed. Waits a moment so the player has loaded
+        // its episode (which is kept), and skips any podcast page already open again.
+        viewModelScope.launch {
+            delay(5_000)
+            val open = backStack.filterIsInstance<Screen.PodcastDetail>().map { it.podcastId }.toSet()
+            repo.closeAllPreviews(keepId = nowPlaying.value.episodeId, except = open)
+        }
     }
 
     // ---- Refresh ----
@@ -151,6 +164,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var subscribingUrl by mutableStateOf<String?>(null)
         private set
+    /** Which directory gave the current results (shown under the search box). */
+    var searchSource by mutableStateOf<SearchSource?>(null)
+        private set
+    /** Feed being loaded to open its page from search results. */
+    var openingUrl by mutableStateOf<String?>(null)
+        private set
     private var searchJob: Job? = null
 
     fun search(term: String) {
@@ -159,7 +178,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         searchJob = viewModelScope.launch {
             searching = true
             try {
-                searchResults = ItunesSearch.search(term)
+                val outcome = Directory.search(term)
+                searchResults = outcome.results
+                searchSource = outcome.source
+                if (outcome.fellBack) say("Podcast Index didn't answer, so these results are from Apple")
                 if (searchResults.isEmpty()) say("No podcasts found")
             } catch (e: CancellationException) {
                 throw e
@@ -185,6 +207,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 say("Couldn't subscribe: ${e.message}")
             } finally {
                 subscribingUrl = null
+            }
+        }
+    }
+
+    /**
+     * Opens a search result's page without subscribing (a preview), or its normal page if it's
+     * already in the library.
+     */
+    fun openPodcast(feedUrl: String) {
+        if (openingUrl != null) return
+        viewModelScope.launch {
+            openingUrl = feedUrl
+            try {
+                val podcast = repo.preview(feedUrl)
+                navigate(Screen.PodcastDetail(podcast.id))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                say("Couldn't open that podcast: ${e.message}")
+            } finally {
+                openingUrl = null
             }
         }
     }

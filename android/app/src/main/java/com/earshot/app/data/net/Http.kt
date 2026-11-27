@@ -14,7 +14,7 @@ object Http {
      * which HttpURLConnection will not follow on its own. Caller must disconnect().
      */
     @Throws(IOException::class)
-    fun open(url: String, maxRedirects: Int = 6): HttpURLConnection {
+    fun open(url: String, maxRedirects: Int = 6, headers: Map<String, String> = emptyMap()): HttpURLConnection {
         var current = URL(url)
         for (attempt in 0..maxRedirects) {
             val conn = current.openConnection() as HttpURLConnection
@@ -23,6 +23,7 @@ object Http {
             conn.readTimeout = 30_000
             conn.setRequestProperty("User-Agent", USER_AGENT)
             conn.setRequestProperty("Accept", "*/*")
+            for ((k, v) in headers) conn.setRequestProperty(k, v)
             val code = conn.responseCode
             if (code in 300..399) {
                 val location = conn.getHeaderField("Location")
@@ -40,8 +41,8 @@ object Http {
         throw IOException("Too many redirects for $url")
     }
 
-    suspend fun getText(url: String): String = withContext(Dispatchers.IO) {
-        val conn = open(url)
+    suspend fun getText(url: String, headers: Map<String, String> = emptyMap()): String = withContext(Dispatchers.IO) {
+        val conn = open(url, headers = headers)
         try {
             conn.inputStream.bufferedReader().use { it.readText() }
         } finally {

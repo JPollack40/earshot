@@ -25,6 +25,7 @@ fun EpisodeList(
     showPodcast: Boolean,
     modifier: Modifier = Modifier,
     header: LazyListScope.() -> Unit = {},
+    snippets: Map<String, String> = emptyMap(),
 ) {
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
     var openId by remember { mutableStateOf<String?>(null) }
@@ -41,6 +42,7 @@ fun EpisodeList(
                 onOpen = { openId = item.episode.id },
                 onPlay = { if (isCurrent) vm.player.togglePlay() else vm.play(item) },
                 onDownload = { vm.download(item) },
+                snippet = snippets[item.episode.id],
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
         }

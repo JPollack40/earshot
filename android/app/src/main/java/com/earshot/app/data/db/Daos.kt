@@ -60,6 +60,9 @@ interface PodcastDao {
     @Query("DELETE FROM podcasts WHERE id = :id")
     suspend fun delete(id: Long)
 
+    @Query("SELECT id FROM podcasts WHERE subscribed = 0")
+    suspend fun unsubscribedIds(): List<Long>
+
     @Query("UPDATE podcasts SET subscribed = :subscribed WHERE id = :id")
     suspend fun setSubscribed(id: Long, subscribed: Boolean)
 
