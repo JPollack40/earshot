@@ -119,3 +119,37 @@ export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow
     </div>
   );
 }
+
+/** A player error, with a button that copies everything needed to look into it (plus recent errors). */
+export function PlayerError({ className }: { className?: string }) {
+  const p = player.usePlayer();
+  const [copied, setCopied] = useState(false);
+  if (!p.error) return null;
+  const copy = async () => {
+    const earlier = player.errorLog().slice(1, 6);
+    const text = [p.errorDetails ?? p.error, ...(earlier.length ? ["", "Earlier errors in this browser:", ...earlier.map((e) => "---\n" + e)] : [])].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Older browsers: copy through a hidden text box.
+      const t = document.createElement("textarea");
+      t.value = text;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand("copy");
+      t.remove();
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className={`player-error ${className ?? ""}`}>
+      <span className="error small" title={p.error}>
+        {p.error}
+      </span>
+      <button className="text small" title="Copy the error details to paste into a message" onClick={() => void copy()}>
+        {copied ? "Copied" : "Copy details"}
+      </button>
+    </div>
+  );
+}
