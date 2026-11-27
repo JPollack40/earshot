@@ -475,7 +475,7 @@ class PlaybackService : MediaLibraryService() {
             val requested = mediaItems.getOrNull(startIndex.coerceAtLeast(0)) ?: mediaItems.firstOrNull()
                 ?: return Futures.immediateFailedFuture(IllegalArgumentException("Nothing to play"))
             // "Hey Google, play ... on Earshot" arrives with a search query and no id.
-            val query = requested.requestMetadata.searchQuery?.toString()
+            val query = requested.requestMetadata.searchQuery
                 ?.takeIf { requested.mediaId.isEmpty() }
             // Save where we were in the current episode before it's replaced.
             val prevId = player.currentMediaItem?.mediaId
