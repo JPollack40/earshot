@@ -126,6 +126,25 @@ object Settings {
         prefs(context).edit().putLong("saved_speed_ms", t.bySpeedMs).putLong("saved_smart_ms", t.bySmartSpeedMs).apply()
     }
 
+    // ---- Appearance (this phone only; not synced) ----
+
+    /** "glow" (default while Serena reviews it) or "classic" (the look before phase 5c). */
+    const val THEME_GLOW = "glow"
+    const val THEME_CLASSIC = "classic"
+
+    private var theme: MutableStateFlow<String>? = null
+
+    fun appTheme(context: Context): StateFlow<String> = themeFlow(context).asStateFlow()
+
+    private fun themeFlow(context: Context): MutableStateFlow<String> = synchronized(this) {
+        theme ?: MutableStateFlow(prefs(context).getString("app_theme", THEME_GLOW) ?: THEME_GLOW).also { theme = it }
+    }
+
+    fun setAppTheme(context: Context, value: String) {
+        themeFlow(context).value = value
+        prefs(context).edit().putString("app_theme", value).apply()
+    }
+
     // ---- Downloads ----
 
     /** Choices offered for [expireDays]; 0 means never. */

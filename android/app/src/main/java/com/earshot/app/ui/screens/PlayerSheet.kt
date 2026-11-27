@@ -60,7 +60,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.Canvas
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import com.earshot.app.playback.SleepTimer
+import com.earshot.app.ui.theme.LocalGlow
+import com.earshot.app.ui.theme.rememberArtColor
 import com.earshot.app.ui.AppViewModel
 import com.earshot.app.ui.formatClock
 import com.earshot.app.ui.formatSaved
@@ -87,18 +96,25 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var chaptersTop by remember { mutableIntStateOf(0) }
 
+    val glow = LocalGlow.current
+    val tint = rememberArtColor(now.artworkUrl, now.podcastTitle.ifEmpty { "earshot" })
+    val sheetBg = MaterialTheme.colorScheme.surfaceContainerLow
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = if (glow) tint else BottomSheetDefaults.ContainerColor,
     ) {
         Column(
             Modifier
+                // Glow: the sheet fades from the artwork colour into the background.
+                .then(if (glow) Modifier.background(Brush.verticalGradient(0f to tint, 0.55f to tint.copy(alpha = 0.35f).compositeOver(sheetBg), 1f to sheetBg)) else Modifier)
                 .verticalScroll(scroll)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Artwork(now.artworkUrl, 220, corner = 12)
+            Artwork(now.artworkUrl, if (glow) 280 else 220, corner = if (glow) 14 else 12)
             Spacer(Modifier.height(16.dp))
             Text(
                 now.title,
@@ -119,16 +135,30 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             // ---- Scrubber ----
             Spacer(Modifier.height(8.dp))
             val duration = now.durationMs.coerceAtLeast(1L).toFloat()
-            Slider(
-                value = (dragPosition ?: now.positionMs.toFloat()).coerceIn(0f, duration),
-                onValueChange = { dragPosition = it },
-                onValueChangeFinished = {
-                    dragPosition?.let { vm.player.seekTo(it.toLong()) }
-                    dragPosition = null
-                },
-                valueRange = 0f..duration,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Box(Modifier.fillMaxWidth()) {
+                Slider(
+                    value = (dragPosition ?: now.positionMs.toFloat()).coerceIn(0f, duration),
+                    onValueChange = { dragPosition = it },
+                    onValueChangeFinished = {
+                        dragPosition?.let { vm.player.seekTo(it.toLong()) }
+                        dragPosition = null
+                    },
+                    valueRange = 0f..duration,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                // Glow: a tick on the track at each chapter start.
+                if (glow && chapters.size > 1 && now.durationMs > 0) {
+                    val marks = chapters.map { it.startMs.toFloat() / duration }.filter { it > 0f && it < 1f }
+                    Canvas(Modifier.matchParentSize()) {
+                        val inset = 10.dp.toPx()
+                        val tick = Size(2.dp.toPx(), 10.dp.toPx())
+                        marks.forEach { f ->
+                            val x = inset + f * (size.width - 2 * inset)
+                            drawRect(Color.White.copy(alpha = 0.55f), topLeft = Offset(x - tick.width / 2, size.height / 2 - tick.height / 2), size = tick)
+                        }
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatClock(position), style = MaterialTheme.typography.labelSmall)
                 Text(

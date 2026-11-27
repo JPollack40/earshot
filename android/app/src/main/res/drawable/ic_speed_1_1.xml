@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Speed button showing 1.1x. Text drawn from Sora Bold (SIL OFL). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5.63 15.5V9.85L6.03 10.16H4.33V8.87H7.11V15.5ZM8.36 15.5V13.87H9.96V15.5ZM11.99 15.5V9.85L12.39 10.16H10.7V8.87H13.48V15.5ZM14.39 15.5 15.93 12.83 15.9 13.06 14.44 10.53H16.02L16.92 12.22H17.06L17.91 10.53H19.38L18 13.07L18.03 12.88L19.67 15.5H18.09L17.02 13.69H16.87L15.87 15.5Z" />
+</vector>

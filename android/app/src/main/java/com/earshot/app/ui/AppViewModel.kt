@@ -57,6 +57,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val backStack = mutableStateListOf<Screen>(Screen.Library)
     var showPlayer by mutableStateOf(false)
 
+    /** Library tab: 0 Queue, 1 New Episodes, 2 Latest, 3 Podcasts. Kept here so Glow's bottom bar can switch it. */
+    var libraryTab by mutableIntStateOf(0)
+
+    /** Glow's bottom bar: go back to the library on [tab], closing any pages on top (previews close as usual). */
+    fun showTab(tab: Int) {
+        libraryTab = tab
+        while (backStack.size > 1) back()
+    }
+
     fun navigate(screen: Screen) {
         backStack.add(screen)
     }
@@ -296,6 +305,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ---- Settings ----
+    /** "glow" or "classic" (Settings > Appearance). This phone only. */
+    val appTheme: StateFlow<String> = Settings.appTheme(app)
+
+    fun setAppTheme(value: String) = Settings.setAppTheme(app, value)
+
     var autoDownloadQueued by mutableStateOf(Settings.autoDownloadQueued(app))
         private set
 

@@ -64,6 +64,17 @@ fun SettingsScreen(vm: AppViewModel) {
             AccountSection(vm)
             divider()
 
+            val theme by vm.appTheme.collectAsStateWithLifecycle()
+            SectionHeader("Appearance")
+            ChoiceRow(
+                "Theme",
+                "Glow: artwork colours and larger titles. Classic: the original look. This phone only.",
+                theme,
+                listOf(Settings.THEME_GLOW, Settings.THEME_CLASSIC),
+                { if (it == Settings.THEME_GLOW) "Glow" else "Classic" },
+            ) { vm.setAppTheme(it) }
+            divider()
+
             val d by vm.playbackDefaults.collectAsStateWithLifecycle()
             SectionHeader("Playback")
             Text(

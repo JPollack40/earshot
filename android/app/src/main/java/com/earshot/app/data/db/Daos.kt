@@ -127,6 +127,13 @@ interface PodcastDao {
             "(SELECT 1 FROM episodes q WHERE q.podcastId = p.id AND q.queuePosition IS NOT NULL)",
     )
     suspend fun downloadsOfUnusedUnsubscribed(): List<Episode>
+
+    /** Subscribed podcasts whose title matches [pattern] (a LIKE pattern, escaped with a backslash), for Android Auto search. */
+    @Query(
+        "SELECT * FROM podcasts WHERE subscribed = 1 AND title LIKE :pattern ESCAPE '\\' " +
+            "ORDER BY pinned DESC, title COLLATE NOCASE",
+    )
+    suspend fun search(pattern: String): List<Podcast>
 }
 
 @Dao
@@ -142,6 +149,13 @@ interface EpisodeDao {
 
     @Query("$EPISODE_JOIN WHERE p.subscribed = 1 ORDER BY e.pubDate DESC LIMIT :limit")
     suspend fun getLatest(limit: Int): List<EpisodeWithPodcast>
+
+    /** Episodes of subscribed podcasts whose title, or podcast's title, matches [pattern] (LIKE, escaped with a backslash). */
+    @Query(
+        "$EPISODE_JOIN WHERE p.subscribed = 1 AND (e.title LIKE :pattern ESCAPE '\\' OR p.title LIKE :pattern ESCAPE '\\') " +
+            "ORDER BY e.pubDate DESC LIMIT :limit",
+    )
+    suspend fun search(pattern: String, limit: Int): List<EpisodeWithPodcast>
 
     // ---- Inbox ----
 
