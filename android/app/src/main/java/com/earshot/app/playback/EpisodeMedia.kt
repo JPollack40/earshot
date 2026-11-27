@@ -80,8 +80,6 @@ object EpisodeMedia {
                     .setIsPlayable(true)
                     .setIsBrowsable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE)
-                    // Shows the Add to queue button on the row in Android Auto.
-                    .setSupportedCommands(listOf(PlayerButtons.QUEUE_ADD))
                     .setExtras(extras)
                     .build(),
             )

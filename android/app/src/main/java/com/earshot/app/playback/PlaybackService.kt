@@ -131,8 +131,6 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(buttons())
-            // Add to queue on episode rows in Android Auto.
-            .setCommandButtonsForMediaItems(listOf(PlayerButtons.queueAdd(iconUri(R.drawable.ic_car_queue_add))))
             .build()
         // Phase 12 scaffold: the templated car app (same process) hands this to the car host.
         platformToken = session?.platformToken
@@ -733,7 +731,6 @@ class PlaybackService : MediaLibraryService() {
                     defaults.availableSessionCommands.buildUpon()
                         .add(PlayerButtons.markPlayedCommand)
                         .add(PlayerButtons.bookmarkCommand)
-                        .add(PlayerButtons.queueAddCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -750,20 +747,6 @@ class PlaybackService : MediaLibraryService() {
                     finishCurrent(it, playNext = player.playWhenReady, atEnd = false)
                 }
                 PlayerButtons.BOOKMARK -> bookmarkNow()
-                PlayerButtons.QUEUE_ADD -> {
-                    // Android Auto's Add to queue on an episode row: the row's episode, at the end of the queue.
-                    val id = args.getString(MediaConstants.EXTRA_KEY_MEDIA_ID)
-                        ?: customCommand.customExtras.getString(MediaConstants.EXTRA_KEY_MEDIA_ID)
-                        ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
-                    return future {
-                        if (repo.episodes.get(id) == null) SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE)
-                        else {
-                            repo.queueLast(id)
-                            Log.i(TAG, "Added to queue from the car: $id")
-                            SessionResult(SessionResult.RESULT_SUCCESS)
-                        }
-                    }
-                }
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
