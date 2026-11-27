@@ -310,3 +310,81 @@ interface EpisodeDao {
         changedAt: Long,
     )
 }
+
+@Dao
+interface TranscriptDao {
+    @Query("SELECT * FROM transcripts WHERE episodeId = :episodeId")
+    suspend fun get(episodeId: String): Transcript?
+
+    @Query("SELECT * FROM transcripts WHERE episodeId = :episodeId")
+    fun observe(episodeId: String): Flow<Transcript?>
+
+    @Query("SELECT episodeId FROM transcripts")
+    fun observeIds(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(t: Transcript)
+
+    /**
+     * Transcripts containing every one of up to 6 terms (lower-cased; unused terms are ""), for search.
+     * Only the episode id and segments are needed, newest first.
+     */
+    @Query(
+        "SELECT * FROM transcripts WHERE plain LIKE '%' || :a || '%' AND plain LIKE '%' || :b || '%' " +
+            "AND plain LIKE '%' || :c || '%' AND plain LIKE '%' || :d || '%' AND plain LIKE '%' || :e || '%' " +
+            "AND plain LIKE '%' || :f || '%' ORDER BY changedAt DESC LIMIT :limit",
+    )
+    suspend fun search(a: String, b: String, c: String, d: String, e: String, f: String, limit: Int): List<Transcript>
+
+    /** Episodes that are queued, new or played and have a feed transcript not saved yet (newest first). */
+    @Query(
+        "SELECT e.* FROM episodes e WHERE e.transcriptUrl IS NOT NULL AND " +
+            "(e.queuePosition IS NOT NULL OR e.inInbox = 1 OR e.played = 1 OR e.positionMs > 0) " +
+            "AND NOT EXISTS (SELECT 1 FROM transcripts t WHERE t.episodeId = e.id) " +
+            "ORDER BY e.lastPlayedAt DESC, e.pubDate DESC LIMIT :limit",
+    )
+    suspend fun missingFeedTranscripts(limit: Int): List<Episode>
+
+    @Query("SELECT * FROM transcripts WHERE dirty = 1 LIMIT :limit")
+    suspend fun dirty(limit: Int): List<Transcript>
+
+    @Query("SELECT COUNT(*) FROM transcripts WHERE dirty = 1")
+    fun observeDirtyCount(): Flow<Int>
+
+    @Query("UPDATE transcripts SET dirty = 0 WHERE episodeId = :episodeId AND changedAt = :changedAt")
+    suspend fun markClean(episodeId: String, changedAt: Long)
+}
+
+@Dao
+interface BookmarkDao {
+    @Query("SELECT * FROM bookmarks WHERE deleted = 0 ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<Bookmark>>
+
+    @Query("SELECT * FROM bookmarks WHERE deleted = 0 ORDER BY createdAt DESC")
+    suspend fun getAll(): List<Bookmark>
+
+    @Query("SELECT * FROM bookmarks WHERE episodeId = :episodeId AND deleted = 0 ORDER BY positionMs")
+    fun observeForEpisode(episodeId: String): Flow<List<Bookmark>>
+
+    @Query("SELECT * FROM bookmarks WHERE episodeId = :episodeId AND deleted = 0 ORDER BY positionMs")
+    suspend fun getForEpisode(episodeId: String): List<Bookmark>
+
+    @Query("SELECT * FROM bookmarks WHERE id = :id")
+    suspend fun get(id: String): Bookmark?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(b: Bookmark)
+
+    @Query("SELECT * FROM bookmarks WHERE dirty = 1 LIMIT :limit")
+    suspend fun dirty(limit: Int): List<Bookmark>
+
+    @Query("SELECT COUNT(*) FROM bookmarks WHERE dirty = 1")
+    fun observeDirtyCount(): Flow<Int>
+
+    @Query("UPDATE bookmarks SET dirty = 0 WHERE id = :id AND changedAt = :changedAt")
+    suspend fun markClean(id: String, changedAt: Long)
+
+    /** Deletions that have reached the server and are older than [before] can go for good. */
+    @Query("DELETE FROM bookmarks WHERE deleted = 1 AND dirty = 0 AND changedAt < :before")
+    suspend fun purgeDeleted(before: Long)
+}

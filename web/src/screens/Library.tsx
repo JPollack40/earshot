@@ -54,6 +54,12 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
             Sync problem
           </span>
         )}
+        <button className="icon" title="Search transcripts" onClick={() => nav.open({ name: "search" })}>
+          <Icon name="findText" />
+        </button>
+        <button className="icon" title="Bookmarks" onClick={() => nav.open({ name: "bookmarks" })}>
+          <Icon name="bookmark" />
+        </button>
         <button className="icon" title="Sync now" onClick={() => void store.pull()}>
           <Icon name="sync" />
         </button>
@@ -76,6 +82,12 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
             Sync problem
           </span>
         )}
+        <button className="text" title="Search transcripts" onClick={() => nav.open({ name: "search" })}>
+          Search transcripts
+        </button>
+        <button className="text" title="Bookmarks" onClick={() => nav.open({ name: "bookmarks" })}>
+          Bookmarks
+        </button>
         <button className="icon" title="Sync now" onClick={() => void store.pull()}>
           {s.syncing ? "…" : "⟳"}
         </button>

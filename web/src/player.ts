@@ -339,6 +339,16 @@ export function seekTo(ms: number) {
   set({ positionMs: ms });
 }
 
+/** Plays an episode from [ms]: seeks if it's the one loaded, otherwise loads it there. */
+export function playAt(e: EpisodeRow, ms: number) {
+  if (state.episode?.id === e.id) {
+    seekTo(ms);
+    play();
+    return;
+  }
+  load({ ...e, played: false, position_ms: Math.max(1, Math.round(ms)) }, true);
+}
+
 export function skipBy(ms: number) {
   seekTo(audio.currentTime * 1000 + ms);
 }

@@ -6,6 +6,7 @@ import * as player from "../player";
 import * as store from "../store";
 import type { EpisodeRow } from "../types";
 import { episodeMeta, safeHtml } from "../util";
+import * as notes from "../notes";
 import { Glyph } from "./Icons";
 
 export interface Nav {
@@ -14,6 +15,9 @@ export interface Nav {
   home: () => void;
   showTab: (t: Tab) => void;
 }
+
+/** The app's navigation, for places that aren't handed it (the episode sheet). Set by App. */
+export const navHolder: { current: Nav | null } = { current: null };
 
 /** Playing an episode puts it at the top of the queue, as on the phone. */
 export function playEpisode(e: EpisodeRow, feed?: ParsedFeed) {
@@ -98,6 +102,10 @@ export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow
     f();
     onClose();
   };
+  const n = notes.useNotes();
+  const hasTranscript = n.transcripts.has(e.id);
+  const transcribing = n.transcribing.get(e.id);
+  const bookmarkCount = notes.bookmarks(n, e.id).length;
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet" onClick={(ev) => ev.stopPropagation()}>
@@ -114,6 +122,24 @@ export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow
           <button onClick={act(() => store.setPlayed(e, !e.played, feed))}>{e.played ? "Mark unplayed" : "Mark played"}</button>
           {e.in_inbox && <button onClick={act(() => store.archive(e))}>Archive</button>}
         </div>
+        {n.available && (
+          <div className="actions">
+            <button onClick={act(() => navHolder.current?.open({ name: "transcript", episodeId: e.id }))}>
+              {transcribing?.kind === "running" ? "Transcript (transcribing…)" : bookmarkCount ? `Transcript · ${bookmarkCount} bookmark${bookmarkCount === 1 ? "" : "s"}` : "Transcript"}
+            </button>
+            {!hasTranscript && !e.transcript_url && transcribing?.kind !== "running" && (
+              <button
+                title="Uses your free Gemini API key; keep the page open while it runs"
+                onClick={act(() => {
+                  void notes.transcribeWithGemini(e);
+                  navHolder.current?.open({ name: "transcript", episodeId: e.id });
+                })}
+              >
+                Transcribe with Gemini
+              </button>
+            )}
+          </div>
+        )}
         <div className="notes" dangerouslySetInnerHTML={{ __html: safeHtml(e.description) }} />
       </div>
     </div>

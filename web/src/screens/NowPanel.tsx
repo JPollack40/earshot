@@ -4,6 +4,7 @@ import type { PlaybackDefaults, PodcastRow } from "../types";
 import { episodeMeta, formatClock, safeHtml } from "../util";
 import { Art, type Nav } from "./common";
 import { Icon } from "./Icons";
+import { BookmarkButton, TranscriptButton } from "./Notes";
 import { AudioChips, audioChanger, GlowScrubber, SkipSelect, SleepSelect, useChapters } from "./PlayerBar";
 
 /** Glow's optional right-hand panel (full screen at phone width): artwork, chapters, settings, show notes. */
@@ -45,6 +46,10 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
         <button className="g-skip" title="Skip forward" onClick={() => player.skipBy(prefs.skipForwardMs)}>
           <Icon name="forward" size={30} />
         </button>
+      </div>
+      <div className="g-chips np-chips np-notes-chips">
+        <BookmarkButton />
+        <TranscriptButton nav={nav} />
       </div>
       <div className="np-phone g-chips np-chips">
         <AudioChips prefs={prefs} podcast={podcast} />

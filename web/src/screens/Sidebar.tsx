@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { setAppearance, useAppearance } from "../appearance";
 import { supabase } from "../supabase";
 import * as store from "../store";
+import * as notes from "../notes";
 import { Art, type Nav } from "./common";
 import { Icon } from "./Icons";
 import type { Tab } from "./Library";
@@ -35,10 +36,11 @@ export function tabCount(s: store.State, tab: Tab): number | "" {
 }
 
 /** Glow's left sidebar: the four sections, pinned podcasts, and account actions. */
-export function Sidebar({ tab, nav, activeFeed }: { tab: Tab | null; nav: Nav; activeFeed: string | null }) {
+export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: Nav; activeFeed: string | null; page: string }) {
   const s = store.useStore();
   const pinned = store.library(s).filter((p) => p.pinned);
   const counts = newCounts(s);
+  const bookmarkCount = notes.bookmarks(notes.useNotes()).length;
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -53,6 +55,15 @@ export function Sidebar({ tab, nav, activeFeed }: { tab: Tab | null; nav: Nav; a
             <span className="count">{tabCount(s, t.tab)}</span>
           </button>
         ))}
+        <button className={`nav-item ${page === "search" ? "on" : ""}`} aria-current={page === "search" ? "page" : undefined} onClick={() => nav.open({ name: "search" })}>
+          <Icon name="findText" />
+          <span>Search transcripts</span>
+        </button>
+        <button className={`nav-item ${page === "bookmarks" ? "on" : ""}`} aria-current={page === "bookmarks" ? "page" : undefined} onClick={() => nav.open({ name: "bookmarks" })}>
+          <Icon name="bookmark" />
+          <span>Bookmarks</span>
+          <span className="count">{bookmarkCount || ""}</span>
+        </button>
       </nav>
       {pinned.length > 0 && (
         <>

@@ -12,8 +12,16 @@ import { AddPage } from "./screens/AddPage";
 import { PlayerBar } from "./screens/PlayerBar";
 import { SignIn } from "./screens/SignIn";
 import { resolvePlayback } from "./util";
+import { BookmarksPage, TranscriptPage, TranscriptSearchPage } from "./screens/Notes";
+import { navHolder } from "./screens/common";
 
-export type Route = { name: "library" } | { name: "podcast"; feedUrl: string } | { name: "add" };
+export type Route =
+  | { name: "library" }
+  | { name: "podcast"; feedUrl: string }
+  | { name: "add" }
+  | { name: "transcript"; episodeId: string; focusMs?: number }
+  | { name: "bookmarks" }
+  | { name: "search" };
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -88,17 +96,25 @@ export function App() {
       setStack([{ name: "library" }]);
     },
   };
+  navHolder.current = nav;
+
+  const page = (
+    <>
+      {route.name === "library" && <Library nav={nav} tab={tab} />}
+      {route.name === "podcast" && <PodcastPage key={route.feedUrl} feedUrl={route.feedUrl} nav={nav} />}
+      {route.name === "add" && <AddPage nav={nav} />}
+      {route.name === "transcript" && <TranscriptPage key={`${route.episodeId}-${route.focusMs ?? ""}`} episodeId={route.episodeId} focusMs={route.focusMs} nav={nav} />}
+      {route.name === "bookmarks" && <BookmarksPage nav={nav} />}
+      {route.name === "search" && <TranscriptSearchPage nav={nav} />}
+    </>
+  );
 
   if (look.theme === "glow") {
     const activeTab = route.name === "library" ? tab : null;
     return (
       <div className={`app glow-app ${look.nowPanel && p.episode ? "with-panel" : ""}`}>
-        <Sidebar tab={activeTab} nav={nav} activeFeed={route.name === "podcast" ? route.feedUrl : null} />
-        <main className="content">
-          {route.name === "library" && <Library nav={nav} tab={tab} />}
-          {route.name === "podcast" && <PodcastPage key={route.feedUrl} feedUrl={route.feedUrl} nav={nav} />}
-          {route.name === "add" && <AddPage nav={nav} />}
-        </main>
+        <Sidebar tab={activeTab} nav={nav} activeFeed={route.name === "podcast" ? route.feedUrl : null} page={route.name} />
+        <main className="content">{page}</main>
         {look.nowPanel && p.episode && <NowPanel podcast={loadedPodcast} prefs={prefs} nav={nav} />}
         <PlayerBar prefs={prefs} podcast={loadedPodcast} nav={nav} />
         <BottomTabs tab={activeTab} nav={nav} />
@@ -108,11 +124,7 @@ export function App() {
 
   return (
     <div className="app">
-      <main className="content">
-        {route.name === "library" && <Library nav={nav} tab={tab} />}
-        {route.name === "podcast" && <PodcastPage key={route.feedUrl} feedUrl={route.feedUrl} nav={nav} />}
-        {route.name === "add" && <AddPage nav={nav} />}
-      </main>
+      <main className="content">{page}</main>
       <PlayerBar prefs={prefs} podcast={loadedPodcast} nav={nav} />
     </div>
   );

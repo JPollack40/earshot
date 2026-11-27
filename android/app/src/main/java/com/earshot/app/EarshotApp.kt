@@ -8,6 +8,7 @@ import com.earshot.app.data.OpmlImporter
 import com.earshot.app.data.Repository
 import com.earshot.app.data.db.AppDatabase
 import com.earshot.app.data.sync.SyncEngine
+import com.earshot.app.data.transcript.Transcripts
 import com.earshot.app.playback.PlaybackService
 import com.earshot.app.playback.PlayerConnection
 import com.earshot.app.work.CleanupWorker
@@ -34,18 +35,23 @@ class EarshotApp : Application() {
     /** Two-way sync with Supabase (phase 5b). */
     val sync: SyncEngine by lazy { SyncEngine(this) }
 
+    /** Transcripts and bookmarks (phase 6). */
+    val transcripts: Transcripts by lazy { Transcripts(this) }
+
     override fun onCreate() {
         super.onCreate()
         db = AppDatabase.build(this)
         repository = Repository(this, db)
         importer = OpmlImporter(repository, appScope)
-        getSystemService(NotificationManager::class.java)?.createNotificationChannel(
-            NotificationChannel(CHANNEL_DOWNLOADS, "Downloads", NotificationManager.IMPORTANCE_LOW),
-        )
+        getSystemService(NotificationManager::class.java)?.run {
+            createNotificationChannel(NotificationChannel(CHANNEL_DOWNLOADS, "Downloads", NotificationManager.IMPORTANCE_LOW))
+            createNotificationChannel(NotificationChannel(CHANNEL_TRANSCRIPTS, "Transcribing", NotificationManager.IMPORTANCE_LOW))
+        }
         RefreshWorker.schedule(this)
         CleanupWorker.schedule(this)
         sync.start()
         cleanupDownloads("app start")
+        transcripts.fetchMissingInBackground("app start")
     }
 
     /** Applies the download-retention rules now, never touching the episode loaded in the player. */
@@ -64,5 +70,6 @@ class EarshotApp : Application() {
 
     companion object {
         const val CHANNEL_DOWNLOADS = "downloads"
+        const val CHANNEL_TRANSCRIPTS = "transcripts"
     }
 }

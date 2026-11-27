@@ -222,7 +222,29 @@ class PlaybackService : MediaLibraryService() {
 
     // ---- Playing-screen buttons: skip back / forward, Mark played ----
 
-    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs)
+    /** True for a few seconds after a bookmark from the car or notification (filled icon). */
+    private var bookmarkFlash = false
+    private var bookmarkFlashJob: Job? = null
+
+    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, bookmarkFlash)
+
+    /** Bookmarks the playing moment (Bookmark button in Android Auto or the notification). */
+    private fun bookmarkNow() {
+        val id = player.currentMediaItem?.mediaId ?: return
+        val position = player.currentPosition
+        scope.launch {
+            val b = app.transcripts.addBookmark(id, position) ?: return@launch
+            Log.i(TAG, "Bookmarked ${b.episodeTitle} at ${b.positionMs} ms")
+            bookmarkFlash = true
+            refreshButtons()
+            bookmarkFlashJob?.cancel()
+            bookmarkFlashJob = scope.launch {
+                delay(3_000)
+                bookmarkFlash = false
+                refreshButtons()
+            }
+        }
+    }
 
     private fun refreshButtons() {
         session?.setMediaButtonPreferences(buttons())
@@ -491,14 +513,15 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
             // Start from Media3's defaults for this controller (full control when trusted, read-only
-            // otherwise) and add the Mark played button. Android Auto shows the
+            // otherwise) and add the Mark played and Bookmark buttons. Android Auto shows the
             // buttons the media notification's controller has, and taps are checked against its
-            // own controller, so every controller gets it. It only marks an episode played.
+            // own controller, so every controller gets them. They only mark played or bookmark.
             val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
             val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailableSessionCommands(
                     defaults.availableSessionCommands.buildUpon()
-                                        .add(PlayerButtons.markPlayedCommand)
+                        .add(PlayerButtons.markPlayedCommand)
+                        .add(PlayerButtons.bookmarkCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -514,6 +537,7 @@ class PlaybackService : MediaLibraryService() {
                 PlayerButtons.MARK_PLAYED -> player.currentMediaItem?.mediaId?.let {
                     finishCurrent(it, playNext = player.playWhenReady, atEnd = false)
                 }
+                PlayerButtons.BOOKMARK -> bookmarkNow()
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))

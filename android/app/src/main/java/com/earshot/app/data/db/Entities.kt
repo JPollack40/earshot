@@ -108,3 +108,46 @@ data class PodcastWithCount(
     @Embedded val podcast: Podcast,
     val unplayedCount: Int,
 )
+
+/**
+ * A saved transcript for one episode (v6). [segmentsJson] is the shared format (see
+ * data/transcript/TranscriptFormat.kt): [{"s":startMs,"e":endMs,"t":"text","sp":"speaker"}].
+ * [plain] is all the text, lower-cased, for search. No foreign key: a transcript outlives its
+ * episode leaving the library, so bookmarks still show their quotes.
+ */
+@Entity(tableName = "transcripts")
+data class Transcript(
+    @PrimaryKey val episodeId: String,
+    /** "feed" (the podcast's own transcript) or "gemini" (transcribed on request). */
+    val source: String,
+    /** False when the feed's transcript has no timings (one block of text). */
+    @ColumnInfo(defaultValue = "1") val timed: Boolean = true,
+    val segmentsJson: String,
+    val plain: String,
+    @ColumnInfo(defaultValue = "0") val dirty: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = 0,
+)
+
+/**
+ * A bookmark (v6): a moment in an episode, the stretch of transcript it quotes ([startMs] to [endMs])
+ * and an optional note. Episode details are copied in so it survives the episode leaving the library.
+ * [deleted] marks a deletion that still has to reach the other devices.
+ */
+@Entity(tableName = "bookmarks", indices = [Index("episodeId")])
+data class Bookmark(
+    @PrimaryKey val id: String,
+    val episodeId: String,
+    val feedUrl: String = "",
+    val episodeTitle: String = "",
+    val podcastTitle: String = "",
+    val imageUrl: String? = null,
+    val audioUrl: String? = null,
+    val positionMs: Long,
+    val startMs: Long,
+    val endMs: Long,
+    val note: String = "",
+    val createdAt: Long,
+    @ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
+    @ColumnInfo(defaultValue = "1") val dirty: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
+)

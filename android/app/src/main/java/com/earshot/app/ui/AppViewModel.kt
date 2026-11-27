@@ -18,6 +18,10 @@ import com.earshot.app.data.Settings
 import com.earshot.app.data.TimeSaved
 import com.earshot.app.data.db.Podcast
 import com.earshot.app.data.db.EpisodeWithPodcast
+import com.earshot.app.data.db.Bookmark
+import com.earshot.app.data.transcript.LoadedTranscript
+import com.earshot.app.data.transcript.TranscribeState
+import com.earshot.app.data.transcript.TranscriptHit
 import com.earshot.app.data.feed.Chapter
 import com.earshot.app.data.search.Directory
 import com.earshot.app.data.search.SearchSource
@@ -45,7 +49,14 @@ sealed interface Screen {
     data class PodcastDetail(val podcastId: Long) : Screen
     data object Add : Screen
     data object Settings : Screen
+    /** An episode's transcript; [focusMs] scrolls to and highlights a moment (from search). */
+    data class TranscriptView(val episodeId: String, val focusMs: Long? = null) : Screen
+    data object Bookmarks : Screen
+    data object TranscriptSearch : Screen
 }
+
+/** A Markdown file to hand to the share sheet. */
+data class ShareRequest(val fileName: String, val markdown: String)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -443,6 +454,143 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun syncNow() {
         viewModelScope.launch {
             say(if (app.sync.sync("Sync now")) "Synced" else "Sync failed: ${app.sync.status.value.error ?: "not signed in"}")
+        }
+    }
+
+    // ---- Transcripts and bookmarks (phase 6) ----
+    val transcripts = app.transcripts
+
+    fun transcript(episodeId: String): Flow<LoadedTranscript?> = transcripts.observe(episodeId)
+
+    /** Ids of episodes with a saved transcript. */
+    val transcriptIds: StateFlow<Set<String>> = app.db.transcripts().observeIds().map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    val transcribing: StateFlow<Map<String, TranscribeState>> = transcripts.transcribing
+
+    val bookmarks: StateFlow<List<Bookmark>> = transcripts.observeBookmarks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun bookmarksFor(episodeId: String): Flow<List<Bookmark>> = transcripts.observeBookmarks(episodeId)
+
+    fun episode(id: String): Flow<EpisodeWithPodcast?> = repo.observeEpisode(id)
+
+    val signedIn: Boolean get() = app.sync.canSync
+
+    /** Bookmarks the playing moment. */
+    fun bookmarkNow() {
+        val id = nowPlaying.value.episodeId ?: return
+        val pos = nowPlaying.value.positionMs
+        viewModelScope.launch {
+            val b = transcripts.addBookmark(id, pos)
+            say(if (b != null) "Bookmarked at ${formatClock(b.positionMs)}" else "Couldn't bookmark this episode")
+        }
+    }
+
+    fun updateBookmark(b: Bookmark) {
+        viewModelScope.launch { transcripts.updateBookmark(b) }
+    }
+
+    fun deleteBookmark(b: Bookmark) {
+        viewModelScope.launch {
+            transcripts.deleteBookmark(b)
+            say("Bookmark deleted")
+        }
+    }
+
+    /** Plays an episode from a moment, if it's still in the library. */
+    fun playAt(episodeId: String, positionMs: Long) {
+        viewModelScope.launch {
+            val item = repo.episodes.getWithPodcast(episodeId)
+            if (item == null) {
+                say("That episode isn't in your library any more")
+                return@launch
+            }
+            player.playAt(item, positionMs)
+        }
+    }
+
+    /** Fetches the feed's transcript now (when opening the transcript page). Errors are shown on the page. */
+    var feedTranscriptError by mutableStateOf<String?>(null)
+        private set
+    var fetchingTranscript by mutableStateOf(false)
+        private set
+
+    fun fetchFeedTranscript(episodeId: String) {
+        if (fetchingTranscript) return
+        viewModelScope.launch {
+            val e = repo.episodes.get(episodeId) ?: return@launch
+            if (e.transcriptUrl == null) return@launch
+            fetchingTranscript = true
+            feedTranscriptError = null
+            try {
+                transcripts.ensureFeedTranscript(e)
+            } catch (ex: CancellationException) {
+                throw ex
+            } catch (ex: Exception) {
+                feedTranscriptError = ex.message ?: ex.toString()
+            } finally {
+                fetchingTranscript = false
+            }
+        }
+    }
+
+    fun transcribeWithGemini(episodeId: String) {
+        if (!app.sync.canSync) {
+            say("Sign in first (Settings > Sync): transcribing goes through your Supabase project")
+            return
+        }
+        transcripts.requestTranscription(episodeId)
+        say("Transcribing with Gemini. This takes a few minutes; you can leave the app")
+    }
+
+    fun cancelTranscription(episodeId: String) = transcripts.cancelTranscription(episodeId)
+
+    // Search across transcripts
+    var transcriptQuery by mutableStateOf("")
+    var transcriptResults by mutableStateOf<List<TranscriptHit>>(emptyList())
+        private set
+    var searchingTranscripts by mutableStateOf(false)
+        private set
+    private var transcriptSearchJob: Job? = null
+
+    fun searchTranscripts(query: String) {
+        transcriptQuery = query
+        transcriptSearchJob?.cancel()
+        if (query.isBlank()) {
+            transcriptResults = emptyList()
+            return
+        }
+        transcriptSearchJob = viewModelScope.launch {
+            delay(250) // typing
+            searchingTranscripts = true
+            try {
+                transcriptResults = transcripts.search(query)
+            } finally {
+                searchingTranscripts = false
+            }
+        }
+    }
+
+    // Markdown export: MainActivity hands these to the share sheet.
+    private val _shares = Channel<ShareRequest>(Channel.BUFFERED)
+    val shares: Flow<ShareRequest> = _shares.receiveAsFlow()
+
+    private fun share(result: Pair<String, String>?, missing: String) {
+        if (result == null) say(missing) else _shares.trySend(ShareRequest(result.first, result.second))
+    }
+
+    fun exportEpisodeBookmarks(episodeId: String) {
+        viewModelScope.launch { share(transcripts.exportEpisodeBookmarks(episodeId), "Nothing to export") }
+    }
+
+    fun exportTranscript(episodeId: String) {
+        viewModelScope.launch { share(transcripts.exportTranscript(episodeId), "This episode has no transcript yet") }
+    }
+
+    fun exportAllBookmarks() {
+        viewModelScope.launch {
+            if (transcripts.allBookmarks().isEmpty()) say("No bookmarks yet") else share(transcripts.exportAllBookmarks(), "")
         }
     }
 

@@ -154,6 +154,24 @@ class PlayerConnection(private val app: EarshotApp) {
         }
     }
 
+    /**
+     * Plays an episode from [positionMs] (a transcript line, a bookmark or a search result). If it's
+     * already loaded it just seeks there.
+     */
+    fun playAt(item: EpisodeWithPodcast, positionMs: Long) {
+        val id = item.episode.id
+        withController { c ->
+            if (c.currentMediaItem?.mediaId == id && c.playbackState != Player.STATE_ENDED) {
+                c.seekTo(positionMs)
+                c.play()
+                return@withController
+            }
+            c.setMediaItem(MediaItem.Builder().setMediaId(id).build(), positionMs.coerceAtLeast(1))
+            c.prepare()
+            c.play()
+        }
+    }
+
     /** At app start, show the top of the queue in the mini player, paused, ready to resume. */
     private fun loadQueueHead(c: MediaController) {
         if (c.mediaItemCount > 0) return

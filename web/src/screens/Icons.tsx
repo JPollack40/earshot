@@ -78,6 +78,18 @@ const paths: Record<string, React.ReactNode> = {
     </>
   ),
   signOut: <path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" />,
+  bookmark: <path d="M7 4h10v16l-5-4-5 4z" />,
+  bookmarkOn: <path d="M7 4h10v16l-5-4-5 4z" fill="currentColor" />,
+  transcript: <path d="M5 6h14M5 10h14M5 14h9M5 18h6" />,
+  sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,
+  download: <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />,
+  findText: (
+    <>
+      <path d="M4 6h10M4 10h6M4 14h4" />
+      <circle cx="15.5" cy="14.5" r="3.5" />
+      <path d="m18 17 3 3" />
+    </>
+  ),
   more: (
     <>
       <circle cx="6" cy="12" r="1.2" fill="currentColor" />

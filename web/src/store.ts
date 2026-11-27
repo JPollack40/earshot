@@ -3,6 +3,7 @@ import type { ParsedFeed } from "./feed";
 import { supabase } from "./supabase";
 import { DEFAULT_PLAYBACK, type EpisodeRow, type PlaybackDefaults, type PodcastRow } from "./types";
 import { feedKey } from "./util";
+import { flushNotes, pullNotes, resetNotes } from "./notes";
 
 // The web player's copy of the library, synced with the same Supabase tables as the phone.
 // A change here is applied locally at once and uploaded shortly after; the server keeps the newest
@@ -86,6 +87,8 @@ export async function pull() {
     });
     state.loaded = true;
     state.error = null;
+    // Transcripts and bookmarks (skipped quietly until 002_transcripts_bookmarks.sql has been run).
+    await pullNotes();
   } catch (e) {
     state.error = e instanceof Error ? e.message : String(e);
   } finally {
@@ -97,6 +100,7 @@ export async function pull() {
 export function resetStore() {
   state = { ...state, podcasts: new Map(), episodes: new Map(), loaded: false, defaults: DEFAULT_PLAYBACK, defaultsChangedAt: 0 };
   lastRev.podcasts = lastRev.episodes = lastRev.settings = 0;
+  resetNotes();
   emit();
 }
 
@@ -431,8 +435,12 @@ export function stopPolling() {
 }
 function onVisible() {
   if (document.visibilityState === "visible") void pull();
-  else void flush();
+  else {
+    void flush();
+    void flushNotes().catch(() => {});
+  }
 }
 function onHide() {
   void flush();
+  void flushNotes().catch(() => {});
 }

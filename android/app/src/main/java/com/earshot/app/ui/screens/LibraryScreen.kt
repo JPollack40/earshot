@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
@@ -115,6 +117,12 @@ fun LibraryScreen(vm: AppViewModel) {
                         IconButton(onClick = { vm.navigate(Screen.Add) }) {
                             Icon(Icons.Filled.Add, contentDescription = "Add podcast")
                         }
+                        IconButton(onClick = { vm.navigate(Screen.TranscriptSearch) }) {
+                            Icon(Icons.AutoMirrored.Outlined.ManageSearch, contentDescription = "Search transcripts")
+                        }
+                        IconButton(onClick = { vm.navigate(Screen.Bookmarks) }) {
+                            Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Bookmarks")
+                        }
                         IconButton(onClick = { vm.navigate(Screen.Settings) }) {
                             Icon(Icons.Outlined.Settings, contentDescription = "Settings")
                         }
@@ -135,6 +143,12 @@ fun LibraryScreen(vm: AppViewModel) {
                     RefreshAction(vm.refreshing) { vm.refreshAll() }
                     IconButton(onClick = { vm.navigate(Screen.Add) }) {
                         Icon(Icons.Filled.Add, contentDescription = "Add podcast")
+                    }
+                    IconButton(onClick = { vm.navigate(Screen.TranscriptSearch) }) {
+                        Icon(Icons.AutoMirrored.Outlined.ManageSearch, contentDescription = "Search transcripts")
+                    }
+                    IconButton(onClick = { vm.navigate(Screen.Bookmarks) }) {
+                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Bookmarks")
                     }
                     IconButton(onClick = { vm.navigate(Screen.Settings) }) {
                         Icon(Icons.Outlined.Settings, contentDescription = "Settings")

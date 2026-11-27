@@ -20,6 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Subject
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Archive
@@ -199,6 +201,11 @@ fun EpisodeSheet(
     onQueueLast: () -> Unit,
     onRemoveFromQueue: () -> Unit,
     onArchive: () -> Unit,
+    hasTranscript: Boolean = false,
+    transcribing: Boolean = false,
+    bookmarkCount: Int = 0,
+    onTranscript: () -> Unit = {},
+    onTranscribe: () -> Unit = {},
 ) {
     val e = item.episode
     val notes = remember(e.description) { AnnotatedString.fromHtml(e.description) }
@@ -272,6 +279,29 @@ fun EpisodeSheet(
                         Icon(Icons.Filled.Archive, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Archive")
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onTranscript(); onDismiss() }) {
+                    Icon(Icons.AutoMirrored.Outlined.Subject, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        when {
+                            transcribing -> "Transcribing…"
+                            bookmarkCount > 0 -> "Transcript · $bookmarkCount bookmark${if (bookmarkCount == 1) "" else "s"}"
+                            hasTranscript || e.transcriptUrl != null -> "Transcript"
+                            else -> "No transcript"
+                        },
+                    )
+                }
+                // Gemini only when asked, and only when the feed has no transcript of its own.
+                if (!hasTranscript && e.transcriptUrl == null && !transcribing) {
+                    OutlinedButton(onClick = { onTranscribe(); onDismiss() }) {
+                        Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Transcribe with Gemini")
                     }
                 }
             }

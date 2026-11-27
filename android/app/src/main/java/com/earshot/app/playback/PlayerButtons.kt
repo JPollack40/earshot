@@ -11,14 +11,16 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * The extra button on the playing screen in Android Auto (and in the phone's media notification):
- * Mark played, a custom session command handled by the service. Speed lives in its own list in the
+ * The extra buttons on the playing screen in Android Auto (and in the phone's media notification):
+ * Bookmark and Mark played, custom session commands handled by the service. Speed lives in its own list in the
  * car (a row at the top of the Queue tab); there's no sleep timer there (the listener is driving).
  */
 object PlayerButtons {
     const val MARK_PLAYED = "com.earshot.app.MARK_PLAYED"
+    const val BOOKMARK = "com.earshot.app.BOOKMARK"
 
     val markPlayedCommand = SessionCommand(MARK_PLAYED, Bundle.EMPTY)
+    val bookmarkCommand = SessionCommand(BOOKMARK, Bundle.EMPTY)
 
     /** "1.3x", "2x" */
     fun speedLabel(speed: Float): String =
@@ -42,11 +44,21 @@ object PlayerButtons {
     fun speedIcon(speed: Float): Int =
         SPEED_ICONS.entries.firstOrNull { abs(it.key - speed) < 0.01f }?.value ?: R.drawable.ic_speed
 
-    /** Skip back and forward in their usual places, then Mark played. */
+    /**
+     * Skip back and forward in their usual places, then Bookmark and Mark played. [bookmarked] shows
+     * the filled bookmark for a moment after a tap, so the driver can see it worked.
+     */
     @OptIn(UnstableApi::class)
-    fun all(backMs: Long, forwardMs: Long): ImmutableList<CommandButton> {
+    fun all(backMs: Long, forwardMs: Long, bookmarked: Boolean = false): ImmutableList<CommandButton> {
         return ImmutableList.builder<CommandButton>()
             .addAll(skipButtons(backMs, forwardMs))
+            .add(
+                CommandButton.Builder(if (bookmarked) CommandButton.ICON_BOOKMARK_FILLED else CommandButton.ICON_BOOKMARK_UNFILLED)
+                    .setSessionCommand(bookmarkCommand)
+                    .setDisplayName(if (bookmarked) "Bookmarked" else "Bookmark")
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
+                    .build(),
+            )
             .add(
                 CommandButton.Builder(CommandButton.ICON_CHECK_CIRCLE_UNFILLED)
                     .setSessionCommand(markPlayedCommand)

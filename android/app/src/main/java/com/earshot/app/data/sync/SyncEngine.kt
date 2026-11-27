@@ -6,6 +6,7 @@ import androidx.room.withTransaction
 import com.earshot.app.EarshotApp
 import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.Settings
+import com.earshot.app.data.db.Bookmark
 import com.earshot.app.data.db.Episode
 import com.earshot.app.data.db.Podcast
 import com.earshot.app.playback.PlaybackService
@@ -52,7 +53,12 @@ class SyncEngine(private val app: EarshotApp) {
     /** Starts syncing local changes automatically. Call once from the Application. */
     fun start() {
         app.appScope.launch {
-            combine(podcastDao.observeDirtyCount(), episodeDao.observeDirtyCount()) { a, b -> a + b }
+            combine(
+                podcastDao.observeDirtyCount(),
+                episodeDao.observeDirtyCount(),
+                app.db.transcripts().observeDirtyCount(),
+                app.db.bookmarks().observeDirtyCount(),
+            ) { a, b, c, d -> a + b + c + d }
                 .distinctUntilChanged() // playback saves positions every 5 s; react to new dirty rows, not each save
                 .filter { it > 0 }
                 .debounce(10_000)
@@ -91,7 +97,8 @@ class SyncEngine(private val app: EarshotApp) {
 
     /** After signing in on this phone: everything is uploaded again and everything pulled from the start. */
     suspend fun resetForNewAccount() {
-        prefs.edit().remove("rev_podcasts").remove("rev_episodes").remove("rev_settings").apply()
+        prefs.edit().remove("rev_podcasts").remove("rev_episodes").remove("rev_settings")
+            .remove("rev_transcripts").remove("rev_bookmarks").apply()
     }
 
     // ---------------------------------------------------------------- push
@@ -124,7 +131,61 @@ class SyncEngine(private val app: EarshotApp) {
             n += batch.size
             if (batch.size < 500) break
         }
-        return n + pushSettings()
+        return n + pushSettings() + phase6 { pushTranscripts() } + phase6 { pushBookmarks() }
+    }
+
+    /**
+     * The transcripts and bookmarks tables come from supabase/migrations/002_transcripts_bookmarks.sql.
+     * Until that has been run, syncing them is skipped (logged) instead of failing the whole sync.
+     */
+    private suspend fun phase6(block: suspend () -> Int): Int = try {
+        block()
+    } catch (e: SupabaseException) {
+        if (e.status != 404 && !(e.message ?: "").contains("Could not find the table")) throw e
+        Log.w(TAG, "Sync: transcripts/bookmarks tables missing (run 002_transcripts_bookmarks.sql)")
+        0
+    }
+
+    /** Transcripts are large (tens of kB each), so they go up a few at a time. */
+    private suspend fun pushTranscripts(): Int {
+        val dao = app.db.transcripts()
+        var n = 0
+        for (round in 0 until 100) {
+            val batch = dao.dirty(10)
+            if (batch.isEmpty()) break
+            val rows = JSONArray()
+            for (t in batch) {
+                rows.put(
+                    JSONObject()
+                        .put("episode_id", t.episodeId)
+                        .put("source", t.source)
+                        .put("timed", t.timed)
+                        .put("segments", JSONArray(t.segmentsJson))
+                        .put("changed_at", t.changedAt),
+                )
+            }
+            supabase.upsert("transcripts", "user_id,episode_id", rows)
+            for (t in batch) dao.markClean(t.episodeId, t.changedAt)
+            n += batch.size
+            if (batch.size < 10) break
+        }
+        return n
+    }
+
+    private suspend fun pushBookmarks(): Int {
+        val dao = app.db.bookmarks()
+        var n = 0
+        for (round in 0 until 20) {
+            val batch = dao.dirty(500)
+            if (batch.isEmpty()) break
+            supabase.upsert("bookmarks", "user_id,id", JSONArray(batch.map(::bookmarkJson)))
+            for (b in batch) dao.markClean(b.id, b.changedAt)
+            n += batch.size
+            if (batch.size < 500) break
+        }
+        // Deletions that have reached the server can be forgotten here after a month.
+        dao.purgeDeleted(System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000)
+        return n
     }
 
     private suspend fun pushSettings(): Int {
@@ -161,15 +222,28 @@ class SyncEngine(private val app: EarshotApp) {
         if (anyEpisode) repo.tidyQueueAfterSync(newlyQueued)
         if (anyPlayed) app.cleanupDownloads("sync")
         n += pullTable("settings", "rev_settings") { applySettings(it) }
+        n += phase6 { pullTable("transcripts", "rev_transcripts", pageSize = 10) { o ->
+            app.transcripts.applyRemote(
+                episodeId = o.getString("episode_id"),
+                source = o.optString("source", "feed"),
+                timed = o.optBoolean("timed", true),
+                segments = o.optJSONArray("segments") ?: JSONArray(),
+                changedAt = o.optLong("changed_at"),
+            )
+        } }
+        n += phase6 { pullTable("bookmarks", "rev_bookmarks") { applyBookmark(it) } }
+        if (anyEpisode) app.transcripts.fetchMissingInBackground("sync")
         return n
     }
 
     /** Pages through rows with rev above the last seen, applying each; remembers progress per page. */
-    private suspend fun pullTable(table: String, revKey: String, apply: suspend (JSONObject) -> Unit): Int {
+    private suspend fun pullTable(table: String, revKey: String, pageSize: Int = 500, apply: suspend (JSONObject) -> Unit): Int {
         var last = prefs.getLong(revKey, 0)
         var n = 0
+        // The transcripts table has a generated search column that isn't needed here.
+        val columns = if (table == "transcripts") "episode_id,source,timed,segments,changed_at,rev" else "*"
         while (true) {
-            val page = supabase.select("$table?select=*&rev=gt.$last&order=rev.asc&limit=500")
+            val page = supabase.select("$table?select=$columns&rev=gt.$last&order=rev.asc&limit=$pageSize")
             for (i in 0 until page.length()) {
                 val o = page.getJSONObject(i)
                 apply(o)
@@ -177,7 +251,7 @@ class SyncEngine(private val app: EarshotApp) {
                 n++
             }
             prefs.edit().putLong(revKey, last).apply()
-            if (page.length() < 500) return n
+            if (page.length() < pageSize) return n
         }
     }
 
@@ -294,6 +368,33 @@ class SyncEngine(private val app: EarshotApp) {
         return requireNotNull(podcastDao.get(id))
     }
 
+    private suspend fun applyBookmark(o: JSONObject) {
+        val dao = app.db.bookmarks()
+        val id = o.getString("id")
+        val changedAt = o.optLong("changed_at")
+        val local = dao.get(id)
+        if (local != null && local.changedAt >= changedAt) return
+        dao.upsert(
+            Bookmark(
+                id = id,
+                episodeId = o.getString("episode_id"),
+                feedUrl = o.optString("feed_url"),
+                episodeTitle = o.optString("episode_title"),
+                podcastTitle = o.optString("podcast_title"),
+                imageUrl = o.optNullableString("image_url"),
+                audioUrl = o.optNullableString("audio_url"),
+                positionMs = o.optLong("position_ms"),
+                startMs = o.optLong("start_ms"),
+                endMs = o.optLong("end_ms"),
+                note = o.optString("note"),
+                createdAt = o.optLong("created_at"),
+                deleted = o.optBoolean("deleted"),
+                dirty = false,
+                changedAt = changedAt,
+            ),
+        )
+    }
+
     private fun applySettings(o: JSONObject) {
         val changedAt = o.optLong("changed_at")
         if (changedAt <= Settings.playbackChangedAt(app)) return
@@ -349,6 +450,22 @@ class SyncEngine(private val app: EarshotApp) {
         .put("in_inbox", e.inInbox)
         .put("queue_position", e.queuePosition ?: JSONObject.NULL)
         .put("changed_at", e.changedAt)
+
+    private fun bookmarkJson(b: Bookmark) = JSONObject()
+        .put("id", b.id)
+        .put("episode_id", b.episodeId)
+        .put("feed_url", b.feedUrl)
+        .put("episode_title", b.episodeTitle)
+        .put("podcast_title", b.podcastTitle)
+        .put("image_url", b.imageUrl ?: JSONObject.NULL)
+        .put("audio_url", b.audioUrl ?: JSONObject.NULL)
+        .put("position_ms", b.positionMs)
+        .put("start_ms", b.startMs)
+        .put("end_ms", b.endMs)
+        .put("note", b.note)
+        .put("created_at", b.createdAt)
+        .put("deleted", b.deleted)
+        .put("changed_at", b.changedAt)
 
     private companion object {
         const val TAG = "Earshot"

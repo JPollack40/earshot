@@ -7,10 +7,12 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Podcast::class, Episode::class], version = 5, exportSchema = false)
+@Database(entities = [Podcast::class, Episode::class, Transcript::class, Bookmark::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun podcasts(): PodcastDao
     abstract fun episodes(): EpisodeDao
+    abstract fun transcripts(): TranscriptDao
+    abstract fun bookmarks(): BookmarkDao
 
     companion object {
         /** v2: episodes.downloadedAt, used to expire old downloads. Existing downloads are backfilled by the cleanup. */
@@ -62,12 +64,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v6: saved transcripts and bookmarks (new tables; nothing existing changes). */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `transcripts` (`episodeId` TEXT NOT NULL, `source` TEXT NOT NULL, " +
+                        "`timed` INTEGER NOT NULL DEFAULT 1, `segmentsJson` TEXT NOT NULL, `plain` TEXT NOT NULL, " +
+                        "`dirty` INTEGER NOT NULL DEFAULT 0, `changedAt` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`episodeId`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bookmarks` (`id` TEXT NOT NULL, `episodeId` TEXT NOT NULL, " +
+                        "`feedUrl` TEXT NOT NULL, `episodeTitle` TEXT NOT NULL, `podcastTitle` TEXT NOT NULL, " +
+                        "`imageUrl` TEXT, `audioUrl` TEXT, `positionMs` INTEGER NOT NULL, `startMs` INTEGER NOT NULL, " +
+                        "`endMs` INTEGER NOT NULL, `note` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                        "`deleted` INTEGER NOT NULL DEFAULT 0, `dirty` INTEGER NOT NULL DEFAULT 1, " +
+                        "`changedAt` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_episodeId` ON `bookmarks` (`episodeId`)")
+            }
+        }
+
         /** Episodes published within this window are uploaded even without listening state. */
         const val RECENT_MS = 60L * 24 * 60 * 60 * 1000
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "earshot.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 // Upgrades must always migrate (subscriptions live here). Only a downgrade, which
                 // only happens when installing an older dev build, may start from scratch.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)

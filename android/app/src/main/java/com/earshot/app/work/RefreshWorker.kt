@@ -11,12 +11,14 @@ import androidx.work.WorkerParameters
 import com.earshot.app.EarshotApp
 import java.util.concurrent.TimeUnit
 
-/** Checks all feeds for new episodes every couple of hours. */
+/** Checks all feeds for new episodes every couple of hours, then saves any new feed transcripts. */
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as EarshotApp
         return try {
             app.repository.refreshAll()
+            // Free feed transcripts for queued, new and played episodes (never Gemini).
+            runCatching { app.transcripts.fetchMissingFeedTranscripts() }
             app.sync.sync("feed refresh")
             Result.success()
         } catch (e: Exception) {

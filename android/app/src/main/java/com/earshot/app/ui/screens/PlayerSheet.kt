@@ -71,6 +71,9 @@ import com.earshot.app.playback.SleepTimer
 import com.earshot.app.ui.theme.LocalGlow
 import com.earshot.app.ui.theme.rememberArtColor
 import com.earshot.app.ui.AppViewModel
+import com.earshot.app.ui.Screen
+import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.automirrored.outlined.Subject
 import com.earshot.app.ui.formatClock
 import com.earshot.app.ui.formatSaved
 import com.earshot.app.ui.formatSpeed
@@ -83,6 +86,8 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
     val episode by vm.currentEpisode.collectAsStateWithLifecycle()
     val chapters by vm.chapters.collectAsStateWithLifecycle()
+    val allBookmarks by vm.bookmarks.collectAsStateWithLifecycle()
+    val episodeBookmarks = allBookmarks.filter { it.episodeId == now.episodeId }
     val sleep by vm.sleepTimer.collectAsStateWithLifecycle()
     var dragPosition by remember { mutableStateOf<Float?>(null) }
     val prefs by vm.currentPrefs.collectAsStateWithLifecycle()
@@ -231,6 +236,21 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         }
                         DropdownMenuItem(text = { Text("End of episode") }, onClick = { vm.player.sleepAtEndOfEpisode(); sleepMenu = false })
                     }
+                }
+                AssistChip(
+                    onClick = vm::bookmarkNow,
+                    label = { Text(if (episodeBookmarks.isEmpty()) "Bookmark" else "Bookmark (${episodeBookmarks.size})") },
+                    leadingIcon = { Icon(Icons.Outlined.BookmarkAdd, null, Modifier.size(18.dp)) },
+                )
+                now.episodeId?.let { id ->
+                    AssistChip(
+                        onClick = {
+                            onDismiss()
+                            vm.navigate(Screen.TranscriptView(id))
+                        },
+                        label = { Text("Transcript") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Subject, null, Modifier.size(18.dp)) },
+                    )
                 }
                 if (episode?.episode?.description?.isNotBlank() == true) {
                     AssistChip(

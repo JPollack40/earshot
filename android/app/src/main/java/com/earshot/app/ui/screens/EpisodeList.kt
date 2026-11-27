@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.ui.AppViewModel
+import com.earshot.app.ui.Screen
+import com.earshot.app.data.transcript.TranscribeState
 
 /** Episode list shared by the Latest tab and podcast pages, including the episode detail sheet. */
 @Composable
@@ -55,6 +57,9 @@ fun EpisodeList(
 @Composable
 fun EpisodeSheetFor(vm: AppViewModel, item: EpisodeWithPodcast?, onDismiss: () -> Unit) {
     if (item == null) return
+    val transcriptIds by vm.transcriptIds.collectAsStateWithLifecycle()
+    val transcribing by vm.transcribing.collectAsStateWithLifecycle()
+    val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
     EpisodeSheet(
         item = item,
         onDismiss = onDismiss,
@@ -66,5 +71,10 @@ fun EpisodeSheetFor(vm: AppViewModel, item: EpisodeWithPodcast?, onDismiss: () -
         onQueueLast = { vm.queueLast(item) },
         onRemoveFromQueue = { vm.removeFromQueue(item) },
         onArchive = { vm.archive(item) },
+        hasTranscript = item.episode.id in transcriptIds,
+        transcribing = transcribing[item.episode.id].let { it is TranscribeState.Waiting || it is TranscribeState.Running },
+        bookmarkCount = bookmarks.count { it.episodeId == item.episode.id },
+        onTranscript = { vm.navigate(Screen.TranscriptView(item.episode.id)) },
+        onTranscribe = { vm.transcribeWithGemini(item.episode.id) },
     )
 }

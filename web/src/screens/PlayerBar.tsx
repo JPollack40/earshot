@@ -7,6 +7,7 @@ import { formatClock, hasOwnAudio, skipName, speedName } from "../util";
 import { setAppearance, useAppearance, useArtColor } from "../appearance";
 import { Art, PlayerError, type Nav } from "./common";
 import { Icon } from "./Icons";
+import { BookmarkButton, TranscriptButton } from "./Notes";
 
 const chapterCache = new Map<string, Chapter[]>();
 
@@ -119,6 +120,8 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         </div>
         <div className="g-side">
           <div className="g-chips">
+            <BookmarkButton />
+            <TranscriptButton nav={nav} />
             <AudioChips prefs={prefs} podcast={podcast} />
             <SleepSelect className={`chip ${p.sleepAtEnd || p.sleepEndsAt ? "on" : ""}`} label="Sleep" />
             <button className={`chip ${look.nowPanel ? "on" : ""}`} aria-pressed={look.nowPanel} title="Show or hide the Now Playing panel" onClick={() => setAppearance({ nowPanel: !look.nowPanel })}>
@@ -182,6 +185,8 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         >
           Voice Boost
         </button>
+        <BookmarkButton />
+        <TranscriptButton nav={nav} />
         <button className="icon" title="More" onClick={() => setMore(!more)}>
           ⋯
         </button>

@@ -102,12 +102,25 @@ class Supabase(context: Context) {
         authed("POST", "/rest/v1/$table?on_conflict=$onConflict", rows.toString(), "resolution=merge-duplicates,return=minimal")
     }
 
-    private suspend fun authed(method: String, path: String, body: String?, prefer: String?): String {
+    /** Calls the Data API's RPC endpoint (a Postgres function); returns the JSON text. */
+    suspend fun rpc(name: String, args: JSONObject): String = withContext(Dispatchers.IO) {
+        authed("POST", "/rest/v1/rpc/$name", args.toString(), null)
+    }
+
+    /**
+     * Calls an Edge Function (POST, JSON) as the signed-in user and returns its JSON answer.
+     * [readTimeoutMs] allows for slow functions (transcribing takes a minute or two).
+     */
+    suspend fun function(name: String, body: JSONObject, readTimeoutMs: Int = 60_000): JSONObject = withContext(Dispatchers.IO) {
+        JSONObject(authed("POST", "/functions/v1/$name", body.toString(), null, readTimeoutMs))
+    }
+
+    private suspend fun authed(method: String, path: String, body: String?, prefer: String?, readTimeoutMs: Int = 60_000): String {
         return try {
-            request(method, path, body, auth = true, token = accessToken(), prefer = prefer)
+            request(method, path, body, auth = true, token = accessToken(), prefer = prefer, readTimeoutMs = readTimeoutMs)
         } catch (e: SupabaseException) {
             if (e.status != 401) throw e
-            request(method, path, body, auth = true, token = accessToken(forceRefresh = true), prefer = prefer)
+            request(method, path, body, auth = true, token = accessToken(forceRefresh = true), prefer = prefer, readTimeoutMs = readTimeoutMs)
         }
     }
 
@@ -118,13 +131,14 @@ class Supabase(context: Context) {
         auth: Boolean,
         token: String? = null,
         prefer: String? = null,
+        readTimeoutMs: Int = 60_000,
     ): String {
         if (!configured) throw IOException("Sync isn't set up in this build (no Supabase URL/key)")
         val conn = URL(base + path).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
             conn.connectTimeout = 15_000
-            conn.readTimeout = 60_000
+            conn.readTimeout = readTimeoutMs
             conn.setRequestProperty("apikey", key)
             conn.setRequestProperty("Accept", "application/json")
             if (auth && token != null) conn.setRequestProperty("Authorization", "Bearer $token")

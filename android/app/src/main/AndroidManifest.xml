@@ -48,6 +48,17 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+        <!-- Markdown exports (bookmarks, transcripts) are shared as files from the cache. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.exports"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/export_paths" />
+        </provider>
+
         <!-- Android Auto: this app is a media app (see res/xml/automotive_app_desc.xml). -->
         <meta-data
             android:name="com.google.android.gms.car.application"
