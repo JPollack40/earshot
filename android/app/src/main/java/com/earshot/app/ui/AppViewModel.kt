@@ -506,6 +506,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** "Mark older/newer played" (phase 7b): one batch, then one sync and one download cleanup. */
+    fun markPlayed(ids: List<String>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val n = repo.markPlayed(ids)
+            say("Marked $n episode${if (n == 1) "" else "s"} played")
+            if (n > 0) app.cleanupDownloads("marked played")
+        }
+    }
+
     // ---- Inbox and queue ----
     fun queueNext(item: EpisodeWithPodcast) {
         viewModelScope.launch { repo.queueNext(item.episode.id) }

@@ -203,7 +203,14 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
 
       <section className="list">
         {shown.map((e) => (
-          <EpisodeItem key={e.id} e={e} art={image} feed={feed ?? undefined} snippet={terms.length ? snippet(index.get(e.id) ?? "", terms) : null} />
+          <EpisodeItem
+            key={e.id}
+            e={e}
+            art={image}
+            feed={feed ?? undefined}
+            snippet={terms.length ? snippet(index.get(e.id) ?? "", terms) : null}
+            markRange={subscribed ? episodes : undefined}
+          />
         ))}
       </section>
     </>

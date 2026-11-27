@@ -682,6 +682,19 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
+    /** Marks many episodes played in one go (phase 7b). Returns how many changed. */
+    suspend fun markPlayed(ids: List<String>): Int {
+        if (ids.isEmpty()) return 0
+        return queueLock.withLock {
+            var changed = 0
+            db.withTransaction {
+                for (chunk in ids.chunked(500)) changed += episodes.markPlayed(chunk)
+            }
+            pruneUnsubscribed()
+            changed
+        }
+    }
+
     suspend fun download(id: String) {
         episodes.setDownload(id, DownloadState.QUEUED, 0, null)
         DownloadWorker.enqueue(context, id)

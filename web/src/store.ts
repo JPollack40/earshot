@@ -360,6 +360,23 @@ export function setPlayed(e: EpisodeRow, played: boolean, feed?: ParsedFeed) {
   emit();
 }
 
+/**
+ * Marks many episodes played in one go (phase 7b, "mark older/newer played"). They're uploaded
+ * together (500 a request) a second later. Callers leave queued episodes out, so the queue isn't
+ * touched. Returns how many changed.
+ */
+export function markPlayedMany(rows: EpisodeRow[]): number {
+  let n = 0;
+  for (const r of rows) {
+    const cur = known(r);
+    if (cur.played) continue;
+    putEpisode({ ...cur, played: true, position_ms: 0, in_inbox: false });
+    n++;
+  }
+  if (n) emit();
+  return n;
+}
+
 export function archive(e: EpisodeRow) {
   putEpisode({ ...known(e), in_inbox: false });
   emit();
