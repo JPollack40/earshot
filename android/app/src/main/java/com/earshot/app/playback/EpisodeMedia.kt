@@ -21,7 +21,6 @@ object EpisodeMedia {
     const val ROOT = "root"
     const val QUEUE = "queue"
     const val INBOX = "inbox"
-    const val LATEST = "latest"
     const val PODCASTS = "podcasts"
     const val PODCAST_PREFIX = "podcast:"
     /** Smart playlists (phase 7): the car's Playlists tab, and each playlist ("playlist:<id>"). */

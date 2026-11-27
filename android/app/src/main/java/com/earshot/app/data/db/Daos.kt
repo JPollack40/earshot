@@ -336,10 +336,17 @@ interface EpisodeDao {
     @Query("UPDATE episodes SET positionMs = :positionMs, lastPlayedAt = :at, $TOUCH WHERE id = :id")
     suspend fun savePosition(id: String, positionMs: Long, at: Long)
 
+    /** The play position plus the time saved since the last save, in one write (phase 15). */
+    @Query(
+        "UPDATE episodes SET positionMs = :positionMs, lastPlayedAt = :at, timeSavedMs = timeSavedMs + :timeSavedMs, " +
+            "$TOUCH WHERE id = :id",
+    )
+    suspend fun savePositionAndTimeSaved(id: String, positionMs: Long, at: Long, timeSavedMs: Long)
+
     @Query("UPDATE episodes SET timeSavedMs = timeSavedMs + :ms WHERE id = :id")
     suspend fun addTimeSaved(id: String, ms: Long)
 
-    @Query("UPDATE episodes SET durationMs = :durationMs WHERE id = :id")
+    @Query("UPDATE episodes SET durationMs = :durationMs WHERE id = :id AND durationMs != :durationMs")
     suspend fun setDuration(id: String, durationMs: Long)
 
     /** Marking played also takes the episode out of the inbox and the queue. */

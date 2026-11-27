@@ -189,7 +189,7 @@ class PlaybackService : MediaLibraryService() {
                 .collect { session?.notifyChildrenChanged(EpisodeMedia.PODCASTS, it.size, null) }
         }
         scope.launch {
-            // Latest, and each podcast's episode list (only the podcasts whose episodes changed).
+            // Each podcast's episode list (only the podcasts whose episodes changed), from the newest episodes.
             var last: Map<Long, List<EpisodeSignature>>? = null
             repo.observeLatest()
                 .map { list -> list.groupBy({ it.episode.podcastId }, ::signature) }
@@ -199,7 +199,6 @@ class PlaybackService : MediaLibraryService() {
                     last = byPodcast
                     if (before == null) return@collect
                     val s = session ?: return@collect
-                    s.notifyChildrenChanged(EpisodeMedia.LATEST, byPodcast.values.sumOf { it.size }.coerceAtMost(LATEST_LIMIT), null)
                     for (id in byPodcast.keys + before.keys) {
                         if (byPodcast[id] != before[id]) {
                             s.notifyChildrenChanged(EpisodeMedia.PODCAST_PREFIX + id, byPodcast[id]?.size ?: 0, null)
@@ -574,8 +573,26 @@ class PlaybackService : MediaLibraryService() {
         pendingSpeedMs -= speedMs
         pendingSmartMs -= smartMs
         Settings.addTimeSaved(this, speedMs, smartMs)
+        // Phase 15: the episode's share rides along with the next position save (one database write
+        // every 5 s instead of three, since every write makes every open list re-query).
+        if (unsavedTimeSavedId != null && unsavedTimeSavedId != id) writeTimeSaved()
+        unsavedTimeSavedId = id
+        unsavedTimeSavedMs += speedMs + smartMs
+        if (!player.isPlaying) writeTimeSaved()
+    }
+
+    private var unsavedTimeSavedId: String? = null
+    private var unsavedTimeSavedMs = 0L
+
+    /** Writes the episode's time saved not yet written with a position save. */
+    private fun writeTimeSaved() {
+        val id = unsavedTimeSavedId ?: return
+        val ms = unsavedTimeSavedMs
+        unsavedTimeSavedId = null
+        unsavedTimeSavedMs = 0L
+        if (ms == 0L) return
         val dao = repo.episodes
-        app.appScope.launch { dao.addTimeSaved(id, speedMs + smartMs) }
+        app.appScope.launch { dao.addTimeSaved(id, ms) }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -733,8 +750,17 @@ class PlaybackService : MediaLibraryService() {
         val id = player.currentMediaItem?.mediaId ?: return
         if (player.playbackState == Player.STATE_ENDED) return
         val dao = repo.episodes
-        dao.savePosition(id, player.currentPosition, System.currentTimeMillis())
+        val position = player.currentPosition
         val duration = player.duration
+        if (unsavedTimeSavedId == id) {
+            val ms = unsavedTimeSavedMs
+            unsavedTimeSavedId = null
+            unsavedTimeSavedMs = 0L
+            dao.savePositionAndTimeSaved(id, position, System.currentTimeMillis(), ms)
+        } else {
+            dao.savePosition(id, position, System.currentTimeMillis())
+        }
+        // Only writes when the duration differs (an update that changes no row doesn't wake the lists).
         if (duration > 0) dao.setDuration(id, duration)
     }
 
@@ -941,7 +967,6 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
                 parentId == EpisodeMedia.INBOX -> EpisodeMedia.itemsByDate(dao.getInbox())
-                parentId == EpisodeMedia.LATEST -> EpisodeMedia.itemsByDate(dao.getLatest(LATEST_LIMIT))
                 parentId == EpisodeMedia.PODCASTS -> repo.podcasts.getAll().map(EpisodeMedia::podcastFolder)
                 parentId.startsWith(EpisodeMedia.PODCAST_PREFIX) -> {
                     val id = parentId.removePrefix(EpisodeMedia.PODCAST_PREFIX).toLongOrNull()
@@ -1134,6 +1159,7 @@ class PlaybackService : MediaLibraryService() {
         protectedEpisodeId = null
         trackTimeSaved()
         flushTimeSaved()
+        writeTimeSaved()
         listening.finish()
         app.appScope.launch {
             if (saveId != null) dao.savePosition(saveId, position, System.currentTimeMillis())
@@ -1151,7 +1177,6 @@ class PlaybackService : MediaLibraryService() {
     }
 
     companion object {
-        private const val LATEST_LIMIT = 100
         private const val CONTINUE_LIMIT = 20
         private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
 
