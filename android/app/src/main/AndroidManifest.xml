@@ -48,6 +48,15 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+        <!-- New-episode notifications from the server (phase 10, Firebase Cloud Messaging). -->
+        <service
+            android:name=".push.EarshotMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- Markdown exports (bookmarks, transcripts) are shared as files from the cache. -->
         <provider
             android:name="androidx.core.content.FileProvider"

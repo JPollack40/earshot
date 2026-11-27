@@ -148,6 +148,20 @@ fun SettingsScreen(vm: AppViewModel) {
             ExpirySetting(vm.expireDays, vm::updateExpireDays)
             divider()
 
+            SectionHeader("Notifications")
+            ChoiceRow(
+                "New episodes",
+                if (vm.pushConfigured) {
+                    "The server checks for new episodes every 15 minutes and notifies this phone, with a Play button."
+                } else {
+                    "Not set up yet: this build has no Firebase configuration (see the phase 10 notes)."
+                },
+                vm.newEpisodeNotify,
+                listOf(Settings.NOTIFY_ALL, Settings.NOTIFY_PINNED, Settings.NOTIFY_OFF),
+                { when (it) { Settings.NOTIFY_ALL -> "All podcasts"; Settings.NOTIFY_PINNED -> "Pinned only"; else -> "Off" } },
+            ) { vm.updateNewEpisodeNotify(it) }
+            divider()
+
             SectionHeader("About")
             Text(
                 "Earshot ${com.earshot.app.BuildConfig.VERSION_NAME} (${com.earshot.app.BuildConfig.VERSION_CODE}, " +

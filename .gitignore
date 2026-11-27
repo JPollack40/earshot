@@ -23,3 +23,6 @@ Thumbs.db
 # Web (phase 5)
 node_modules/
 dist/
+
+# Firebase config (phase 10). Not secret, but kept out of the public repo.
+google-services.json

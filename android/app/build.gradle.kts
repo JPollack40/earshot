@@ -38,6 +38,16 @@ android {
             local.getProperty(prop)?.takeIf { it.isNotBlank() } ?: System.getenv(env).orEmpty()
         buildConfigField("String", "SUPABASE_URL", quoted(config("earshot.supabaseUrl", "EARSHOT_SUPABASE_URL")))
         buildConfigField("String", "SUPABASE_KEY", quoted(config("earshot.supabaseKey", "EARSHOT_SUPABASE_KEY")))
+
+        // Firebase Cloud Messaging (phase 10): new-episode notifications. Download google-services.json
+        // from the Firebase console into android/app/ (gitignored). The Google Services Gradle plugin
+        // isn't used (it fails the build when the file is missing); the four values are read here and
+        // the app starts Firebase itself. Without the file these are blank and notifications stay off.
+        val firebase = firebaseConfig(file("google-services.json"), "com.earshot.app")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", quoted(firebase["projectId"].orEmpty()))
+        buildConfigField("String", "FIREBASE_APP_ID", quoted(firebase["appId"].orEmpty()))
+        buildConfigField("String", "FIREBASE_API_KEY", quoted(firebase["apiKey"].orEmpty()))
+        buildConfigField("String", "FIREBASE_SENDER_ID", quoted(firebase["senderId"].orEmpty()))
     }
 
     // Release signing (phase 8). The key never goes in git (*.jks and keystore.properties are gitignored).
@@ -114,5 +124,29 @@ dependencies {
 
     implementation(libs.reorderable)
 
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+
     testImplementation(libs.junit)
+}
+
+/** The four values the app needs from google-services.json, for [packageName]; empty if the file is missing. */
+@Suppress("UNCHECKED_CAST")
+fun firebaseConfig(file: File, packageName: String): Map<String, String> {
+    if (!file.exists()) return emptyMap()
+    val root = groovy.json.JsonSlurper().parse(file) as Map<String, Any?>
+    val project = root["project_info"] as? Map<String, Any?> ?: return emptyMap()
+    val clients = root["client"] as? List<Map<String, Any?>> ?: return emptyMap()
+    val client = clients.firstOrNull {
+        val info = it["client_info"] as? Map<String, Any?>
+        (info?.get("android_client_info") as? Map<String, Any?>)?.get("package_name") == packageName
+    } ?: return emptyMap()
+    val info = client["client_info"] as Map<String, Any?>
+    val keys = client["api_key"] as? List<Map<String, Any?>>
+    return mapOf(
+        "projectId" to project["project_id"].toString(),
+        "senderId" to project["project_number"].toString(),
+        "appId" to info["mobilesdk_app_id"].toString(),
+        "apiKey" to (keys?.firstOrNull()?.get("current_key")?.toString() ?: ""),
+    )
 }

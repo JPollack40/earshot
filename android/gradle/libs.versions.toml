@@ -14,8 +14,12 @@ work = "2.12.0"
 coil = "3.6.3"
 reorderable = "3.1.0"
 junit = "4.13.2"
+# Firebase Cloud Messaging (phase 10 new-episode notifications). Inert without app/google-services.json.
+firebaseBom = "34.6.0"
 
 [libraries]
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

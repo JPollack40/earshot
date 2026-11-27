@@ -55,6 +55,7 @@ class EarshotApp : Application() {
         sync.start()
         cleanupDownloads("app start")
         transcripts.fetchMissingInBackground("app start")
+        com.earshot.app.push.Push.init(this)
     }
 
     /** Applies the download-retention rules now, never touching the episode loaded in the player. */

@@ -315,6 +315,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // ---- Episodes ----
     fun play(item: EpisodeWithPodcast) = player.play(item)
 
+    /** The Play button on a "New episode" notification (phase 10): sync if needed, then play and show the player. */
+    fun playFromNotification(episodeId: String) {
+        viewModelScope.launch {
+            var item = repo.episodes.getWithPodcast(episodeId)
+            if (item == null) {
+                app.sync.sync("play from notification")
+                item = repo.episodes.getWithPodcast(episodeId)
+            }
+            if (item == null) {
+                say("That episode isn't on this phone yet. Try again in a moment.")
+                return@launch
+            }
+            player.play(item)
+            showPlayer = true
+        }
+    }
+
+    // ---- New-episode notifications (phase 10) ----
+    var newEpisodeNotify by mutableStateOf(Settings.newEpisodeNotify(app))
+        private set
+    val pushConfigured get() = com.earshot.app.push.Push.configured
+
+    fun updateNewEpisodeNotify(mode: String) {
+        newEpisodeNotify = mode
+        Settings.setNewEpisodeNotify(app, mode)
+        com.earshot.app.push.Push.register(app)
+    }
+
     fun download(item: EpisodeWithPodcast) {
         viewModelScope.launch { repo.download(item.episode.id) }
     }
@@ -534,6 +562,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 app.sync.supabase.signIn(email, password)
                 app.sync.resetForNewAccount()
                 say(if (app.sync.sync("sign-in")) "Signed in and synced" else "Signed in. Sync will retry shortly")
+                com.earshot.app.push.Push.register(app)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

@@ -65,6 +65,21 @@ class MainActivity : ComponentActivity() {
                 EarshotRoot(vm)
             }
         }
+        handlePlayIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePlayIntent(intent)
+    }
+
+    /** The Play button on a "New episode" notification (phase 10). */
+    private fun handlePlayIntent(intent: Intent?) {
+        if (intent?.action != com.earshot.app.push.Push.ACTION_PLAY) return
+        val id = intent.getStringExtra(com.earshot.app.push.Push.EXTRA_EPISODE) ?: return
+        intent.action = null // not again on rotation
+        androidx.core.app.NotificationManagerCompat.from(this).cancel(id.hashCode())
+        vm.playFromNotification(id)
     }
 
     override fun onResume() {

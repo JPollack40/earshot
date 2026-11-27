@@ -43,6 +43,18 @@ data class TimeSaved(val bySpeedMs: Long = 0, val bySmartSpeedMs: Long = 0) {
 object Settings {
     private fun prefs(context: Context) = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    // ---- New-episode notifications (phase 10): "all", "pinned" or "off". Per phone, sent to the server with its token.
+
+    const val NOTIFY_ALL = "all"
+    const val NOTIFY_PINNED = "pinned"
+    const val NOTIFY_OFF = "off"
+
+    fun newEpisodeNotify(context: Context): String = prefs(context).getString("new_episode_notify", NOTIFY_ALL) ?: NOTIFY_ALL
+
+    fun setNewEpisodeNotify(context: Context, mode: String) {
+        prefs(context).edit().putString("new_episode_notify", mode).apply()
+    }
+
     /** Skip lengths offered by the long-press picker and the settings screens. */
     val SKIP_CHOICES_MS = listOf(5_000L, 10_000L, 15_000L, 30_000L, 60_000L, 300_000L, 900_000L)
 
