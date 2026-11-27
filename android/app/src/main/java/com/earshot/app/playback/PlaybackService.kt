@@ -499,20 +499,24 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val base = super.onConnect(session, controller)
-            // Controllers with full control (the app, Android Auto, the notification) also get the
-            // Speed, Sleep and Mark played buttons.
-            if (!base.isAccepted || !base.availablePlayerCommands.contains(Player.COMMAND_PLAY_PAUSE)) return base
-            val commands = base.availableSessionCommands.buildUpon()
-                .add(PlayerButtons.speedCommand)
-                .add(PlayerButtons.sleepCommand)
-                .add(PlayerButtons.markPlayedCommand)
-                .build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
-                .setAvailableSessionCommands(commands)
-                .setAvailablePlayerCommands(base.availablePlayerCommands)
-                .build()
+        override fun onConnectAsync(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.ConnectionResult> {
+            val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+            // Trusted controllers (the app, the media notification, Android Auto) also get the Speed,
+            // Sleep and Mark played buttons. Android Auto sees the buttons the notification controller
+            // has, so it must get them too.
+            if (controller.isTrusted) {
+                builder.setAvailableSessionCommands(
+                    MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                        .add(PlayerButtons.speedCommand)
+                        .add(PlayerButtons.sleepCommand)
+                        .add(PlayerButtons.markPlayedCommand)
+                        .build(),
+                )
+            }
+            return Futures.immediateFuture(builder.build())
         }
 
         override fun onCustomCommand(
