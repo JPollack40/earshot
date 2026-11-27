@@ -52,22 +52,56 @@ object PlayerButtons {
         data object EndOfEpisode : SleepStep
     }
 
+    /**
+     * Android Auto shows only a button's icon on the playing screen (no label, no menus), so the
+     * Speed and Sleep icons show the current setting: "1.3x", or a moon with 15 / 30 / 60 / END.
+     */
+    private val SPEED_ICONS = mapOf(
+        0.8f to R.drawable.ic_speed_0_8,
+        1.0f to R.drawable.ic_speed_1,
+        1.1f to R.drawable.ic_speed_1_1,
+        1.2f to R.drawable.ic_speed_1_2,
+        1.3f to R.drawable.ic_speed_1_3,
+        1.4f to R.drawable.ic_speed_1_4,
+        1.5f to R.drawable.ic_speed_1_5,
+        1.7f to R.drawable.ic_speed_1_7,
+        2.0f to R.drawable.ic_speed_2,
+        2.5f to R.drawable.ic_speed_2_5,
+        3.0f to R.drawable.ic_speed_3,
+    )
+
+    private fun speedIcon(speed: Float): Int =
+        SPEED_ICONS.entries.firstOrNull { abs(it.key - speed) < 0.01f }?.value ?: R.drawable.ic_speed
+
+    private fun sleepIcon(timer: SleepTimer, now: Long): Int = when (timer) {
+        SleepTimer.Off -> R.drawable.ic_sleep
+        SleepTimer.EndOfEpisode -> R.drawable.ic_sleep_end
+        is SleepTimer.At -> {
+            // The step it was set to: what's left, rounded up to 15, 30 or 60 minutes.
+            val left = timer.endsAtMs - now
+            when {
+                left <= 15 * 60_000L -> R.drawable.ic_sleep_15
+                left <= 30 * 60_000L -> R.drawable.ic_sleep_30
+                else -> R.drawable.ic_sleep_60
+            }
+        }
+    }
+
     /** Skip back and forward in their usual places, then Speed, Sleep and Mark played. */
     @OptIn(UnstableApi::class)
-    fun all(backMs: Long, forwardMs: Long, speed: Float, sleepLabel: String): ImmutableList<CommandButton> {
-        val speedIcon = when {
-            abs(speed - 1.0f) < 0.01f -> CommandButton.ICON_PLAYBACK_SPEED_1_0
-            abs(speed - 1.2f) < 0.01f -> CommandButton.ICON_PLAYBACK_SPEED_1_2
-            abs(speed - 1.5f) < 0.01f -> CommandButton.ICON_PLAYBACK_SPEED_1_5
-            abs(speed - 1.8f) < 0.01f -> CommandButton.ICON_PLAYBACK_SPEED_1_8
-            abs(speed - 2.0f) < 0.01f -> CommandButton.ICON_PLAYBACK_SPEED_2_0
-            else -> CommandButton.ICON_PLAYBACK_SPEED
-        }
+    fun all(
+        backMs: Long,
+        forwardMs: Long,
+        speed: Float,
+        sleep: SleepTimer,
+        sleepLabel: String,
+        now: Long = System.currentTimeMillis(),
+    ): ImmutableList<CommandButton> {
         return ImmutableList.builder<CommandButton>()
             .addAll(skipButtons(backMs, forwardMs))
             .add(
-                CommandButton.Builder(speedIcon)
-                    .setCustomIconResId(R.drawable.ic_speed)
+                CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                    .setCustomIconResId(speedIcon(speed))
                     .setSessionCommand(speedCommand)
                     .setDisplayName("Speed ${speedLabel(speed)}")
                     .setSlots(CommandButton.SLOT_OVERFLOW)
@@ -75,7 +109,7 @@ object PlayerButtons {
             )
             .add(
                 CommandButton.Builder(CommandButton.ICON_UNDEFINED)
-                    .setCustomIconResId(R.drawable.ic_sleep)
+                    .setCustomIconResId(sleepIcon(sleep, now))
                     .setSessionCommand(sleepCommand)
                     .setDisplayName(sleepLabel)
                     .setSlots(CommandButton.SLOT_OVERFLOW)

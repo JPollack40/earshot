@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sleep button: timer set to END. Text drawn from Sora Bold (SIL OFL). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M1 20.96V13.44H2.64V20.96ZM2.44 20.96V19.56H5.73V20.96ZM2.44 17.84V16.44H5.48V17.84ZM2.44 14.84V13.44H5.65V14.84ZM7.12 20.96V13.44H9.88L12.71 19.59H13.07L12.86 19.77V13.44H14.45V20.96H11.66L8.83 14.81H8.47L8.68 14.63V20.96ZM17.62 21V19.42H19.01Q19.54 19.42 19.97 19.27Q20.39 19.11 20.68 18.81Q20.98 18.52 21.13 18.1Q21.29 17.69 21.29 17.18Q21.29 16.65 21.13 16.24Q20.98 15.83 20.68 15.54Q20.39 15.26 19.97 15.11Q19.54 14.96 19.01 14.96H17.62V13.39H18.92Q19.94 13.39 20.71 13.68Q21.47 13.98 21.98 14.49Q22.49 15.01 22.75 15.67Q23 16.34 23 17.07V17.3Q23 17.98 22.75 18.64Q22.49 19.3 21.98 19.84Q21.47 20.37 20.71 20.68Q19.94 21 18.92 21ZM16.13 21V13.39H17.82V21Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.17,1.01C5.3,0.91 3,3.21 3,6c0,2.76 2.24,5 5,5c1.86,0 3.47,-1.01 4.33,-2.51C8.58,8.37 6.29,4.28 8.17,1.01z" />
+</vector>

@@ -221,7 +221,8 @@ class PlaybackService : MediaLibraryService() {
 
     // ---- Playing-screen buttons: skip back / forward, Speed, Sleep, Mark played ----
 
-    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, prefs.speed, sleepLabel())
+    private fun buttons() =
+        PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, prefs.speed, app.player.sleepTimer.value, sleepLabel())
 
     private fun refreshButtons() {
         session?.setMediaButtonPreferences(buttons())
