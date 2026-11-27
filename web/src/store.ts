@@ -135,6 +135,15 @@ const pendingPlaylists = new Map<string, PlaylistRow>();
 let pendingSettings = false;
 
 const RULE_KEYS = ["new_episode_action", "include_words", "exclude_words", "min_minutes", "max_minutes", "inbox_days", "inbox_keep"] as const;
+/** Columns added by 004_listening_upgrades.sql (phase 10); left out of uploads until it has been run. */
+const P10_PODCAST_KEYS = ["ad_trim"] as const;
+const P10_EPISODE_KEYS = ["skipped_chapters", "season", "episode_no"] as const;
+let phase10 = true;
+const without = (row: object, keys: readonly string[]) => {
+  const r: Record<string, unknown> = { ...row };
+  for (const k of keys) delete r[k];
+  return r;
+};
 let flushTimer: number | undefined;
 let flushAt = Infinity;
 
@@ -163,14 +172,19 @@ export async function flush() {
   };
   try {
     if (podcasts.length) {
-      const { error } = await supabase.from("podcasts").upsert(podcasts.map(strip), { onConflict: "user_id,feed_url" });
+      let { error } = await supabase
+        .from("podcasts")
+        .upsert(podcasts.map((p) => (phase10 ? strip(p) : without(strip(p), P10_PODCAST_KEYS))), { onConflict: "user_id,feed_url" });
+      if (error && missingSchema(error.message) && phase10) {
+        // 004 hasn't been run: save everything except the phase 10 columns.
+        phase10 = false;
+        ({ error } = await supabase.from("podcasts").upsert(podcasts.map((p) => without(strip(p), P10_PODCAST_KEYS)), { onConflict: "user_id,feed_url" }));
+      }
       if (error && missingSchema(error.message)) {
         // 003 hasn't been run: save everything except the rules.
         state.phase7 = false;
         const plain = podcasts.map((p) => {
-          const r: Record<string, unknown> = { ...strip(p) };
-          for (const k of RULE_KEYS) delete r[k];
-          return r;
+          return without(strip(p), [...RULE_KEYS, ...P10_PODCAST_KEYS]);
         });
         const retry = await supabase.from("podcasts").upsert(plain, { onConflict: "user_id,feed_url" });
         if (retry.error) throw new Error(retry.error.message);
@@ -181,7 +195,12 @@ export async function flush() {
       if (error) throw new Error(error.message);
     }
     for (let i = 0; i < episodes.length; i += 500) {
-      const { error } = await supabase.from("episodes").upsert(episodes.slice(i, i + 500).map(strip), { onConflict: "user_id,id" });
+      const rows = episodes.slice(i, i + 500).map((e) => (phase10 ? strip(e) : without(strip(e), P10_EPISODE_KEYS)));
+      let { error } = await supabase.from("episodes").upsert(rows, { onConflict: "user_id,id" });
+      if (error && missingSchema(error.message) && phase10) {
+        phase10 = false;
+        ({ error } = await supabase.from("episodes").upsert(rows.map((r) => without(r, P10_EPISODE_KEYS)), { onConflict: "user_id,id" }));
+      }
       if (error) throw new Error(error.message);
     }
     if (settings) {
@@ -357,6 +376,30 @@ export function savePosition(id: string, positionMs: number, soon = false) {
   if (!e) return;
   putEpisode({ ...e, position_ms: Math.round(positionMs), last_played_at: Date.now() }, soon ? 500 : 15_000);
   emit();
+}
+
+/** Phase 10: ticks or unticks a chapter; unticked chapters are skipped (synced with the phone). */
+export function setChapterSkipped(id: string, startMs: number, skip: boolean) {
+  const e = state.episodes.get(id);
+  if (!e) return;
+  const set = (e.skipped_chapters ?? []).filter((s) => Math.abs(s - startMs) > 1000);
+  if (skip) set.push(Math.round(startMs));
+  set.sort((a, b) => a - b);
+  putEpisode({ ...e, skipped_chapters: set.length ? set : null });
+  emit();
+}
+
+export function setAdTrim(feedUrl: string, mode: string | null) {
+  const p = state.podcasts.get(feedUrl);
+  if (p) {
+    putPodcast({ ...p, ad_trim: mode });
+    emit();
+  }
+}
+
+/** The stored copy of an episode (for its synced chapter choices), if any. */
+export function episode(id: string): EpisodeRow | undefined {
+  return state.episodes.get(id);
 }
 
 export function setDuration(id: string, durationMs: number) {

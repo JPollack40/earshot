@@ -1,11 +1,11 @@
 import { setAppearance, useArtColor } from "../appearance";
 import * as player from "../player";
 import type { PlaybackDefaults, PodcastRow } from "../types";
-import { episodeMeta, formatClock, safeHtml } from "../util";
+import { episodeMeta, safeHtml } from "../util";
 import { Art, PodcastLink, type Nav } from "./common";
 import { Icon } from "./Icons";
 import { BookmarkButton, TranscriptButton } from "./Notes";
-import { AudioChips, audioChanger, GlowScrubber, SkipSelect, SleepSelect, useChapters } from "./PlayerBar";
+import { AudioChips, audioChanger, ChapterList, GlowScrubber, JumpBackButton, SkipSelect, SleepSelect, useChapters } from "./PlayerBar";
 
 /** Glow's optional right-hand panel (full screen at phone width): artwork, chapters, settings, show notes. */
 export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefined; prefs: PlaybackDefaults; nav: Nav }) {
@@ -26,7 +26,7 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
         </button>
       </div>
       <button className="np-art" title="Open podcast" onClick={() => nav.open({ name: "podcast", feedUrl: e.feed_url })}>
-        <Art url={e.image_url ?? podcast?.image_url} size={480} />
+        <Art url={current?.img ?? e.image_url ?? podcast?.image_url} size={480} />
       </button>
       <div>
         <div className="np-title">{e.title}</div>
@@ -51,6 +51,7 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
         </button>
       </div>
       <div className="g-chips np-chips np-notes-chips">
+        <JumpBackButton />
         <BookmarkButton />
         <TranscriptButton nav={nav} />
       </div>
@@ -61,12 +62,7 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
       {chapters.length > 0 && (
         <div className="np-box">
           <h4>Chapters</h4>
-          {chapters.map((c) => (
-            <button key={c.startMs} className={`np-chap ${c === current ? "on" : ""}`} onClick={() => player.seekTo(c.startMs)}>
-              <span className="ellipsis">{c.title}</span>
-              <span className="time">{formatClock(c.startMs)}</span>
-            </button>
-          ))}
+          <ChapterList chapters={chapters} positionMs={p.positionMs} itemClass="np-chap" />
         </div>
       )}
       <div className="np-box np-settings">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchFeed, type ParsedFeed } from "../feed";
+import { fetchFeed, personsSummary, type ParsedFeed } from "../feed";
 import * as store from "../store";
 import { SKIPS_MS, SPEEDS } from "../types";
 import { plainText, safeHtml, searchTerms, skipName, snippet, speedName } from "../util";
@@ -19,6 +19,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
+  const [sort, setSort] = useState<"newest" | "oldest" | "number">("newest");
 
   useEffect(() => {
     let cancelled = false;
@@ -31,7 +32,26 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   }, [url]);
 
   // Feed episodes, with this account's listening state where it has any.
-  const episodes = useMemo(() => (feed?.episodes ?? []).map((e) => s.episodes.get(e.id) ?? e), [feed, s.version]);
+  // Season and episode numbers come from the feed when the stored copy doesn't have them (phase 10).
+  const episodes = useMemo(() => {
+    const list = (feed?.episodes ?? []).map((e) => {
+      const stored = s.episodes.get(e.id);
+      return stored ? { ...stored, season: stored.season ?? e.season, episode_no: stored.episode_no ?? e.episode_no } : e;
+    });
+    if (sort === "oldest") return [...list].sort((a, b) => a.pub_date - b.pub_date);
+    if (sort === "number") {
+      // Numbers compare as numbers (2 before 10); unnumbered episodes last, oldest first.
+      return [...list].sort(
+        (a, b) =>
+          Number(a.episode_no == null) - Number(b.episode_no == null) ||
+          (a.season ?? 0) - (b.season ?? 0) ||
+          (a.episode_no ?? 0) - (b.episode_no ?? 0) ||
+          a.pub_date - b.pub_date,
+      );
+    }
+    return list;
+  }, [feed, s.version, sort]);
+  const hasNumbers = useMemo(() => (feed?.episodes ?? []).some((e) => e.episode_no != null), [feed]);
   const index = useMemo(() => new Map(episodes.map((e) => [e.id, plainText(e.description)])), [feed]);
   const terms = searchTerms(query);
   const shown = terms.length
@@ -91,7 +111,20 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
             <div className="big">{title}</div>
             <div className="meta">{feed?.author || podcast?.author}</div>
             <div className="meta">{feed ? `${episodes.length} episodes` : error ? "" : "Loading…"}</div>
+            {feed?.persons?.length ? <div className="meta">{personsSummary(feed.persons)}</div> : null}
+            {feed?.complete && <div className="meta">Finished show: the phone doesn't check it for new episodes automatically.</div>}
+            {podcast?.ad_trim && <div className="meta">Trimming inserted ads at the {podcast.ad_trim}</div>}
             <div className="actions">
+              {feed?.fundingUrl && (
+                <a className="button" href={feed.fundingUrl} target="_blank" rel="noreferrer" title={feed.fundingText ?? "Support this show"}>
+                  ♥ {(feed.fundingText ?? "Support this show").slice(0, 40)}
+                </a>
+              )}
+              <select value={sort} title="Episode order" onChange={(e) => setSort(e.target.value as typeof sort)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                {hasNumbers && <option value="number">By episode number</option>}
+              </select>
               {subscribed ? (
                 <>
                   <button aria-pressed={podcast!.pinned} onClick={() => store.setPinned(podcast!.feed_url, !podcast!.pinned)}>{podcast!.pinned ? "Unpin" : "Pin to top"}</button>
@@ -137,6 +170,14 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
                   {skipName(v)}
                 </option>
               ))}
+            </select>
+          </label>
+          <label title="Some shows stitch ads onto every download, making the file longer than the feed says. Earshot can skip that extra time (10 s to 20 min) where this show puts its ads.">
+            Trim inserted ads{" "}
+            <select value={podcast.ad_trim ?? ""} onChange={(e) => store.setAdTrim(podcast.feed_url, e.target.value || null)}>
+              <option value="">Off</option>
+              <option value="start">At the start</option>
+              <option value="end">At the end</option>
             </select>
           </label>
           <label>

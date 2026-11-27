@@ -22,6 +22,8 @@ export interface PodcastRow {
   max_minutes?: number | null;
   inbox_days?: number | null;
   inbox_keep?: number | null;
+  /** Phase 10 (004_listening_upgrades.sql): trim ads stitched onto episodes, "start" | "end" | null. */
+  ad_trim?: string | null;
   changed_at: number;
   rev?: number;
 }
@@ -60,6 +62,10 @@ export interface EpisodeRow {
   last_played_at: number;
   in_inbox: boolean;
   queue_position: number | null;
+  /** Phase 10 (004): unticked chapters' start times (ms), season and episode number. */
+  skipped_chapters?: number[] | null;
+  season?: number | null;
+  episode_no?: number | null;
   changed_at: number;
   rev?: number;
 }

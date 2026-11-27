@@ -19,6 +19,8 @@ export interface PlayerState {
   error: string | null;
   /** Everything known about the last error, for the Copy button (and kept in the error log). */
   errorDetails: string | null;
+  /** After a big jump: where "Back to mm:ss" returns to, shown for a few seconds (phase 10). */
+  jumpBack: { episodeId: string; fromMs: number } | null;
 }
 
 let state: PlayerState = {
@@ -32,6 +34,7 @@ let state: PlayerState = {
   sleepAtEnd: false,
   error: null,
   errorDetails: null,
+  jumpBack: null,
 };
 const listeners = new Set<() => void>();
 function set(patch: Partial<PlayerState>) {
@@ -296,7 +299,7 @@ export function load(e: EpisodeRow, autoplay: boolean) {
   const start = e.played ? 0 : e.position_ms;
   audio.currentTime = start / 1000;
   lastSaved = start;
-  set({ episode: e, positionMs: start, durationMs: e.duration_ms, effectsAvailable: true, error: null, errorDetails: null, playing: false });
+  set({ episode: e, positionMs: start, durationMs: e.duration_ms, effectsAvailable: true, error: null, errorDetails: null, playing: false, jumpBack: null });
   audio.playbackRate = prefs.speed;
   updateMediaSession(e);
   if (autoplay) play();
@@ -336,10 +339,107 @@ export function toggle() {
   else pause();
 }
 
-export function seekTo(ms: number) {
+function rawSeek(ms: number) {
   audio.currentTime = Math.max(0, ms / 1000);
   set({ positionMs: ms });
 }
+
+const JUMP_MIN_MS = 30_000;
+const JUMP_SHOW_MS = 8_000;
+let jumpTimer = 0;
+
+/**
+ * Seeks within the loaded episode. A jump of 30 s or more (chapter, transcript line, bookmark,
+ * scrubber) offers "Back to mm:ss" for a few seconds (phase 10). Skip buttons don't count.
+ */
+export function seekTo(ms: number) {
+  const from = audio.currentTime * 1000;
+  if (state.episode && Math.abs(ms - from) >= JUMP_MIN_MS) {
+    const jump = { episodeId: state.episode.id, fromMs: from };
+    set({ jumpBack: jump });
+    window.clearTimeout(jumpTimer);
+    jumpTimer = window.setTimeout(() => state.jumpBack === jump && set({ jumpBack: null }), JUMP_SHOW_MS);
+  }
+  rawSeek(ms);
+}
+
+/** "Back to mm:ss": returns to where the last big jump started. */
+export function undoJump() {
+  const j = state.jumpBack;
+  set({ jumpBack: null });
+  if (j && state.episode?.id === j.episodeId) rawSeek(j.fromMs);
+}
+
+// ---- Skipped chapters and ad trim (phase 10), set by the app for the loaded episode ----
+
+export interface SkipRules {
+  episodeId: string;
+  /** Chapter starts and ends (ms), in order. */
+  chapters: { startMs: number; endMs?: number | null }[];
+  /** Start times of unticked chapters. */
+  skipped: number[];
+  /** The podcast's ad trim: "start", "end" or null. */
+  adTrim: string | null;
+  /** The length the feed states (ms), for the ad trim. */
+  feedDurationMs: number;
+}
+let rules: SkipRules | null = null;
+export function setSkipRules(r: SkipRules | null) {
+  rules = r;
+}
+
+/** Same rule as the phone's AdTrim.extraMs: 10 s to 20 min longer than stated. */
+export function adExtraMs(feedMs: number, realMs: number): number {
+  if (feedMs <= 0 || realMs <= 0) return 0;
+  const d = realMs - feedMs;
+  return d >= 10_000 && d <= 20 * 60_000 ? d : 0;
+}
+
+/** Same rule as the phone's SkippedChapters.skipTarget. */
+export function skipTarget(chapters: SkipRules["chapters"], skipped: number[], pos: number, duration: number): number | null {
+  if (!skipped.length || !chapters.length) return null;
+  const isSkipped = (c: { startMs: number }) => skipped.some((s) => Math.abs(s - c.startMs) <= 1000);
+  const end = (i: number) => chapters[i].endMs ?? chapters[i + 1]?.startMs ?? (duration > 0 ? duration : Infinity);
+  let i = -1;
+  for (let k = 0; k < chapters.length; k++) if (chapters[k].startMs <= pos) i = k;
+  if (i < 0 || !isSkipped(chapters[i])) return null;
+  let target = end(i);
+  if (pos >= target) return null;
+  while (i + 1 < chapters.length && isSkipped(chapters[i + 1]) && chapters[i + 1].startMs <= target + 1000) {
+    i++;
+    target = end(i);
+  }
+  return target;
+}
+
+function checkSkips() {
+  const r = rules;
+  const e = state.episode;
+  if (!r || !e || r.episodeId !== e.id || audio.paused) return;
+  const pos = audio.currentTime * 1000;
+  const duration = isFinite(audio.duration) ? audio.duration * 1000 : 0;
+  if (duration <= 0) return;
+  const extra = r.adTrim ? adExtraMs(r.feedDurationMs, duration) : 0;
+  if (extra > 0 && r.adTrim === "start" && pos < extra - 1000) {
+    rawSeek(extra);
+    return;
+  }
+  const endAt = extra > 0 && r.adTrim === "end" ? duration - extra : duration;
+  const target = endAt < duration && pos >= endAt ? endAt : skipTarget(r.chapters, r.skipped, pos, duration);
+  if (target == null) return;
+  if (target >= endAt - 500) {
+    // The rest is skipped: finish the episode as if it had ended.
+    audio.pause();
+    wantPlaying = false;
+    set({ playing: false });
+    const stop = state.sleepAtEnd;
+    if (stop) set({ sleepAtEnd: false });
+    hooks.onEnded(e, stop);
+  } else {
+    rawSeek(target);
+  }
+}
+window.setInterval(checkSkips, 500);
 
 /** Plays an episode from [ms]: seeks if it's the one loaded, otherwise loads it there. */
 export function playAt(e: EpisodeRow, ms: number) {
@@ -352,7 +452,7 @@ export function playAt(e: EpisodeRow, ms: number) {
 }
 
 export function skipBy(ms: number) {
-  seekTo(audio.currentTime * 1000 + ms);
+  rawSeek(audio.currentTime * 1000 + ms);
 }
 
 export function setPrefs(p: PlaybackDefaults) {

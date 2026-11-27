@@ -60,7 +60,15 @@ export function episodeMeta(e: EpisodeRow, podcastTitle?: string): string {
     : e.position_ms > 0 && e.duration_ms > 0
       ? `${formatDuration(e.duration_ms - e.position_ms)} left`
       : formatDuration(e.duration_ms);
-  return [podcastTitle, formatDate(e.pub_date), time].filter(Boolean).join(" • ");
+  return [podcastTitle, episodeBadge(e.season, e.episode_no), formatDate(e.pub_date), time].filter(Boolean).join(" • ");
+}
+
+/** "S2 E14", "E14" or "" (phase 10, as on the phone). */
+export function episodeBadge(season?: number | null, episode?: number | null): string {
+  if (season != null && episode != null) return `S${season} E${episode}`;
+  if (episode != null) return `E${episode}`;
+  if (season != null) return `S${season}`;
+  return "";
 }
 
 /** Show notes as plain text (for search and snippets). */

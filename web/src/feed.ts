@@ -12,12 +12,49 @@ const PODCAST_NS = [
   "https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md",
 ];
 
+export interface Person {
+  name: string;
+  role: string;
+  img: string | null;
+  href: string | null;
+}
+
 export interface ParsedFeed {
   title: string;
   author: string;
   description: string;
   imageUrl: string | null;
   episodes: EpisodeRow[];
+  // Podcasting 2.0 extras (phase 10)
+  fundingUrl?: string | null;
+  fundingText?: string | null;
+  persons?: Person[];
+  /** podcast:updateFrequency complete="true" or itunes:complete "Yes". */
+  complete?: boolean;
+  /** Episode guests and hosts, by episode id. */
+  episodePersons?: Record<string, Person[]>;
+}
+
+function persons(el: Element): Person[] {
+  return childrenNamed(el, "person", PODCAST_NS)
+    .map((p) => ({
+      name: (p.textContent ?? "").trim(),
+      role: (p.getAttribute("role") ?? "host").trim().toLowerCase() || "host",
+      img: /^https?:\/\//.test(p.getAttribute("img") ?? "") ? p.getAttribute("img") : null,
+      href: /^https?:\/\//.test(p.getAttribute("href") ?? "") ? p.getAttribute("href") : null,
+    }))
+    .filter((p) => p.name);
+}
+
+/** "Hosts: A, B · Guest: C", as on the phone. */
+export function personsSummary(list: Person[]): string {
+  const groups = new Map<string, string[]>();
+  for (const p of list) groups.set(p.role, [...(groups.get(p.role) ?? []), p.name]);
+  const order = (r: string) => (r === "host" ? 0 : r === "guest" ? 1 : 2);
+  return [...groups.entries()]
+    .sort((a, b) => order(a[0]) - order(b[0]))
+    .map(([role, names]) => `${role[0].toUpperCase()}${role.slice(1)}${names.length > 1 ? "s" : ""}: ${names.join(", ")}`)
+    .join(" · ");
 }
 
 /** Fetches any URL through the feed-proxy function (browsers can't read most feeds directly). */
@@ -108,6 +145,7 @@ export async function parseFeed(xml: string, feedUrl: string): Promise<ParsedFee
   const description = childText(channel, "description") || childText(channel, "summary", NS_ITUNES);
 
   const episodes: EpisodeRow[] = [];
+  const episodePersons: Record<string, Person[]> = {};
   for (const item of Array.from(channel.children).filter((c) => c.localName === "item" && !c.namespaceURI)) {
     const enclosure = childEl(item, "enclosure", [null]);
     const audioUrl = enclosure?.getAttribute("url")?.trim();
@@ -125,8 +163,14 @@ export async function parseFeed(xml: string, feedUrl: string): Promise<ParsedFee
       }
     }
     const pub = Date.parse(childText(item, "pubDate").replace(/\s+/g, " "));
+    const id = await episodeId(feedUrl, guid);
+    const num = (v: string) => (v.trim() && isFinite(Number(v)) ? Number(v) : null);
+    const season = num(childrenNamed(item, "season", PODCAST_NS)[0]?.textContent ?? "") ?? num(childText(item, "season", NS_ITUNES));
+    const episodeNo = num(childrenNamed(item, "episode", PODCAST_NS)[0]?.textContent ?? "") ?? num(childText(item, "episode", NS_ITUNES));
+    const people = persons(item);
+    if (people.length) episodePersons[id] = people;
     episodes.push({
-      id: await episodeId(feedUrl, guid),
+      id,
       feed_url: feedUrl,
       guid,
       title: childText(item, "title") || "Untitled episode",
@@ -144,9 +188,14 @@ export async function parseFeed(xml: string, feedUrl: string): Promise<ParsedFee
       last_played_at: 0,
       in_inbox: false,
       queue_position: null,
+      season: season != null ? Math.trunc(season) : null,
+      episode_no: episodeNo,
       changed_at: 0,
     });
   }
+  const funding = childrenNamed(channel, "funding", PODCAST_NS)[0];
+  const fundingUrl = funding?.getAttribute("url")?.trim() ?? "";
+  const updateFrequency = childrenNamed(channel, "updateFrequency", PODCAST_NS)[0];
   // Same feed listing a guid twice: keep the first, as the phone does.
   const seen = new Set<string>();
   return {
@@ -155,18 +204,44 @@ export async function parseFeed(xml: string, feedUrl: string): Promise<ParsedFee
     description,
     imageUrl,
     episodes: episodes.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => b.pub_date - a.pub_date),
+    fundingUrl: /^https?:\/\//.test(fundingUrl) ? fundingUrl : null,
+    fundingText: (funding?.textContent ?? "").trim() || null,
+    persons: persons(channel),
+    complete: updateFrequency?.getAttribute("complete")?.trim().toLowerCase() === "true" || childText(channel, "complete", NS_ITUNES).toLowerCase() === "yes",
+    episodePersons,
   };
 }
 
 export interface Chapter {
   startMs: number;
   title: string;
+  /** Phase 10: chapter artwork and link, and an end time when the chapters give one. */
+  img?: string | null;
+  url?: string | null;
+  endMs?: number | null;
+  /** Phase 11: made from the transcript. */
+  generated?: boolean;
+}
+
+const httpUrl = (v: unknown): string | null => (typeof v === "string" && /^https?:\/\//.test(v) ? v : null);
+
+export function parseChapters(o: { chapters?: unknown[] }): Chapter[] {
+  const list: Chapter[] = ((o.chapters ?? []) as any[])
+    .filter((c) => c && c.toc !== false)
+    .map((c, i) => {
+      const startMs = Math.round((Number(c.startTime) || 0) * 1000);
+      const end = Number(c.endTime);
+      return {
+        startMs,
+        title: c.title || `Chapter ${i + 1}`,
+        img: httpUrl(c.img),
+        url: httpUrl(c.url),
+        endMs: isFinite(end) && end * 1000 > startMs ? Math.round(end * 1000) : null,
+      };
+    });
+  return list.sort((a, b) => a.startMs - b.startMs);
 }
 
 export async function fetchChapters(url: string): Promise<Chapter[]> {
-  const o = JSON.parse(await proxyFetch(url));
-  const list: Chapter[] = (o.chapters ?? [])
-    .filter((c: { toc?: boolean }) => c.toc !== false)
-    .map((c: { startTime?: number; title?: string }) => ({ startMs: Math.round((c.startTime ?? 0) * 1000), title: c.title ?? "" }));
-  return list.sort((a, b) => a.startMs - b.startMs);
+  return parseChapters(JSON.parse(await proxyFetch(url)));
 }

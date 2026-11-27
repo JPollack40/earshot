@@ -282,3 +282,4 @@
   :root[data-theme="glow"] .hero, :root[data-theme="glow"] .g-play, :root[data-theme="glow"] .row > .icon { transition: none; }
   :root[data-theme="glow"] .g-spin { animation-duration: 3s; }
 }
+:root[data-theme="glow"] .actions a.button { background: var(--surface2); border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 6px 14px; font-weight: 500; }

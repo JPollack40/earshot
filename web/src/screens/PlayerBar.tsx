@@ -63,6 +63,79 @@ export function audioChanger(prefs: PlaybackDefaults, podcast: PodcastRow | unde
   };
 }
 
+/** Hands the loaded episode's skipped chapters and its podcast's ad trim to the player (phase 10). */
+function useSkipRules(e: { id: string; duration_ms: number } | null, chapters: Chapter[], podcast: PodcastRow | undefined) {
+  const s = store.useStore();
+  const skipped = e ? (store.episode(e.id)?.skipped_chapters ?? null) : null;
+  const key = JSON.stringify(skipped);
+  useEffect(() => {
+    if (!e) {
+      player.setSkipRules(null);
+      return;
+    }
+    player.setSkipRules({
+      episodeId: e.id,
+      chapters,
+      skipped: skipped ?? [],
+      adTrim: podcast?.ad_trim ?? null,
+      feedDurationMs: e.duration_ms,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e?.id, chapters, key, podcast?.ad_trim, s]);
+}
+
+/** "Back to 12:34" for a few seconds after a big jump (phase 10). */
+export function JumpBackButton({ className = "chip" }: { className?: string }) {
+  const p = player.usePlayer();
+  if (!p.jumpBack || p.jumpBack.episodeId !== p.episode?.id) return null;
+  return (
+    <button className={`${className} on`} title="Go back to where you jumped from" onClick={player.undoJump}>
+      ↶ Back to {formatClock(p.jumpBack.fromMs)}
+    </button>
+  );
+}
+
+/**
+ * The chapter list (phase 10): tick boxes (unticked chapters are skipped, synced with the phone),
+ * chapter artwork and links.
+ */
+export function ChapterList({ chapters, positionMs, className, itemClass }: { chapters: Chapter[]; positionMs: number; className?: string; itemClass?: string }) {
+  const p = player.usePlayer();
+  store.useStore();
+  const e = p.episode;
+  if (!e || chapters.length === 0) return null;
+  const stored = store.episode(e.id);
+  const skipped = stored?.skipped_chapters ?? [];
+  const current = [...chapters].reverse().find((c) => c.startMs <= positionMs);
+  const isSkipped = (c: Chapter) => skipped.some((s) => Math.abs(s - c.startMs) <= 1000);
+  return (
+    <div className={className}>
+      {chapters.some((c) => c.generated) && <div className="muted small">Generated from the transcript</div>}
+      {chapters.map((c) => (
+        <div key={c.startMs} className={`chap-row ${itemClass ?? ""} ${c === current ? "on" : ""} ${isSkipped(c) ? "skipped" : ""}`}>
+          <input
+            type="checkbox"
+            checked={!isSkipped(c)}
+            disabled={!stored}
+            title={stored ? (isSkipped(c) ? "Skipped: tick to play this chapter" : "Untick to skip this chapter") : "Queue or play the episode from your library to skip chapters"}
+            onChange={(ev) => store.setChapterSkipped(e.id, c.startMs, !ev.target.checked)}
+          />
+          {c.img && <img className="chap-img" src={c.img} alt="" width={28} height={28} loading="lazy" />}
+          <button className="chap-go" onClick={() => player.seekTo(c.startMs)}>
+            <span className="ellipsis">{c.title}</span>
+            <span className="time">{formatClock(c.startMs)}</span>
+          </button>
+          {c.url && (
+            <a className="chap-link" href={c.url} target="_blank" rel="noreferrer" title="Open chapter link">
+              ↗
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; podcast: PodcastRow | undefined; nav: Nav }) {
   const p = player.usePlayer();
   const [more, setMore] = useState(false);
@@ -71,6 +144,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
   const e = p.episode;
   const chapters = useChapters(e);
   const tint = useArtColor(e ? (e.image_url ?? podcast?.image_url) : null, e?.feed_url ?? "earshot");
+  useSkipRules(e, chapters, podcast);
 
   if (!e) return null;
 
@@ -123,6 +197,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         </div>
         <div className="g-side">
           <div className="g-chips">
+            <JumpBackButton />
             <BookmarkButton />
             <TranscriptButton nav={nav} />
             <AudioChips prefs={prefs} podcast={podcast} />
@@ -188,6 +263,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         >
           Voice Boost
         </button>
+        <JumpBackButton />
         <BookmarkButton />
         <TranscriptButton nav={nav} />
         <button className="icon" title="More" onClick={() => setMore(!more)}>
@@ -259,15 +335,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
             </select>
           </label>
           {!p.effectsAvailable && <div className="muted small">Smart Speed and Voice Boost aren't available for this episode: its host doesn't allow browsers to process the audio.</div>}
-          {chapters.length > 0 && (
-            <div className="chapters">
-              {chapters.map((c) => (
-                <button key={c.startMs} className={c === chapter ? "on" : ""} onClick={() => player.seekTo(c.startMs)}>
-                  <span className="time">{formatClock(c.startMs)}</span> {c.title}
-                </button>
-              ))}
-            </div>
-          )}
+          <ChapterList chapters={chapters} positionMs={pos} className="chapters" />
         </div>
       )}
     </footer>
