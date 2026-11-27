@@ -35,6 +35,8 @@ object EpisodeMedia {
     /** The loaded episode's chapters (a folder at the top of the Queue tab), and each one ("chapter:<startMs>"). */
     const val CHAPTERS = "chapters"
     const val CHAPTER_PREFIX = "chapter:"
+    /** Phase 13: "Continue listening" (a folder in the Queue tab): started, unfinished, not queued. */
+    const val CONTINUE = "continue"
 
     /**
      * A playable episode, from its download when there is one. Android Auto shows its progress
@@ -206,6 +208,26 @@ object EpisodeMedia {
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST)
+                    .setExtras(extras)
+                    .build(),
+            )
+            .build()
+    }
+
+    /** "Continue listening (3)", a folder of started, unfinished episodes that aren't queued (phase 13). */
+    fun continueFolder(count: Int, newest: String?, icon: Uri): MediaItem {
+        val extras = Bundle()
+        extras.putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM)
+        return MediaItem.Builder()
+            .setMediaId(CONTINUE)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Continue listening ($count)")
+                    .setSubtitle(newest ?: "Started episodes that aren't queued")
+                    .setArtworkUri(icon)
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
                     .setExtras(extras)
                     .build(),
             )

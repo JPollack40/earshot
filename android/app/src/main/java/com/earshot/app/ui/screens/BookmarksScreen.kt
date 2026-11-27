@@ -168,7 +168,11 @@ private fun BookmarkRow(vm: AppViewModel, b: Bookmark, onOpen: (LoadedTranscript
         Icon(Icons.Filled.Bookmark, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
-            Text(formatClock(b.positionMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(
+                formatClock(b.positionMs) + (b.title?.takeIf { it.isNotBlank() }?.let { "  ·  $it" } ?: ""),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
             if (quote != null) {
                 Text(quote, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
             } else {
@@ -204,7 +208,7 @@ fun BookmarkDialog(vm: AppViewModel, bookmark: Bookmark, transcript: LoadedTrans
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bookmark at ${formatClock(bookmark.positionMs)}") },
+        title = { Text(bookmark.title?.takeIf { it.isNotBlank() } ?: "Bookmark at ${formatClock(bookmark.positionMs)}") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(bookmark.episodeTitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
@@ -243,6 +247,12 @@ fun BookmarkDialog(vm: AppViewModel, bookmark: Bookmark, transcript: LoadedTrans
                         Text("Play from ${formatClock(start)}")
                     }
                     OutlinedButton(onClick = { confirmDelete = true }) { Text("Delete") }
+                }
+                // Phase 13: a short title from the passage (Gemini).
+                if (transcript?.timed == true) {
+                    TextButton(onClick = { vm.titleBookmark(bookmark); onDismiss() }) {
+                        Text(if (bookmark.title.isNullOrBlank()) "Make a title from the transcript" else "Make a new title")
+                    }
                 }
             }
         },

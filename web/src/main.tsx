@@ -5,6 +5,7 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/sora";
 import "./styles.css";
 import "./glow.css";
+import "./browse.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

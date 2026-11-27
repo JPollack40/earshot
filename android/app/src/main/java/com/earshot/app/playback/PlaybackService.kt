@@ -166,6 +166,14 @@ class PlaybackService : MediaLibraryService() {
                 .collect { session?.notifyChildrenChanged(EpisodeMedia.QUEUE, it.size, null) }
         }
         scope.launch {
+            // Phase 13: Continue listening (its row in the Queue tab, and its list).
+            repo.episodes.observeContinue(CONTINUE_LIMIT).map { list -> list.map { it.episode.id to it.episode.title } }.distinctUntilChanged().drop(1)
+                .collect {
+                    session?.notifyChildrenChanged(EpisodeMedia.CONTINUE, it.size, null)
+                    session?.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 4, null)
+                }
+        }
+        scope.launch {
             repo.observeInbox().map { list -> list.map(::signature) }.distinctUntilChanged().drop(1)
                 .collect { session?.notifyChildrenChanged(EpisodeMedia.INBOX, it.size, null) }
         }
@@ -270,6 +278,7 @@ class PlaybackService : MediaLibraryService() {
             while (isActive) {
                 delay(500)
                 if (player.isPlaying) checkSkips()
+                updateAdButton()
             }
         }
 
@@ -417,13 +426,63 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    // ---- Rewind after a pause or interruption (phase 13) ----
+
+    private var pausedAt = 0L
+    private var pausedId: String? = null
+    private var pausedByInterruption = false
+
+    private fun rewindAfterPause() {
+        val at = pausedAt
+        pausedAt = 0L
+        if (at == 0L || !Settings.resumeRewind(app).value) return
+        if (player.currentMediaItem?.mediaId != pausedId) return
+        val back = ResumeRewind.amountMs(SystemClock.elapsedRealtime() - at, pausedByInterruption)
+        if (back <= 0) return
+        val to = (player.currentPosition - back).coerceAtLeast(0)
+        Log.i(TAG, "Resume rewind: back ${back / 1000} s after ${(SystemClock.elapsedRealtime() - at) / 1000} s" + if (pausedByInterruption) " (interrupted)" else "")
+        player.seekTo(to)
+        pausedAt = 0L // the seek above isn't a listener's choice; nothing more to do
+    }
+
+    /** Where a freshly loaded episode starts: its saved place, backed up a little after a long break. */
+    private fun resumeStart(ep: EpisodeWithPodcast): Long {
+        val start = EpisodeMedia.startPosition(ep)
+        if (!Settings.resumeRewind(app).value || start <= 0 || ep.episode.lastPlayedAt <= 0) return start
+        return ResumeRewind.startFor(start, System.currentTimeMillis() - ep.episode.lastPlayedAt)
+    }
+
     // ---- Playing-screen buttons: skip back / forward, Mark played ----
 
     /** True for a few seconds after a bookmark from the car or notification (filled icon). */
     private var bookmarkFlash = false
     private var bookmarkFlashJob: Job? = null
 
-    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, bookmarkFlash)
+    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, bookmarkFlash, skipAd = adNow != null)
+
+    /** Phase 13: the found ad playing now when ads are on Manual (the car shows Skip ad), else null. */
+    private var adNow: AdSpan? = null
+
+    private fun updateAdButton() {
+        val id = player.currentMediaItem?.mediaId
+        val ad = if (id != null && adsFor == id && ads.isNotEmpty() && Settings.adSkip(app).value == AdSkip.BUTTON &&
+            player.playbackState == Player.STATE_READY
+        ) AdSkip.current(ads, player.currentPosition) else null
+        if (ad != adNow) {
+            adNow = ad
+            refreshButtons()
+        }
+    }
+
+    /** Skip ad from the car or notification: past this ad (and any straight after it). */
+    private fun skipAdNow() {
+        val id = player.currentMediaItem?.mediaId ?: return
+        val to = AdSkip.skipTarget(ads, player.currentPosition) ?: return
+        val duration = player.duration
+        Log.i(TAG, "Skip ad (button): ${player.currentPosition} -> $to ms")
+        if (duration > 0 && to >= duration - 500) finishCurrent(id, playNext = true, atEnd = false) else player.seekTo(to)
+        updateAdButton()
+    }
 
     /** Bookmarks the playing moment (Bookmark button in Android Auto or the notification). */
     private fun bookmarkNow() {
@@ -517,7 +576,20 @@ class PlaybackService : MediaLibraryService() {
             if (!isPlaying) {
                 listening.finish()
                 scope.launch { savePosition() }
+                // Phase 13: remember a real pause or interruption (not buffering or the end) for the rewind.
+                if (player.playbackState == Player.STATE_READY) {
+                    pausedAt = SystemClock.elapsedRealtime()
+                    pausedId = player.currentMediaItem?.mediaId
+                    pausedByInterruption = player.playWhenReady && player.playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE
+                }
+            } else {
+                rewindAfterPause()
             }
+        }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            // A seek or skip while paused means the listener chose where to carry on: don't rewind from there.
+            if (!player.isPlaying) pausedAt = 0L
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
@@ -526,6 +598,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            pausedAt = 0L
             // The previous episode is no longer loaded, so a finished one can now lose its download.
             updateProtected()
             app.cleanupDownloads("moved to next episode")
@@ -710,7 +783,7 @@ class PlaybackService : MediaLibraryService() {
                     repo.episodes.savePosition(prevId, prevPos, System.currentTimeMillis())
                 }
                 repo.queueFirst(ep.episode.id)
-                val start = if (startPositionMs != C.TIME_UNSET && startPositionMs > 0) startPositionMs else EpisodeMedia.startPosition(ep)
+                val start = if (startPositionMs != C.TIME_UNSET && startPositionMs > 0) startPositionMs else resumeStart(ep)
                 player.setPauseAtEndOfMediaItems(true)
                 finishingId = null
                 MediaItemsWithStartPosition(playlist(ep), 0, start)
@@ -731,6 +804,7 @@ class PlaybackService : MediaLibraryService() {
                     defaults.availableSessionCommands.buildUpon()
                         .add(PlayerButtons.markPlayedCommand)
                         .add(PlayerButtons.bookmarkCommand)
+                        .add(PlayerButtons.skipAdCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -747,6 +821,7 @@ class PlaybackService : MediaLibraryService() {
                     finishCurrent(it, playNext = player.playWhenReady, atEnd = false)
                 }
                 PlayerButtons.BOOKMARK -> bookmarkNow()
+                PlayerButtons.SKIP_AD -> skipAdNow()
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -768,7 +843,7 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<MediaItemsWithStartPosition> = future {
             val head = repo.queueHead() ?: throw IllegalStateException("Queue is empty")
             player.setPauseAtEndOfMediaItems(true)
-            MediaItemsWithStartPosition(playlist(head), 0, EpisodeMedia.startPosition(head))
+            MediaItemsWithStartPosition(playlist(head), 0, resumeStart(head))
         }
 
         // ---- Browse tree for Android Auto: Queue, Inbox, Latest, Podcasts (4 tabs) ----
@@ -802,6 +877,7 @@ class PlaybackService : MediaLibraryService() {
             val folder = when {
                 mediaId == EpisodeMedia.ROOT -> EpisodeMedia.folder(EpisodeMedia.ROOT, "Earshot")
                 mediaId == EpisodeMedia.SPEED -> EpisodeMedia.speedFolder(prefs.speed, iconUri(PlayerButtons.speedIcon(prefs.speed)))
+                mediaId == EpisodeMedia.CONTINUE -> continueRow() ?: EpisodeMedia.continueFolder(0, null, iconUri(R.drawable.ic_tab_latest))
                 mediaId.startsWith(EpisodeMedia.SPEED_PREFIX) ->
                     mediaId.removePrefix(EpisodeMedia.SPEED_PREFIX).toFloatOrNull()?.let { speedChoiceItem(it) }
                 mediaId.startsWith(EpisodeMedia.PODCAST_PREFIX) ->
@@ -835,7 +911,9 @@ class PlaybackService : MediaLibraryService() {
                     listOf(EpisodeMedia.speedFolder(prefs.speed, iconUri(PlayerButtons.speedIcon(prefs.speed)))) +
                         listOfNotNull(chaptersRow()) +
                         listOfNotNull(moreFromLoaded()) +
+                        listOfNotNull(continueRow()) +
                         dao.getQueue().map { EpisodeMedia.item(it) }
+                parentId == EpisodeMedia.CONTINUE -> dao.getContinue(CONTINUE_LIMIT).map { EpisodeMedia.item(it) }
                 parentId == EpisodeMedia.SPEED -> Settings.SPEED_CHOICES.map { speedChoiceItem(it) }
                 parentId == EpisodeMedia.CHAPTERS -> {
                     val current = currentChapterIndex()
@@ -897,6 +975,13 @@ class PlaybackService : MediaLibraryService() {
         val id = player.currentMediaItem?.mediaId ?: return null
         val podcastId = repo.episodes.get(id)?.podcastId ?: return null
         return repo.podcasts.get(podcastId)?.let(EpisodeMedia::moreFromFolder)
+    }
+
+    /** "Continue listening (n)" in the Queue tab (phase 13), when there are started episodes not queued. */
+    private suspend fun continueRow(): MediaItem? {
+        val list = repo.episodes.getContinue(CONTINUE_LIMIT)
+        if (list.isEmpty()) return null
+        return EpisodeMedia.continueFolder(list.size, list.first().episode.title, iconUri(R.drawable.ic_tab_latest))
     }
 
     /** "Chapters (n)" at the top of the Queue tab, when the loaded episode has chapters. */
@@ -1047,6 +1132,7 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         private const val LATEST_LIMIT = 100
+        private const val CONTINUE_LIMIT = 20
         private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
 
         /**

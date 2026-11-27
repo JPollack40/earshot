@@ -179,6 +179,8 @@ data class Bookmark(
     val startMs: Long,
     val endMs: Long,
     val note: String = "",
+    /** Phase 13 (v10): a short title made from the transcript passage (null = none yet). */
+    val title: String? = null,
     val createdAt: Long,
     @ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
     @ColumnInfo(defaultValue = "1") val dirty: Boolean = true,

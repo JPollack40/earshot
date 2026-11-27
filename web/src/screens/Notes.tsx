@@ -340,6 +340,7 @@ export function TranscriptPage({ episodeId, focusMs, nav }: { episodeId: string;
                 {marks.get(i)?.map((b) => (
                   <button key={b.id} className="t-mark" onClick={() => setEditing(b)}>
                     <Glyph name="bookmarkOn" text="🔖" /> {formatClock(b.position_ms)}
+                    {b.title ? ` · ${b.title}` : ""}
                     {b.note ? ` · ${b.note}` : ""}
                   </button>
                 ))}
@@ -376,6 +377,7 @@ export function BookmarkDialog({ bookmark, transcript, onClose }: { bookmark: Bo
   const [note, setNote] = useState(bookmark.note);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [titling, setTitling] = useState(false);
   const q = transcript ? quote(transcript.segments, transcript.timed, start, end) : null;
   const setStartBy = (d: number) => setStart((v) => Math.max(0, Math.min(end - 1000, v + d)));
   const setEndBy = (d: number) => setEnd((v) => Math.max(start + 1000, v + d));
@@ -386,7 +388,7 @@ export function BookmarkDialog({ bookmark, transcript, onClose }: { bookmark: Bo
   return (
     <div className="scrim" onClick={onClose}>
       <div className="sheet" role="dialog" aria-label="Bookmark" onClick={(ev) => ev.stopPropagation()}>
-        <div className="sheet-title">Bookmark at {formatClock(bookmark.position_ms)}</div>
+        <div className="sheet-title">{bookmark.title || `Bookmark at ${formatClock(bookmark.position_ms)}`}</div>
         <div className="meta">
           {bookmark.episode_title}
           {bookmark.podcast_title ? ` · ${bookmark.podcast_title}` : ""}
@@ -413,6 +415,21 @@ export function BookmarkDialog({ bookmark, transcript, onClose }: { bookmark: Bo
             Save
           </button>
           <button onClick={() => setMessage(playFrom(bookmark.episode_id, start))}>Play from start</button>
+          {transcript?.timed && (
+            <button
+              disabled={titling}
+              onClick={() => {
+                setTitling(true);
+                notes
+                  .titleBookmark(bookmark.id, true)
+                  .then(() => onClose())
+                  .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)))
+                  .finally(() => setTitling(false));
+              }}
+            >
+              {titling ? "Making a title…" : bookmark.title ? "New title" : "Make a title"}
+            </button>
+          )}
           <span className="spacer" />
           {confirmDelete ? (
             <>
@@ -538,7 +555,10 @@ export function BookmarksPage({ nav }: { nav: Nav }) {
                       <Glyph name="play" text="▶" />
                     </button>
                     <button className="row-main" onClick={() => setEditing(b)}>
-                      <div className="time">{formatClock(b.position_ms)}</div>
+                      <div className="time">
+                        {formatClock(b.position_ms)}
+                        {b.title ? ` · ${b.title}` : ""}
+                      </div>
                       {q ? <div className="bm-q">“{q}”</div> : <div className="meta">{n.transcripts.has(b.episode_id) ? "Loading quote…" : "No transcript for this moment yet."}</div>}
                       {b.note && <div className="bm-n">{b.note}</div>}
                     </button>

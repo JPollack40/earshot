@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { proxyFetch } from "./feed";
-import { supabase } from "./supabase";
+import { callFunction, supabase } from "./supabase";
 import { normalize, parseTranscript, type Segment } from "./transcript";
 import type { EpisodeRow } from "./types";
 import { searchTerms } from "./util";
@@ -21,6 +21,8 @@ export interface BookmarkRow {
   start_ms: number;
   end_ms: number;
   note: string;
+  /** Phase 13 (007_browse.sql): a short title made from the transcript passage. */
+  title?: string | null;
   created_at: number;
   deleted: boolean;
   changed_at: number;
@@ -143,7 +145,7 @@ export async function flushNotes() {
   pendingBookmarks.clear();
   if (!rows.length) return;
   const { error } = await supabase.from("bookmarks").upsert(
-    rows.map(({ rev: _rev, ...r }) => r),
+    rows.map(({ rev: _rev, ...r }) => ({ ...r, title: r.title ?? null })),
     { onConflict: "user_id,id" },
   );
   if (error) {
@@ -188,13 +190,40 @@ export function addBookmark(e: EpisodeRow, podcastTitle: string, podcastImage: s
     start_ms: Math.max(0, pos - QUOTE_BEFORE_MS),
     end_ms: pos + QUOTE_AFTER_MS,
     note: "",
+    title: null,
     created_at: now,
     deleted: false,
     changed_at: now,
   };
   putBookmark(b);
-  void ensureFeedTranscript(e).catch(() => {});
+  // Phase 13: once there's a timed transcript, give the bookmark a short title from its passage.
+  void ensureFeedTranscript(e)
+    .catch(() => null)
+    .then((t) => t ?? loadTranscript(e.id))
+    .then((t) => (t?.timed ? titleBookmark(b.id, false) : undefined))
+    .catch(() => {});
   return b;
+}
+
+/** Phase 13: asks the "ai" function for a short title for the bookmark's passage, and saves it. */
+export async function titleBookmark(id: string, force: boolean): Promise<string | null> {
+  const b = state.bookmarks.get(id);
+  if (!b || b.deleted) return null;
+  if (!force && b.title) return b.title;
+  const res = await callFunction<{ data?: { title?: string } }>("ai", {
+    episodeId: b.episode_id,
+    kind: "title",
+    startMs: b.start_ms,
+    endMs: b.end_ms,
+    title: b.episode_title,
+    podcast: b.podcast_title,
+  });
+  const title = res.data?.title?.trim();
+  if (!title) throw new Error("No title came back");
+  const cur = state.bookmarks.get(id);
+  if (!cur || cur.deleted) return null;
+  putBookmark({ ...cur, title });
+  return title;
 }
 
 export function updateBookmark(b: BookmarkRow, patch: Partial<Pick<BookmarkRow, "start_ms" | "end_ms" | "note">>) {

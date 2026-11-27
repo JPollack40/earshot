@@ -112,15 +112,17 @@ fun InboxList(vm: AppViewModel, modifier: Modifier = Modifier) {
 @Composable
 fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
     val queue by vm.queue.collectAsStateWithLifecycle()
+    val continuing by vm.continueListening.collectAsStateWithLifecycle()
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
     var openId by remember { mutableStateOf<String?>(null) }
+    var showAllContinue by remember { mutableStateOf(false) }
 
     // Local copy so a drag moves rows instantly; saved to the database when the drag ends.
     var local by remember { mutableStateOf(queue) }
     var dragging by remember { mutableStateOf(false) }
     LaunchedEffect(queue) { if (!dragging) local = queue }
 
-    if (local.isEmpty()) {
+    if (local.isEmpty() && continuing.isEmpty()) {
         EmptyMessage(
             "Queue is empty",
             "Swipe right on a new episode, or use Play next / Play last in any episode's details.",
@@ -141,6 +143,42 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
     }
 
     LazyColumn(modifier = modifier, state = listState, contentPadding = PaddingValues(bottom = 8.dp)) {
+        // Phase 13: Continue listening (started, unfinished, not queued).
+        if (continuing.isNotEmpty()) {
+            item(key = "continue-header") {
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Continue listening · ${continuing.size}",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (continuing.size > 3) {
+                        TextButton(onClick = { showAllContinue = !showAllContinue }) { Text(if (showAllContinue) "Show less" else "Show all") }
+                    }
+                }
+            }
+            items(if (showAllContinue) continuing else continuing.take(3), key = { "c:" + it.episode.id }) { item ->
+                val isCurrent = now.episodeId == item.episode.id
+                EpisodeRow(
+                    item = item,
+                    showPodcast = true,
+                    isCurrent = isCurrent,
+                    isPlaying = now.isPlaying,
+                    onOpen = { openId = item.episode.id },
+                    onPlay = { if (isCurrent) vm.player.togglePlay() else vm.play(item) },
+                    onDownload = { vm.download(item) },
+                    onOpenPodcast = { vm.openPodcastPage(item.episode.podcastId) },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            }
+            item(key = "queue-header") {
+                Text(
+                    if (local.isEmpty()) "Queue is empty" else "Queue · ${local.size}",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
+                )
+            }
+        }
         items(local, key = { it.episode.id }) { item ->
             ReorderableItem(reorderState, key = item.episode.id) { isDragging ->
                 val isCurrent = now.episodeId == item.episode.id
@@ -187,7 +225,7 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
             }
         }
     }
-    EpisodeSheetFor(vm, openId?.let { id -> local.firstOrNull { it.episode.id == id } }) { openId = null }
+    EpisodeSheetFor(vm, openId?.let { id -> local.firstOrNull { it.episode.id == id } ?: continuing.firstOrNull { it.episode.id == id } }) { openId = null }
 }
 
 class SwipeAction(val icon: ImageVector, val label: String, val color: Color, val onSwipe: () -> Unit)

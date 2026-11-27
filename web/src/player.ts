@@ -279,6 +279,24 @@ function playFailed(err: unknown) {
   fail(`This episode couldn't be played: ${String(err)}`, { Reason: String(err) });
 }
 
+// ---- Rewind after a pause (phase 13; same rule as the phone's ResumeRewind) ----
+
+let resumeRewind = true;
+let pausedAt = 0;
+let pausedId: string | null = null;
+
+export function setResumeRewind(on: boolean) {
+  resumeRewind = on;
+}
+
+/** How far to back up after [pausedForMs]: nothing under 1 s, 2 s under a minute, 5 s under an hour, then 10 s. */
+export function rewindMs(pausedForMs: number): number {
+  if (pausedForMs < 1_000) return 0;
+  if (pausedForMs < 60_000) return 2_000;
+  if (pausedForMs < 60 * 60_000) return 5_000;
+  return 10_000;
+}
+
 // ---- controls ----
 
 /** Loads an episode (from its saved position) and, if [autoplay], starts it. */
@@ -297,7 +315,10 @@ export function load(e: EpisodeRow, autoplay: boolean) {
   audio = fx;
   wantPlaying = autoplay;
   audio.src = e.audio_url;
-  const start = e.played ? 0 : e.position_ms;
+  pausedAt = 0;
+  // Back up a little when coming back to an episode after a break (phase 13).
+  const saved = e.played ? 0 : e.position_ms;
+  const start = resumeRewind && saved > 0 && e.last_played_at > 0 ? Math.max(0, saved - rewindMs(Date.now() - e.last_played_at)) : saved;
   audio.currentTime = start / 1000;
   lastSaved = start;
   set({ episode: e, positionMs: start, durationMs: e.duration_ms, effectsAvailable: true, error: null, errorDetails: null, playing: false, jumpBack: null });
@@ -309,6 +330,11 @@ export function load(e: EpisodeRow, autoplay: boolean) {
 export function play() {
   if (!state.episode) return;
   wantPlaying = true;
+  if (pausedAt && pausedId === state.episode.id && resumeRewind && audio.paused) {
+    const back = rewindMs(Date.now() - pausedAt);
+    if (back > 0) rawSeek(Math.max(0, audio.currentTime * 1000 - back));
+  }
+  pausedAt = 0;
   // After a failure, try again from the start of the chain (the host may be back, or allow CORS now).
   if (audio.error) {
     const at = state.positionMs;
@@ -333,6 +359,8 @@ export function play() {
 export function pause() {
   wantPlaying = false;
   audio.pause();
+  pausedAt = Date.now();
+  pausedId = state.episode?.id ?? null;
 }
 
 export function toggle() {
@@ -341,6 +369,8 @@ export function toggle() {
 }
 
 function rawSeek(ms: number) {
+  // A seek while paused is where the listener chose to carry on: no rewind from there.
+  if (audio.paused) pausedAt = 0;
   audio.currentTime = Math.max(0, ms / 1000);
   set({ positionMs: ms });
 }

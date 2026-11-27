@@ -212,6 +212,7 @@ export interface ExportBookmark {
   start_ms: number;
   end_ms: number;
   note: string;
+  title?: string | null;
 }
 
 /** "1:02:03" or "2:03" */
@@ -256,7 +257,7 @@ function quoteBlock(text: string): string {
 }
 
 function bookmarkBlock(b: ExportBookmark, t: ExportTranscript | null, level = "###"): string {
-  let out = `${level} ${clock(b.position_ms)}\n\n`;
+  let out = `${level} ${clock(b.position_ms)}${b.title?.trim() ? ` · ${b.title.trim()}` : ""}\n\n`;
   const q = t ? quote(t.segments, t.timed, b.start_ms, b.end_ms) : null;
   if (q) out += quoteBlock(q) + "\n\n";
   if (b.note.trim()) out += b.note.trim() + "\n\n";
@@ -300,7 +301,7 @@ export function fullTranscriptMd(e: ExportEpisode, t: ExportTranscript, bookmark
       const nextStart = t.segments[i + 1]?.s ?? Infinity;
       while (pending.length && pending[0].position_ms < nextStart) {
         const b = pending.shift()!;
-        out += `> **🔖 Bookmark ${clock(b.position_ms)}**`;
+        out += `> **🔖 Bookmark ${clock(b.position_ms)}${b.title?.trim() ? ` · ${b.title.trim()}` : ""}**`;
         if (b.note.trim()) out += `: ${b.note.trim().replace(/\n/g, " ")}`;
         out += "\n\n";
       }

@@ -321,8 +321,51 @@ class Transcripts(private val app: EarshotApp) {
             } catch (e: Exception) {
                 Log.w(TAG, "Couldn't fetch the feed transcript after bookmarking", e)
             }
+            // Phase 13: a short title from the passage, when there's a timed transcript to read it from.
+            try {
+                autoTitle(b, force = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Couldn't title the bookmark", e)
+            }
         }
         return b
+    }
+
+    /**
+     * Phase 13: asks the "ai" function for a short title for [b]'s passage and saves it. Needs a
+     * sign-in and a timed transcript; returns null (or, when [force], throws) without them.
+     * Without [force], a bookmark that already has a title keeps it.
+     */
+    suspend fun autoTitle(b: Bookmark, force: Boolean): String? {
+        if (!force && !b.title.isNullOrBlank()) return b.title
+        if (!app.sync.canSync) {
+            if (force) throw IllegalStateException("Sign in (Settings > Sync) to make titles")
+            return null
+        }
+        val t = dao.get(b.episodeId)
+        if (t == null || !t.timed) {
+            if (force) throw IllegalStateException("This episode needs a timed transcript first (Transcript, then Transcribe)")
+            return null
+        }
+        if (t.dirty) app.sync.sync("bookmark title")
+        val res = app.sync.supabase.function(
+            "ai",
+            org.json.JSONObject()
+                .put("episodeId", b.episodeId)
+                .put("kind", "title")
+                .put("startMs", b.startMs)
+                .put("endMs", b.endMs)
+                .put("title", b.episodeTitle)
+                .put("podcast", b.podcastTitle),
+        )
+        val title = res.optJSONObject("data")?.optString("title")?.trim().orEmpty()
+        if (title.isEmpty()) throw IllegalStateException(res.optString("error").ifBlank { "No title came back" })
+        val cur = bookmarkDao.get(b.id) ?: return null
+        if (cur.deleted) return null
+        bookmarkDao.upsert(cur.copy(title = title, dirty = true, changedAt = System.currentTimeMillis()))
+        return title
     }
 
     suspend fun updateBookmark(b: Bookmark) {

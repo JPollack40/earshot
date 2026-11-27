@@ -4,6 +4,8 @@
 //   "chapters": chapters for an episode that has none (shown as generated)
 //   "summary":  a short summary plus key moments with timestamps
 //   "ads":      ad reads and sponsor segments, so players can skip them
+//   "ask":      (phase 13) { question }: an answer from the transcript with quotes and their times; not saved
+//   "title":    (phase 13) { startMs, endMs }: a short title for a bookmark's passage; not saved
 // Reads the user's saved transcript (it must have timings), asks Gemini, checks the answer, saves it in
 // public.episode_ai (006_ai.sql) as the user, and returns { kind, data, model }.
 //
@@ -129,48 +131,18 @@ function normalise(kind: Kind, o: any, lastMs: number): unknown {
   return { ads };
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return json({ error: "Use POST" }, 405);
-
-  const base = Deno.env.get("SUPABASE_URL");
-  const auth = req.headers.get("authorization") ?? "";
-  const apikey = req.headers.get("apikey") ?? "";
-  if (!base || !auth.toLowerCase().startsWith("bearer ") || !apikey) return json({ error: "Sign in first" }, 401);
-  const asUser = { Authorization: auth, apikey };
-  const who = await fetch(`${base}/auth/v1/user`, { headers: asUser });
-  if (!who.ok) return json({ error: "Sign in first" }, 401);
-  await who.body?.cancel();
-
-  let body: { episodeId?: string; kind?: string; title?: string; podcast?: string };
-  try {
-    body = await req.json();
-  } catch (_) {
-    return json({ error: "Expected JSON" }, 400);
-  }
-  const episodeId = String(body.episodeId ?? "");
-  const kind = body.kind as Kind;
-  if (!episodeId || !(kind in PROMPTS)) return json({ error: "episodeId and kind (chapters, summary or ads) are required" }, 400);
-
-  const key = Deno.env.get("GEMINI_API_KEY");
-  if (!key) return json({ error: "GEMINI_API_KEY secret is not set" }, 500);
+/**
+ * Asks Gemini for JSON matching [schema]. Gemini answers 503 ("high demand") or 500 at busy times: try
+ * again once after a pause, then the fallback model (GEMINI_FALLBACK_MODEL secret) if one is set. The
+ * fallback is also used when the main model's per-minute free limit is reached (429), since each model
+ * has its own limit. Edge functions are stopped after about 150 s, so only try again while there's time.
+ * Returns the OK response and the model that gave it, or a ready error response.
+ */
+async function gemini(key: string, prompt: string, schema: unknown, temperature: number): Promise<{ res: Response; model: string; error?: undefined } | { error: Response; res?: undefined; model?: undefined }> {
   let model = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
-
-  // The user's own transcript (row-level security keeps it to theirs).
-  const tr = await fetch(`${base}/rest/v1/transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
-  if (!tr.ok) return json({ error: `Couldn't read the transcript (HTTP ${tr.status})` }, 502);
-  const rows = await tr.json() as { segments: Segment[]; timed: boolean }[];
-  const t = rows[0];
-  if (!t || !Array.isArray(t.segments) || t.segments.length === 0) return json({ error: "This episode has no transcript yet. Get one first (Transcript)." }, 400);
-  if (!t.timed) return json({ error: "This episode's transcript has no timings, so moments can't be placed. Transcribe it instead." }, 400);
-  const lastMs = Math.max(...t.segments.map((s) => s.e || s.s || 0));
-
-  const context = [body.podcast ? `Podcast: ${body.podcast}` : "", body.title ? `Episode: ${body.title}` : ""].filter(Boolean).join("\n");
-  const prompt = `${PROMPTS[kind]}\nTimestamps are h:mm:ss or m:ss, exactly as written at the start of the transcript lines.\n\n${context}\n\nTranscript:\n${transcriptText(t.segments)}`;
-
   const request = JSON.stringify({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMAS[kind], temperature: 0.2 },
+    generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature },
   });
   const ask = (m: string) =>
     fetch(`${GEMINI}/${m}:generateContent`, {
@@ -178,10 +150,6 @@ Deno.serve(async (req: Request) => {
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: request,
     });
-  // Gemini answers 503 ("high demand") or 500 at busy times: try again once after a pause, then the
-  // fallback model (GEMINI_FALLBACK_MODEL secret) if one is set. The fallback is also used when the main
-  // model's per-minute free limit is reached (429), since each model has its own limit.
-  // Edge functions are stopped after about 150 s, so only try again while there's time left.
   const started = Date.now();
   const timeLeft = () => Date.now() - started < 60_000;
   let res = await ask(model);
@@ -200,7 +168,7 @@ Deno.serve(async (req: Request) => {
     const detail = (await res.text()).slice(0, 800);
     // Shows in Supabase > Edge Functions > ai > Logs.
     console.error(`Gemini ${model} HTTP ${res.status}: ${detail}`);
-    if (res.status === 429) return json({ error: "Gemini's free limit is used up for now. Try again later (limits reset over the day).", detail }, 429);
+    if (res.status === 429) return { error: json({ error: "Gemini's free limit is used up for now. Try again later (limits reset over the day).", detail }, 429) };
     let reason = "";
     try {
       reason = String(JSON.parse(detail)?.error?.message ?? "").slice(0, 200);
@@ -208,24 +176,123 @@ Deno.serve(async (req: Request) => {
       // not JSON
     }
     if (res.status === 503 || res.status === 500) {
-      return json({ error: "Gemini is overloaded right now (Google's side). Try again in a few minutes.", detail }, 503);
+      return { error: json({ error: "Gemini is overloaded right now (Google's side). Try again in a few minutes.", detail }, 503) };
     }
     if (res.status === 404) {
-      return json({ error: `Gemini doesn't offer the model "${model}" to this key. Set the GEMINI_MODEL secret to one it does.`, detail }, 502);
+      return { error: json({ error: `Gemini doesn't offer the model "${model}" to this key. Set the GEMINI_MODEL secret to one it does.`, detail }, 502) };
     }
-    return json({ error: `Gemini returned HTTP ${res.status}${reason ? `: ${reason}` : ""}`, detail }, 502);
+    return { error: json({ error: `Gemini returned HTTP ${res.status}${reason ? `: ${reason}` : ""}`, detail }, 502) };
   }
+  return { res, model };
+}
+
+/** Gemini's JSON answer, or null if it isn't readable. */
+// deno-lint-ignore no-explicit-any
+async function answerOf(res: Response, model: string): Promise<any | null> {
   // deno-lint-ignore no-explicit-any
   const out: any = await res.json();
   // deno-lint-ignore no-explicit-any
   const text = (out?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    return JSON.parse(text);
   } catch (_) {
     console.error(`Gemini ${model}: unreadable answer (finishReason ${out?.candidates?.[0]?.finishReason}): ${JSON.stringify(out).slice(0, 800)}`);
-    return json({ error: "Gemini's answer wasn't readable. Try again.", detail: text.slice(0, 300) }, 502);
+    return null;
   }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ error: "Use POST" }, 405);
+
+  const base = Deno.env.get("SUPABASE_URL");
+  const auth = req.headers.get("authorization") ?? "";
+  const apikey = req.headers.get("apikey") ?? "";
+  if (!base || !auth.toLowerCase().startsWith("bearer ") || !apikey) return json({ error: "Sign in first" }, 401);
+  const asUser = { Authorization: auth, apikey };
+  const who = await fetch(`${base}/auth/v1/user`, { headers: asUser });
+  if (!who.ok) return json({ error: "Sign in first" }, 401);
+  await who.body?.cancel();
+
+  let body: { episodeId?: string; kind?: string; title?: string; podcast?: string; question?: string; startMs?: number; endMs?: number };
+  try {
+    body = await req.json();
+  } catch (_) {
+    return json({ error: "Expected JSON" }, 400);
+  }
+  const episodeId = String(body.episodeId ?? "");
+  const kind = body.kind as Kind | "ask" | "title";
+  if (!episodeId || !(kind in PROMPTS || kind === "ask" || kind === "title")) {
+    return json({ error: "episodeId and kind (chapters, summary, ads, ask or title) are required" }, 400);
+  }
+
+  const key = Deno.env.get("GEMINI_API_KEY");
+  if (!key) return json({ error: "GEMINI_API_KEY secret is not set" }, 500);
+
+  // The user's own transcript (row-level security keeps it to theirs).
+  const tr = await fetch(`${base}/rest/v1/transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
+  if (!tr.ok) return json({ error: `Couldn't read the transcript (HTTP ${tr.status})` }, 502);
+  const rows = await tr.json() as { segments: Segment[]; timed: boolean }[];
+  const t = rows[0];
+  if (!t || !Array.isArray(t.segments) || t.segments.length === 0) return json({ error: "This episode has no transcript yet. Get one first (Transcript)." }, 400);
+  if (!t.timed) return json({ error: "This episode's transcript has no timings, so moments can't be placed. Transcribe it instead." }, 400);
+  const lastMs = Math.max(...t.segments.map((s) => s.e || s.s || 0));
+  const context = [body.podcast ? `Podcast: ${body.podcast}` : "", body.title ? `Episode: ${body.title}` : ""].filter(Boolean).join("\n");
+
+  // Phase 13: a typed question, answered from the transcript with quotes and their times. Not saved.
+  if (kind === "ask") {
+    const question = String(body.question ?? "").trim().slice(0, 500);
+    if (!question) return json({ error: "Type a question first" }, 400);
+    const prompt =
+      "Answer the listener's question about this podcast episode using only what is said in the transcript below. " +
+      "Answer in plain language in 1 to 4 short paragraphs (no headings, no bullet characters, no Markdown). If the episode " +
+      "doesn't cover it, say so plainly in one sentence instead of guessing. Then give up to 4 short quotes from the " +
+      "transcript that support the answer, each with the timestamp of the transcript line where it is said, copied exactly.\n" +
+      `Timestamps are h:mm:ss or m:ss, exactly as written at the start of the transcript lines.\n\n${context}\n\nQuestion: ${question}\n\nTranscript:\n${transcriptText(t.segments)}`;
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        answer: { type: "STRING" },
+        quotes: { type: "ARRAY", items: { type: "OBJECT", properties: { at: { type: "STRING" }, text: { type: "STRING" } }, required: ["at", "text"] } },
+      },
+      required: ["answer", "quotes"],
+    };
+    const g = await gemini(key, prompt, schema, 0.2);
+    if (g.error) return g.error;
+    const o = await answerOf(g.res, g.model);
+    if (!o) return json({ error: "Gemini's answer wasn't readable. Try again." }, 502);
+    // deno-lint-ignore no-explicit-any
+    const quotes = (Array.isArray(o?.quotes) ? o.quotes : []).map((q: any) => ({ at: parseClock(q?.at), text: String(q?.text ?? "").trim().slice(0, 400) }))
+      .filter((q: { at: number | null; text: string }) => q.at != null && q.at <= lastMs + 60_000 && q.text);
+    console.log(`Gemini ${g.model}: ask for ${episodeId} OK`);
+    return json({ kind, data: { answer: String(o?.answer ?? "").trim(), quotes }, model: g.model });
+  }
+
+  // Phase 13: a short title for a bookmark, from the transcript around it. Not saved here (the bookmark is).
+  if (kind === "title") {
+    const from = Math.max(0, Number(body.startMs ?? 0) - 5_000);
+    const to = Number(body.endMs ?? 0) + 5_000;
+    const passage = t.segments.filter((s) => (s.e || s.s) >= from && s.s <= to).map((s) => s.t.replace(/\s+/g, " ").trim()).join(" ").slice(0, 4_000);
+    if (!passage) return json({ error: "No transcript text at this bookmark" }, 400);
+    const prompt =
+      "Write a short, specific title (3 to 8 words) for this moment of a podcast, as a note to find it again later. " +
+      "Name the topic or claim, not the speaker's manner. No quotation marks, no final full stop.\n\n" +
+      `${context}\n\nPassage:\n${passage}`;
+    const g = await gemini(key, prompt, { type: "OBJECT", properties: { title: { type: "STRING" } }, required: ["title"] }, 0.3);
+    if (g.error) return g.error;
+    const o = await answerOf(g.res, g.model);
+    const title = String(o?.title ?? "").replace(/^["'“”]+|["'“”.]+$/g, "").trim().slice(0, 80);
+    if (!title) return json({ error: "Gemini didn't give a title. Try again." }, 502);
+    return json({ kind, data: { title }, model: g.model });
+  }
+
+  const prompt = `${PROMPTS[kind]}\nTimestamps are h:mm:ss or m:ss, exactly as written at the start of the transcript lines.\n\n${context}\n\nTranscript:\n${transcriptText(t.segments)}`;
+
+  const g = await gemini(key, prompt, SCHEMAS[kind], 0.2);
+  if (g.error) return g.error;
+  const model = g.model;
+  const parsed = await answerOf(g.res, model);
+  if (parsed == null) return json({ error: "Gemini's answer wasn't readable. Try again." }, 502);
   const data = normalise(kind, parsed, lastMs);
   console.log(`Gemini ${model}: ${kind} for ${episodeId} OK`);
   if (kind === "chapters" && (data as { chapters: unknown[] }).chapters.length < 2) return json({ error: "Gemini couldn't find chapters in this episode." }, 502);

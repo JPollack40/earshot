@@ -172,6 +172,31 @@ object Settings {
         prefs(context).edit().putString("ad_skip", mode).apply()
     }
 
+    // ---- Rewind after a pause or interruption (phase 13), synced in the same settings row ----
+
+    private var resumeRewindFlow: MutableStateFlow<Boolean>? = null
+
+    fun resumeRewind(context: Context): StateFlow<Boolean> = resumeRewindState(context).asStateFlow()
+
+    private fun resumeRewindState(context: Context): MutableStateFlow<Boolean> = synchronized(this) {
+        resumeRewindFlow ?: MutableStateFlow(prefs(context).getBoolean("resume_rewind", true)).also { resumeRewindFlow = it }
+    }
+
+    fun setResumeRewind(context: Context, on: Boolean) {
+        resumeRewindState(context).value = on
+        prefs(context).edit()
+            .putBoolean("resume_rewind", on)
+            .putLong("playback_changed_at", System.currentTimeMillis())
+            .putBoolean("playback_dirty", true)
+            .apply()
+    }
+
+    /** Changed on another device (called with [applyRemotePlayback]). */
+    fun applyRemoteResumeRewind(context: Context, on: Boolean) {
+        resumeRewindState(context).value = on
+        prefs(context).edit().putBoolean("resume_rewind", on).apply()
+    }
+
     // ---- Time saved ----
 
     private var timeSaved: MutableStateFlow<TimeSaved>? = null

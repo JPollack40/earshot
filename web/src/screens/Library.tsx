@@ -17,7 +17,9 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
   const p = player.usePlayer();
   const [dragId, setDragId] = useState<string | null>(null);
   const [tidyOpen, setTidyOpen] = useState(false);
+  const [allContinue, setAllContinue] = useState(false);
   const queue = store.queue(s);
+  const continuing = store.continueListening(s);
   const inbox = store.inbox(s);
   const lib = store.library(s);
   const titleOf = (feedUrl: string) => s.podcasts.get(feedUrl)?.title;
@@ -60,6 +62,9 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
             Sync problem
           </span>
         )}
+        <button className="icon" title="Browse podcasts" onClick={() => nav.open({ name: "browse" })}>
+          <Icon name="browse" />
+        </button>
         <button className="icon" title="Search transcripts" onClick={() => nav.open({ name: "search" })}>
           <Icon name="findText" />
         </button>
@@ -94,6 +99,9 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
             Sync problem
           </span>
         )}
+        <button className="text" title="Browse podcasts" onClick={() => nav.open({ name: "browse" })}>
+          Browse
+        </button>
         <button className="text" title="Search transcripts" onClick={() => nav.open({ name: "search" })}>
           Search transcripts
         </button>
@@ -151,6 +159,25 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
 
       {s.loaded && tab === "queue" && (
         <section className="list">
+          {continuing.length > 0 && (
+            <>
+              <div className="subbar">
+                <span className="muted small">Continue listening · {continuing.length}</span>
+                <span className="spacer" />
+                {continuing.length > 3 && (
+                  <button className="text" onClick={() => setAllContinue(!allContinue)}>
+                    {allContinue ? "Show fewer" : "Show all"}
+                  </button>
+                )}
+              </div>
+              {(allContinue ? continuing : continuing.slice(0, 3)).map((e) => (
+                <EpisodeItem key={e.id} e={e} podcastTitle={titleOf(e.feed_url)} art={artOf(e.feed_url)} />
+              ))}
+              <div className="subbar">
+                <span className="muted small">Queue · {queue.length}</span>
+              </div>
+            </>
+          )}
           {queue.length === 0 && <div className="empty">Your queue is empty. Use Play next or Play last on any episode, or queue from New Episodes.</div>}
           {queue.map((e, i) => (
             <EpisodeItem

@@ -194,6 +194,13 @@ interface EpisodeDao {
     @Query("$EPISODE_JOIN WHERE p.subscribed = 1 ORDER BY e.pubDate DESC LIMIT :limit")
     suspend fun getLatest(limit: Int): List<EpisodeWithPodcast>
 
+    /** Phase 13 "Continue listening": started (over 30 s in), unfinished, not queued; last played first. */
+    @Query("$EPISODE_JOIN WHERE e.played = 0 AND e.positionMs > 30000 AND e.queuePosition IS NULL ORDER BY e.lastPlayedAt DESC LIMIT :limit")
+    fun observeContinue(limit: Int): Flow<List<EpisodeWithPodcast>>
+
+    @Query("$EPISODE_JOIN WHERE e.played = 0 AND e.positionMs > 30000 AND e.queuePosition IS NULL ORDER BY e.lastPlayedAt DESC LIMIT :limit")
+    suspend fun getContinue(limit: Int): List<EpisodeWithPodcast>
+
     /** Episodes of subscribed podcasts whose title, or podcast's title, matches [pattern] (LIKE, escaped with a backslash). */
     @Query(
         "$EPISODE_JOIN WHERE p.subscribed = 1 AND (e.title LIKE :pattern ESCAPE '\\' OR p.title LIKE :pattern ESCAPE '\\') " +

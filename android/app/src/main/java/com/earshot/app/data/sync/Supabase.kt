@@ -102,6 +102,11 @@ class Supabase(context: Context) {
         authed("POST", "/rest/v1/$table?on_conflict=$onConflict", rows.toString(), "resolution=merge-duplicates,return=minimal")
     }
 
+    /** Deletes the rows matching [path] (table plus filters, e.g. "browse_hidden?feed_url=eq.x"). */
+    suspend fun delete(path: String) = withContext(Dispatchers.IO) {
+        authed("DELETE", "/rest/v1/$path", null, "return=minimal")
+    }
+
     /** Calls the Data API's RPC endpoint (a Postgres function); returns the JSON text. */
     suspend fun rpc(name: String, args: JSONObject): String = withContext(Dispatchers.IO) {
         authed("POST", "/rest/v1/rpc/$name", args.toString(), null)

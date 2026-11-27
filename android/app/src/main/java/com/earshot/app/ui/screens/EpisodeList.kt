@@ -91,6 +91,8 @@ fun EpisodeSheetFor(
         onQueueNext = { vm.queueNext(item) },
         onQueueLast = { vm.queueLast(item) },
         onRemoveFromQueue = { vm.removeFromQueue(item) },
+        onMoveToTop = { vm.moveToTop(item) },
+        onMoveToBottom = { vm.moveToBottom(item) },
         onArchive = { vm.archive(item) },
         hasTranscript = item.episode.id in transcriptIds,
         transcribing = transcribing[item.episode.id].let { it is TranscribeState.Waiting || it is TranscribeState.Running },

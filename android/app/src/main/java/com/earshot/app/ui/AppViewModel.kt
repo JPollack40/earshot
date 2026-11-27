@@ -66,18 +66,24 @@ sealed interface Screen {
     data object CarSetup : Screen
     /** Listening stats (Stats phase). */
     data object Stats : Screen
+    /** Phase 13: a Browse row's "See all", or one category's shows (see [BrowseModel.list]). */
+    data object BrowseList : Screen
+    /** Phase 13: every category. */
+    data object BrowseCategories : Screen
+    /** Phase 13: Browse settings. */
+    data object BrowseSettings : Screen
     /** A week, month or year in review, for the calendar period starting at [from]. */
     data class StatsReview(val kind: com.earshot.app.data.stats.ReviewKind, val from: Long) : Screen
 }
 
-/** Library tabs. Phase 7: Playlists added; the app opens on Podcasts. */
+/** Library tabs. Phase 7: Playlists added; the app opens on Podcasts. Phase 13: Browse replaced Latest. */
 object Tabs {
     const val QUEUE = 0
     const val NEW = 1
-    const val LATEST = 2
+    const val BROWSE = 2
     const val PLAYLISTS = 3
     const val PODCASTS = 4
-    val NAMES = listOf("Queue", "New Episodes", "Latest", "Playlists", "Podcasts")
+    val NAMES = listOf("Queue", "New Episodes", "Browse", "Playlists", "Podcasts")
 }
 
 /** A Markdown file to hand to the share sheet. */
@@ -139,11 +145,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
+    /** Phase 13: Browse Podcasts. */
+    val browse = BrowseModel(app, viewModelScope) { say(it) }
+
     // ---- Data ----
     val library = repo.observeLibrary().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val latest = repo.observeLatest().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val inbox = repo.observeInbox().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val queue = repo.observeQueue().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Phase 13: started, unfinished episodes that aren't queued (top of the Queue tab). */
+    val continueListening = repo.episodes.observeContinue(20).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val nowPlaying = player.state
     val sleepTimer = player.sleepTimer
 
@@ -186,6 +196,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val currentAd: StateFlow<AdSpan?> = combine(ai, nowPlaying, adSkip) { a, np, mode ->
         if (mode != AdSkip.BUTTON) null else AdSkip.current(a.ads.orEmpty(), np.positionMs)
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Phase 13: back up a little when resuming after a pause or interruption (synced). */
+    val resumeRewind: StateFlow<Boolean> = Settings.resumeRewind(app)
+
+    fun updateResumeRewind(on: Boolean) {
+        Settings.setResumeRewind(app, on)
+        app.sync.request("settings")
+    }
+
+    // ---- Phase 13: Ask about this episode ----
+    var askQuestion by mutableStateOf("")
+    var askAnswer by mutableStateOf<com.earshot.app.data.ai.EpisodeAnswer?>(null)
+        private set
+    var asking by mutableStateOf(false)
+        private set
+    var askError by mutableStateOf<String?>(null)
+        private set
+    private var askFor: String? = null
+
+    fun ask(item: EpisodeWithPodcast) {
+        val q = askQuestion.trim()
+        if (q.isEmpty() || asking) return
+        if (askFor != item.episode.id) askAnswer = null
+        askFor = item.episode.id
+        asking = true
+        askError = null
+        viewModelScope.launch {
+            try {
+                askAnswer = app.ai.ask(item.episode, item.podcastTitle, q)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                askError = e.message ?: "That didn't work"
+            } finally {
+                asking = false
+            }
+        }
+    }
+
+    /** The answer, only if it's for [episodeId] (a new episode starts a fresh question). */
+    fun answerFor(episodeId: String) = askAnswer?.takeIf { askFor == episodeId }
 
     fun skipAd() {
         val ad = currentAd.value ?: return
@@ -273,6 +324,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Phase 13: release notes shown once after an update (or from Settings > About). */
+    var whatsNew by mutableStateOf<com.earshot.app.data.ReleaseNotes?>(null)
+        private set
+
+    fun showWhatsNew(manual: Boolean) {
+        viewModelScope.launch {
+            try {
+                val notes = com.earshot.app.data.Updates.releaseNotes()
+                if (manual || notes.notes.isNotBlank()) whatsNew = notes
+                if (!manual) com.earshot.app.data.Updates.markWhatsNewSeen(app)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Earshot", "What's new failed", e)
+                if (manual) say("Couldn't load the release notes: ${e.message}")
+            }
+        }
+    }
+
+    fun dismissWhatsNew() {
+        whatsNew = null
+    }
+
     fun dismissUpdate() {
         update?.let { com.earshot.app.data.Updates.dismiss(app, it.version) }
         update = null
@@ -331,7 +405,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         player.connect()
+        // Phase 13: the Latest tab became a smart playlist (made once per phone).
+        viewModelScope.launch {
+            val prefs = app.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("latest_playlist_made", false)) {
+                repo.ensureLatestPlaylist()
+                prefs.edit().putBoolean("latest_playlist_made", true).apply()
+                app.sync.request("latest playlist")
+            }
+        }
         if (com.earshot.app.data.Updates.due(app)) checkForUpdate(manual = false)
+        if (com.earshot.app.data.Updates.whatsNewDue(app)) showWhatsNew(manual = false)
         // Previews left open when the app was last closed. Waits a moment so the player has loaded
         // its episode (which is kept), and skips any podcast page already open again.
         viewModelScope.launch {
@@ -528,6 +612,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun queueLast(item: EpisodeWithPodcast) {
         viewModelScope.launch { repo.queueLast(item.episode.id) }
     }
+
+    /** Phase 13: Move to top (just below the playing episode when it's at the top) / Move to bottom. */
+    fun moveToTop(item: EpisodeWithPodcast) {
+        viewModelScope.launch {
+            val head = repo.queueHead()?.episode?.id
+            if (head != null && head != item.episode.id && head == nowPlaying.value.episodeId) repo.queueNext(item.episode.id)
+            else repo.queueFirst(item.episode.id)
+        }
+    }
+
+    fun moveToBottom(item: EpisodeWithPodcast) = queueLast(item)
 
     fun removeFromQueue(item: EpisodeWithPodcast) {
         viewModelScope.launch { repo.removeFromQueue(item.episode.id) }
@@ -770,6 +865,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val b = transcripts.addBookmark(id, pos)
             say(if (b != null) "Bookmarked at ${formatClock(b.positionMs)}" else "Couldn't bookmark this episode")
+        }
+    }
+
+    /** Phase 13: a short title for a bookmark from its transcript passage (Gemini). */
+    fun titleBookmark(b: Bookmark) {
+        viewModelScope.launch {
+            try {
+                if (transcripts.autoTitle(b, force = true) == null) say("No transcript text at this bookmark yet")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                say(e.message ?: "Couldn't make a title")
+            }
         }
     }
 

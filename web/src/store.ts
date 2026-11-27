@@ -258,6 +258,14 @@ export function queue(s: State = state): EpisodeRow[] {
   return [...s.episodes.values()].filter((e) => e.queue_position != null).sort((a, b) => a.queue_position! - b.queue_position!);
 }
 
+/** Started but not finished and not queued, most recently played first (same rule as the phone). */
+export function continueListening(s: State = state, limit = 20): EpisodeRow[] {
+  return [...s.episodes.values()]
+    .filter((e) => !e.played && e.position_ms > 30_000 && e.queue_position == null)
+    .sort((a, b) => (b.last_played_at ?? 0) - (a.last_played_at ?? 0))
+    .slice(0, limit);
+}
+
 export function inbox(s: State = state): EpisodeRow[] {
   return [...s.episodes.values()].filter((e) => e.in_inbox).sort((a, b) => b.pub_date - a.pub_date);
 }

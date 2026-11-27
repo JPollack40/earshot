@@ -17,7 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Pause
@@ -165,7 +165,7 @@ fun GlowNavBar(selected: Int, queueCount: Int, newCount: Int, onSelect: (Int) ->
         val items = listOf(
             Triple("Queue", Icons.AutoMirrored.Filled.PlaylistPlay, queueCount),
             Triple("New", Icons.Filled.Inbox, newCount),
-            Triple("Latest", Icons.Filled.AccessTime, 0),
+            Triple("Browse", Icons.Filled.Explore, 0),
             Triple("Playlists", Icons.AutoMirrored.Filled.QueueMusic, 0),
             Triple("Podcasts", Icons.Filled.GridView, 0),
         )

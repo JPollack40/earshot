@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { openWhatsNew } from "./WhatsNew";
 import { setAppearance, useAppearance } from "../appearance";
 import { supabase } from "../supabase";
 import * as store from "../store";
@@ -57,6 +58,17 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
             <span className="count">{tabCount(s, t.tab)}</span>
           </button>
         ))}
+        <button
+          className={`nav-item ${page.startsWith("browse") ? "on" : ""}`}
+          aria-current={page === "browse" ? "page" : undefined}
+          onClick={() => {
+            nav.home();
+            nav.open({ name: "browse" });
+          }}
+        >
+          <Icon name="browse" />
+          <span>Browse</span>
+        </button>
         <button className={`nav-item ${page === "search" ? "on" : ""}`} aria-current={page === "search" ? "page" : undefined} onClick={() => nav.open({ name: "search" })}>
           <Icon name="findText" />
           <span>Search transcripts</span>
@@ -186,6 +198,15 @@ export function AppearanceMenu() {
             </>
           )}
           <div className="pop-note">Saved in this browser.</div>
+          <button
+            className="text pop-link"
+            onClick={() => {
+              setOpen(false);
+              openWhatsNew();
+            }}
+          >
+            What's new in Earshot
+          </button>
         </div>
       )}
     </div>

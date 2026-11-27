@@ -633,6 +633,25 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             list.associate { it.id to select(PlaylistJson.parse(it.filtersJson), rows).size }
         }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
+    /**
+     * Phase 13: Browse replaced the Latest tab, so a "Latest" smart playlist (every podcast, any
+     * status, newest first) is made once. Its changedAt is 1, so a copy already on the server (made by
+     * another phone, renamed or deleted) always wins over this one when they sync.
+     */
+    suspend fun ensureLatestPlaylist() {
+        if (playlists.get(LATEST_PLAYLIST_ID) != null) return
+        playlists.upsert(
+            Playlist(
+                id = LATEST_PLAYLIST_ID,
+                name = "Latest",
+                position = -1,
+                filtersJson = PlaylistJson.toText(PlaylistFilters(status = PlaylistFilters.Status.ANY, sort = PlaylistFilters.Sort.NEWEST, limit = 200)),
+                dirty = true,
+                changedAt = 1,
+            ),
+        )
+    }
+
     suspend fun createPlaylist(name: String, filters: PlaylistFilters): String {
         val id = java.util.UUID.randomUUID().toString()
         playlists.upsert(
@@ -795,6 +814,8 @@ class Repository(private val context: Context, private val db: AppDatabase) {
          * trailing slash), e.g. Behind the Bastards is "www.omnycontent.com/.../D64F..." in one and
          * "omnycontent.com/.../d64f..." in another.
          */
+        const val LATEST_PLAYLIST_ID = "latest"
+
         fun feedKey(raw: String): String = normalizeUrl(raw).lowercase()
             .substringAfter("://")
             .removePrefix("www.")

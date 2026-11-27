@@ -66,7 +66,6 @@ import androidx.compose.ui.graphics.Color
 @Composable
 fun LibraryScreen(vm: AppViewModel) {
     val library by vm.library.collectAsStateWithLifecycle()
-    val latest by vm.latest.collectAsStateWithLifecycle()
     val inbox by vm.inbox.collectAsStateWithLifecycle()
     val queue by vm.queue.collectAsStateWithLifecycle()
     val tab = vm.libraryTab
@@ -80,7 +79,7 @@ fun LibraryScreen(vm: AppViewModel) {
                 PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                     Tab(selected = tab == Tabs.QUEUE, onClick = { vm.libraryTab = Tabs.QUEUE }, text = { TabLabel("Queue", queue.size) })
                     Tab(selected = tab == Tabs.NEW, onClick = { vm.libraryTab = Tabs.NEW }, text = { TabLabel("New Episodes", inbox.size) })
-                    Tab(selected = tab == Tabs.LATEST, onClick = { vm.libraryTab = Tabs.LATEST }, text = { TabLabel("Latest", 0) })
+                    Tab(selected = tab == Tabs.BROWSE, onClick = { vm.libraryTab = Tabs.BROWSE }, text = { TabLabel("Browse", 0) })
                     Tab(selected = tab == Tabs.PLAYLISTS, onClick = { vm.libraryTab = Tabs.PLAYLISTS }, text = { TabLabel("Playlists", 0) })
                     Tab(selected = tab == Tabs.PODCASTS, onClick = { vm.libraryTab = Tabs.PODCASTS }, text = { TabLabel("Podcasts", library.size) })
                 }
@@ -88,8 +87,9 @@ fun LibraryScreen(vm: AppViewModel) {
             when {
                 tab == Tabs.QUEUE -> QueueList(vm, Modifier.fillMaxSize())
                 tab == Tabs.NEW -> InboxList(vm, Modifier.fillMaxSize())
+                // Phase 13: Browse took the Latest tab's place (Latest is now a smart playlist).
+                tab == Tabs.BROWSE -> BrowseTab(vm, Modifier.fillMaxSize())
                 library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) })
-                tab == Tabs.LATEST -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
                 tab == Tabs.PLAYLISTS -> PlaylistsList(vm, Modifier.fillMaxSize())
                 else -> PodcastList(vm, library)
             }
@@ -110,7 +110,7 @@ fun LibraryScreen(vm: AppViewModel) {
                     Tabs.QUEUE -> if (queue.isEmpty()) "Nothing queued" else "${queue.size} episode${if (queue.size == 1) "" else "s"}" +
                         (if (queueLeftMs > 0) " · about ${formatDuration(queueLeftMs)} left" else "")
                     Tabs.NEW -> if (inbox.isEmpty()) "All caught up" else "${inbox.size} new"
-                    Tabs.LATEST -> "Newest episodes across your podcasts"
+                    Tabs.BROWSE -> "Find new shows"
                     Tabs.PLAYLISTS -> "Smart playlists that keep themselves up to date"
                     else -> "${library.size} podcast${if (library.size == 1) "" else "s"}" + (if (pinned > 0) " · $pinned pinned" else "")
                 },
@@ -257,7 +257,7 @@ private fun EmptyLibrary(onAdd: () -> Unit) {
         Text("No podcasts yet", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Search for a show, paste an RSS feed link, or import your subscriptions (OPML) from your current app.",
+            "Search for a show, paste an RSS feed link, import your subscriptions (OPML) from your current app, or look around in Browse.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

@@ -49,7 +49,9 @@ object MarkdownExport {
     private fun quoteBlock(text: String): String = text.lines().joinToString("\n") { "> $it" }
 
     private fun bookmarkBlock(b: Bookmark, t: TranscriptInfo?): String = buildString {
-        append("### ").append(clock(b.positionMs)).append("\n\n")
+        append("### ").append(clock(b.positionMs))
+        b.title?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it.trim()) }
+        append("\n\n")
         val q = t?.let { TranscriptFormat.quote(it.segments, it.timed, b.startMs, b.endMs) }
         if (q != null) append(quoteBlock(q)).append("\n\n")
         if (b.note.isNotBlank()) append(b.note.trim()).append("\n\n")
@@ -94,7 +96,9 @@ object MarkdownExport {
                 val nextStart = t.segments.getOrNull(i + 1)?.startMs ?: Long.MAX_VALUE
                 while (pending.isNotEmpty() && pending.first().positionMs < nextStart) {
                     val b = pending.removeAt(0)
-                    append("> **🔖 Bookmark ").append(clock(b.positionMs)).append("**")
+                    append("> **🔖 Bookmark ").append(clock(b.positionMs))
+                    b.title?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it.trim()) }
+                    append("**")
                     if (b.note.isNotBlank()) append(": ").append(b.note.trim().replace("\n", " "))
                     append("\n\n")
                 }

@@ -340,6 +340,7 @@ class SyncEngine(private val app: EarshotApp) {
             .put("inboxDays", t.inboxDays)
             .put("inboxKeep", t.inboxKeep)
             .put("adSkip", Settings.adSkip(app).value)
+            .put("resumeRewind", Settings.resumeRewind(app).value)
         supabase.upsert("settings", "user_id", JSONArray().put(JSONObject().put("playback", playback).put("changed_at", changedAt)))
         Settings.markPlaybackClean(app, Settings.playbackChangedAt(app))
         return 1
@@ -601,6 +602,7 @@ class SyncEngine(private val app: EarshotApp) {
                 startMs = o.optLong("start_ms"),
                 endMs = o.optLong("end_ms"),
                 note = o.optString("note"),
+                title = o.optNullableString("title"),
                 createdAt = o.optLong("created_at"),
                 deleted = o.optBoolean("deleted"),
                 dirty = false,
@@ -622,6 +624,7 @@ class SyncEngine(private val app: EarshotApp) {
         )
         Settings.applyRemoteTidy(app, newTidy)
         if (p.has("adSkip")) Settings.applyRemoteAdSkip(app, p.optString("adSkip"))
+        if (p.has("resumeRewind")) Settings.applyRemoteResumeRewind(app, p.optBoolean("resumeRewind", true))
         Settings.applyRemotePlayback(
             app,
             PlaybackDefaults(
@@ -708,6 +711,7 @@ class SyncEngine(private val app: EarshotApp) {
         .put("start_ms", b.startMs)
         .put("end_ms", b.endMs)
         .put("note", b.note)
+        .put("title", b.title ?: JSONObject.NULL)
         .put("created_at", b.createdAt)
         .put("deleted", b.deleted)
         .put("changed_at", b.changedAt)

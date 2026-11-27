@@ -74,6 +74,35 @@ class EpisodeAiStore(private val app: EarshotApp) {
         }
     }
 
+    /**
+     * Phase 13: "Ask about this episode". The answer comes from the transcript on the server (synced
+     * first if needed) and isn't saved. Throws with a readable message.
+     */
+    suspend fun ask(episode: Episode, podcastTitle: String, question: String): EpisodeAnswer {
+        if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to use AI features")
+        val t = app.db.transcripts().get(episode.id)
+            ?: throw IllegalStateException("Get a transcript first (Transcript, then Transcribe)")
+        if (!t.timed) throw IllegalStateException("This transcript has no timings. Transcribe the episode instead.")
+        if (t.dirty) app.sync.sync("ai")
+        val res = app.sync.supabase.function(
+            "ai",
+            JSONObject()
+                .put("episodeId", episode.id)
+                .put("kind", "ask")
+                .put("question", question)
+                .put("title", episode.title)
+                .put("podcast", podcastTitle),
+            readTimeoutMs = 180_000,
+        )
+        val data = res.optJSONObject("data") ?: throw IllegalStateException(res.optString("error").ifBlank { "No answer" })
+        val a = data.optJSONArray("quotes") ?: JSONArray()
+        val quotes = (0 until a.length()).mapNotNull { i ->
+            val q = a.optJSONObject(i) ?: return@mapNotNull null
+            SummaryPoint(q.optLong("at"), q.optString("text").trim()).takeIf { it.text.isNotEmpty() }
+        }
+        return EpisodeAnswer(question, data.optString("answer").trim(), quotes, res.optString("model"))
+    }
+
     /** A row from sync (public.episode_ai). Newer rows win. */
     suspend fun applyRemote(o: JSONObject) {
         val episodeId = o.getString("episode_id")

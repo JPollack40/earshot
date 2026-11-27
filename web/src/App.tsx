@@ -18,6 +18,9 @@ import { PlaylistPage } from "./screens/Playlists";
 import { startListenLog } from "./listens";
 import { StatsPage, StatsReviewPage } from "./screens/Stats";
 import type { ReviewKind } from "./stats";
+import type { BrowseCard } from "./browse";
+import { BrowseCategoriesPage, BrowseListPage, BrowsePage, BrowseSettingsPage } from "./screens/Browse";
+import { WhatsNew } from "./screens/WhatsNew";
 
 export type Route =
   | { name: "library" }
@@ -28,7 +31,11 @@ export type Route =
   | { name: "search" }
   | { name: "playlist"; id: string }
   | { name: "stats" }
-  | { name: "statsReview"; kind: ReviewKind; from: number };
+  | { name: "statsReview"; kind: ReviewKind; from: number }
+  | { name: "browse" }
+  | { name: "browseList"; title: string; category?: string; items?: BrowseCard[] }
+  | { name: "browseCategories" }
+  | { name: "browseSettings" };
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -73,6 +80,10 @@ export function App() {
   useEffect(() => {
     player.setPrefs(prefs);
   }, [prefs.speed, prefs.smartSpeed, prefs.voiceBoost, prefs.skipBackMs, prefs.skipForwardMs]);
+
+  useEffect(() => {
+    player.setResumeRewind(s.defaults.resumeRewind !== false);
+  }, [s.defaults.resumeRewind]);
 
   // When the library first loads, put the top of the queue in the player, paused (like the phone).
   useEffect(() => {
@@ -121,6 +132,11 @@ export function App() {
       {route.name === "playlist" && <PlaylistPage key={route.id} id={route.id} nav={nav} />}
       {route.name === "stats" && <StatsPage nav={nav} />}
       {route.name === "statsReview" && <StatsReviewPage key={`${route.kind}-${route.from}`} nav={nav} kind={route.kind} from={route.from} />}
+      {route.name === "browse" && <BrowsePage nav={nav} />}
+      {route.name === "browseList" && <BrowseListPage key={`${route.title}-${route.category ?? ""}`} nav={nav} title={route.title} category={route.category} items={route.items} />}
+      {route.name === "browseCategories" && <BrowseCategoriesPage nav={nav} />}
+      {route.name === "browseSettings" && <BrowseSettingsPage nav={nav} />}
+      <WhatsNew />
     </>
   );
 

@@ -5,6 +5,7 @@ import { SKIPS_MS, SPEEDS } from "../types";
 import { plainText, safeHtml, searchTerms, skipName, snippet, speedName } from "../util";
 import { useArtColor } from "../appearance";
 import { Art, EpisodeItem, type Nav } from "./common";
+import { SimilarList } from "./Browse";
 import { Glyph } from "./Icons";
 import { RulesPanel } from "./Playlists";
 
@@ -20,6 +21,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   const [showRules, setShowRules] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
   const [sort, setSort] = useState<"newest" | "oldest" | "number">("newest");
+  const [podTab, setPodTab] = useState<"episodes" | "similar">("episodes");
 
   useEffect(() => {
     let cancelled = false;
@@ -201,6 +203,20 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
       )}
       {error && <div className="error pad">Couldn't load this feed: {error}</div>}
 
+      {!terms.length && (
+        <div className="pod-tabs" role="tablist">
+          <button role="tab" aria-selected={podTab === "episodes"} className={podTab === "episodes" ? "on" : ""} onClick={() => setPodTab("episodes")}>
+            Episodes
+          </button>
+          <button role="tab" aria-selected={podTab === "similar"} className={podTab === "similar" ? "on" : ""} onClick={() => setPodTab("similar")}>
+            You might like
+          </button>
+        </div>
+      )}
+
+      {podTab === "similar" && !terms.length ? (
+        <SimilarList feedUrl={url} title={feed?.title ?? podcast?.title ?? ""} nav={nav} />
+      ) : (
       <section className="list">
         {shown.map((e) => (
           <EpisodeItem
@@ -213,6 +229,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
           />
         ))}
       </section>
+      )}
     </>
   );
 }

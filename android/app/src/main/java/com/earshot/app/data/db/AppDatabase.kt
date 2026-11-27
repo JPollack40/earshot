@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(entities = [Podcast::class, Episode::class, Transcript::class, Bookmark::class, Playlist::class, Listen::class,
     EpisodeAi::class],
-    version = 9, exportSchema = false)
+    version = 10, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun podcasts(): PodcastDao
     abstract fun episodes(): EpisodeDao
@@ -151,12 +151,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v10 (phase 13): auto-titled bookmarks (one nullable column; nothing existing changes). */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE bookmarks ADD COLUMN title TEXT")
+            }
+        }
+
         /** Episodes published within this window are uploaded even without listening state. */
         const val RECENT_MS = 60L * 24 * 60 * 60 * 1000
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "earshot.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 // Upgrades must always migrate (subscriptions live here). Only a downgrade, which
                 // only happens when installing an older dev build, may start from scratch.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)

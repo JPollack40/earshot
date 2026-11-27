@@ -208,11 +208,17 @@ export function EpisodeSheet({
         </div>
         <div className="actions">
           <button onClick={act(() => playEpisode(e, feed))}>Play</button>
-          <button onClick={act(() => store.queueNext(e, feed))}>Play next</button>
           {e.queue_position == null ? (
-            <button onClick={act(() => store.queueLast(e, feed))}>Play last</button>
+            <>
+              <button onClick={act(() => store.queueNext(e, feed))}>Play next</button>
+              <button onClick={act(() => store.queueLast(e, feed))}>Play last</button>
+            </>
           ) : (
-            <button onClick={act(() => store.removeFromQueue(e))}>Remove from queue</button>
+            <>
+              <button onClick={act(() => store.moveInQueue(e.id, 0))}>Move to top</button>
+              <button onClick={act(() => store.moveInQueue(e.id, store.queue().length))}>Move to bottom</button>
+              <button onClick={act(() => store.removeFromQueue(e))}>Remove from queue</button>
+            </>
           )}
           <button onClick={act(() => store.setPlayed(e, !e.played, feed))}>{e.played ? "Mark unplayed" : "Mark played"}</button>
           {e.in_inbox && <button onClick={act(() => store.archive(e))}>Archive</button>}

@@ -80,6 +80,29 @@ fun AiDialog(vm: AppViewModel, item: EpisodeWithPodcast, onDismiss: () -> Unit) 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                // ---- Ask about this episode (phase 13) ----
+                Section("Ask about this episode")
+                androidx.compose.material3.OutlinedTextField(
+                    value = vm.askQuestion,
+                    onValueChange = { vm.askQuestion = it },
+                    placeholder = { Text("e.g. What did they say about sleep?") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 3,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { vm.ask(item) }),
+                )
+                MakeButton(label = "Ask", busy = vm.asking) { vm.ask(item) }
+                vm.askError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                vm.answerFor(id)?.let { a ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(a.question, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    a.answer.split("\n").filter { it.isNotBlank() }.forEach {
+                        Text(it.trim(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp))
+                    }
+                    a.quotes.forEach { q -> TimeRow(q.atMs, "\u201C${q.text}\u201D", jump) }
+                }
+
                 // ---- Summary ----
                 Section("Summary")
                 val summary = ai.summary

@@ -16,6 +16,9 @@ data class AdSpan(val startMs: Long, val endMs: Long, val label: String)
 /** A key moment in a summary. */
 data class SummaryPoint(val atMs: Long, val text: String)
 
+/** Phase 13: an answer to a typed question about an episode, with supporting quotes and their times. */
+data class EpisodeAnswer(val question: String, val answer: String, val quotes: List<SummaryPoint>, val model: String = "")
+
 data class EpisodeSummary(val text: String, val points: List<SummaryPoint>, val model: String = "")
 
 /** "auto" skips found ads by itself; "button" shows a Skip ad button instead; "off" ignores them. */

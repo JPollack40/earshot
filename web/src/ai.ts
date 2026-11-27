@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { Chapter } from "./feed";
-import { supabase } from "./supabase";
+import { callFunction, supabase } from "./supabase";
 
 // Phase 11: chapters, summaries and ad spans made from an episode's transcript by the "ai" edge
 // function (Gemini). Results live in public.episode_ai (006_ai.sql), shared with the phone. Rows are
@@ -143,3 +143,25 @@ export function adSkipTarget(ads: AdSpan[], pos: number, alreadySkipped: Set<num
 }
 
 export const AD_SKIP_LABELS: Record<string, string> = { auto: "Skip automatically", button: "Show a Skip ad button", off: "Off" };
+
+/** Phase 13: an answer to a typed question, from the transcript, with supporting quotes. Not saved. */
+export interface EpisodeAnswer {
+  question: string;
+  answer: string;
+  quotes: SummaryPoint[];
+}
+
+export async function askEpisode(e: { id: string; title: string }, podcastTitle: string, question: string): Promise<EpisodeAnswer> {
+  const res = await callFunction<{ data?: { answer?: string; quotes?: { at: number; text: string }[] } }>("ai", {
+    episodeId: e.id,
+    kind: "ask",
+    question,
+    title: e.title,
+    podcast: podcastTitle,
+  });
+  return {
+    question,
+    answer: (res.data?.answer ?? "").trim(),
+    quotes: (res.data?.quotes ?? []).map((q) => ({ atMs: Number(q.at) || 0, text: String(q.text ?? "").trim() })).filter((q) => q.text),
+  };
+}

@@ -3,6 +3,8 @@
 package com.earshot.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -257,6 +259,9 @@ fun EpisodeSheet(
     /** Phase 7b: shown only on podcast pages, and only when there's something to mark. */
     onMarkOlder: (() -> Unit)? = null,
     onMarkNewer: (() -> Unit)? = null,
+    /** Phase 13: shown for queued episodes. */
+    onMoveToTop: (() -> Unit)? = null,
+    onMoveToBottom: (() -> Unit)? = null,
 ) {
     val e = item.episode
     val notes = remember(e.description) { AnnotatedString.fromHtml(e.description) }
@@ -324,10 +329,24 @@ fun EpisodeSheet(
             }
             Spacer(Modifier.height(4.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onQueueNext(); onDismiss() }) {
-                    Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Play next")
+                if (e.queuePosition != null && onMoveToTop != null && onMoveToBottom != null) {
+                    // Phase 13: already queued: move it within the queue.
+                    OutlinedButton(onClick = { onMoveToTop(); onDismiss() }) {
+                        Icon(Icons.Filled.VerticalAlignTop, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Move to top")
+                    }
+                    OutlinedButton(onClick = { onMoveToBottom(); onDismiss() }) {
+                        Icon(Icons.Filled.VerticalAlignBottom, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Move to bottom")
+                    }
+                } else {
+                    OutlinedButton(onClick = { onQueueNext(); onDismiss() }) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Play next")
+                    }
                 }
                 if (e.queuePosition != null) {
                     OutlinedButton(onClick = { onRemoveFromQueue(); onDismiss() }) {

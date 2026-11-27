@@ -97,6 +97,9 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     val defaults by vm.playbackDefaults.collectAsStateWithLifecycle()
     val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
     var descExpanded by remember { mutableStateOf(false) }
+    // Phase 13: Episodes | You might like.
+    var podTab by rememberSaveable(podcastId) { mutableStateOf(0) }
+    val browseExcluded = rememberBrowseExcluded(vm)
 
     // ---- Search within this podcast (titles and show notes, on the phone) ----
     var searchOpen by rememberSaveable(podcastId) { mutableStateOf(false) }
@@ -251,7 +254,7 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     ) { padding ->
         EpisodeList(
             vm = vm,
-            episodes = shown,
+            episodes = if (podTab == 1 && !searching) emptyList() else shown,
             showPodcast = false,
             modifier = Modifier.padding(padding).fillMaxSize(),
             snippets = if (searching) matches?.snippets.orEmpty() else emptyMap(),
@@ -413,6 +416,13 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
+                    item(key = "podtabs") {
+                        androidx.compose.material3.PrimaryTabRow(selectedTabIndex = podTab) {
+                            androidx.compose.material3.Tab(selected = podTab == 0, onClick = { podTab = 0 }, text = { Text("Episodes") })
+                            androidx.compose.material3.Tab(selected = podTab == 1, onClick = { podTab = 1 }, text = { Text("You might like") })
+                        }
+                    }
+                    if (podTab == 1) similarItems(vm, p.feedUrl, p.title, browseExcluded)
                 }
             },
         )

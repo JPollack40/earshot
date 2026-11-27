@@ -18,9 +18,12 @@ import kotlin.math.abs
 object PlayerButtons {
     const val MARK_PLAYED = "com.earshot.app.MARK_PLAYED"
     const val BOOKMARK = "com.earshot.app.BOOKMARK"
+    /** Phase 13: "Skip ad" in the forward slot while a found ad plays (ads set to Manual). */
+    const val SKIP_AD = "com.earshot.app.SKIP_AD"
 
     val markPlayedCommand = SessionCommand(MARK_PLAYED, Bundle.EMPTY)
     val bookmarkCommand = SessionCommand(BOOKMARK, Bundle.EMPTY)
+    val skipAdCommand = SessionCommand(SKIP_AD, Bundle.EMPTY)
 
     /** "1.3x", "2x" */
     fun speedLabel(speed: Float): String =
@@ -46,12 +49,26 @@ object PlayerButtons {
 
     /**
      * Skip back and forward in their usual places, then Bookmark and Mark played. [bookmarked] shows
-     * the filled bookmark for a moment after a tap, so the driver can see it worked.
+     * the filled bookmark for a moment after a tap, so the driver can see it worked. [skipAd] swaps
+     * the forward button for Skip ad.
      */
     @OptIn(UnstableApi::class)
-    fun all(backMs: Long, forwardMs: Long, bookmarked: Boolean = false): ImmutableList<CommandButton> {
+    fun all(backMs: Long, forwardMs: Long, bookmarked: Boolean = false, skipAd: Boolean = false): ImmutableList<CommandButton> {
+        val skips = skipButtons(backMs, forwardMs)
         return ImmutableList.builder<CommandButton>()
-            .addAll(skipButtons(backMs, forwardMs))
+            .add(skips[0])
+            .add(
+                if (skipAd) {
+                    // Phase 13: while a found ad plays (Manual ad skipping), forward becomes Skip ad.
+                    CommandButton.Builder(CommandButton.ICON_NEXT)
+                        .setSessionCommand(skipAdCommand)
+                        .setDisplayName("Skip ad")
+                        .setSlots(CommandButton.SLOT_FORWARD)
+                        .build()
+                } else {
+                    skips[1]
+                },
+            )
             .add(
                 CommandButton.Builder(if (bookmarked) CommandButton.ICON_BOOKMARK_FILLED else CommandButton.ICON_BOOKMARK_UNFILLED)
                     .setSessionCommand(bookmarkCommand)

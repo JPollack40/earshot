@@ -111,6 +111,15 @@ fun SettingsScreen(vm: AppViewModel) {
                 vm.updatePlaybackDefaults { it.copy(skipForwardMs = ms) }
             }
             divider()
+            val rewind by vm.resumeRewind.collectAsStateWithLifecycle()
+            SettingRow(
+                title = "Rewind a little after a pause",
+                subtitle = "On resuming, back up 2 s (10 s after an hour or more), and at least 3 s after a call or navigation prompt. Phone and car.",
+                onClick = { vm.updateResumeRewind(!rewind) },
+            ) {
+                Switch(checked = rewind, onCheckedChange = vm::updateResumeRewind)
+            }
+            divider()
 
             val saved by vm.timeSaved.collectAsStateWithLifecycle()
             SectionHeader("Time saved")
@@ -182,6 +191,10 @@ fun SettingsScreen(vm: AppViewModel) {
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             )
+            androidx.compose.material3.TextButton(
+                onClick = { vm.showWhatsNew(manual = true) },
+                modifier = Modifier.padding(horizontal = 8.dp),
+            ) { Text("What's new in this version") }
         }
     }
 }

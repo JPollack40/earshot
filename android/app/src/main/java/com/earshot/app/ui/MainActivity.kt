@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -170,6 +174,9 @@ fun EarshotRoot(vm: AppViewModel) {
                     Screen.CarSetup -> com.earshot.app.ui.screens.CarSetupScreen(vm)
                     Screen.Stats -> StatsScreen(vm)
                     is Screen.StatsReview -> StatsReviewScreen(vm, screen.kind, screen.from)
+                    Screen.BrowseList -> com.earshot.app.ui.screens.BrowseListScreen(vm)
+                    Screen.BrowseCategories -> com.earshot.app.ui.screens.BrowseCategoriesScreen(vm)
+                    Screen.BrowseSettings -> com.earshot.app.ui.screens.BrowseSettingsScreen(vm)
                 }
             }
             ImportBanner(vm)
@@ -179,6 +186,28 @@ fun EarshotRoot(vm: AppViewModel) {
 
     if (vm.showPlayer) {
         PlayerSheet(vm, onDismiss = { vm.showPlayer = false })
+    }
+
+    // Phase 13: this version's release notes, once after an update (or from Settings > About).
+    vm.whatsNew?.let { notes ->
+        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = vm::dismissWhatsNew,
+            title = { androidx.compose.material3.Text("What's new in Earshot ${notes.version}") },
+            text = {
+                androidx.compose.material3.Text(
+                    com.earshot.app.data.Updates.plainNotes(notes.notes).ifBlank { "No notes for this release." },
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = vm::dismissWhatsNew) { androidx.compose.material3.Text("Close") } },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { runCatching { uri.openUri(notes.pageUrl) }; vm.dismissWhatsNew() }) {
+                    androidx.compose.material3.Text("Open on GitHub")
+                }
+            },
+        )
     }
 }
 

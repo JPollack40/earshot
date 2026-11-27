@@ -20,6 +20,20 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M12 8v4l3 2" />
     </>
   ),
+  browse: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m15.5 8.5-2 5-5 2 2-5z" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="4" y="4" width="7" height="7" rx="1.5" />
+      <rect x="13" y="4" width="7" height="7" rx="1.5" />
+      <rect x="4" y="13" width="7" height="7" rx="1.5" />
+      <rect x="13" y="13" width="7" height="7" rx="1.5" />
+    </>
+  ),
   podcasts: (
     <>
       <rect x="4" y="4" width="7" height="7" rx="1.5" />

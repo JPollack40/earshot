@@ -240,6 +240,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
             <div className="g-pop">
               <SkipSelect label="Skip back" value={prefs.skipBackMs} onChange={(v) => changeSkip({ skipBackMs: v })} />
               <SkipSelect label="Skip forward" value={prefs.skipForwardMs} onChange={(v) => changeSkip({ skipForwardMs: v })} />
+              <RewindToggle />
               {!p.effectsAvailable && <div className="muted small">Smart Speed and Voice Boost aren't available for this episode: its host doesn't allow browsers to process the audio.</div>}
             </div>
           )}
@@ -362,6 +363,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
               <option value="end">End of episode</option>
             </select>
           </label>
+          <RewindToggle />
           {!p.effectsAvailable && <div className="muted small">Smart Speed and Voice Boost aren't available for this episode: its host doesn't allow browsers to process the audio.</div>}
           <ChapterList chapters={chapters} positionMs={pos} className="chapters" />
           <AiPanel episode={e} podcastTitle={podcast?.title ?? ""} prefs={prefs} chapters={chapters} />
@@ -386,6 +388,16 @@ export function SkipSelect({ label, value, onChange }: { label: string; value: n
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+/** Phase 13: "Rewind a little after a pause" (synced with the phone). */
+function RewindToggle() {
+  const s = store.useStore();
+  return (
+    <label className="small" title="On resuming, back up 2 s (up to 10 s after a long break)">
+      <input type="checkbox" checked={s.defaults.resumeRewind !== false} onChange={(ev) => store.updateDefaults({ resumeRewind: ev.target.checked })} /> Rewind a little after a pause
     </label>
   );
 }
