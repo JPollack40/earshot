@@ -8,6 +8,7 @@ import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.Settings
 import com.earshot.app.data.db.Bookmark
 import com.earshot.app.data.db.Episode
+import com.earshot.app.data.db.Listen
 import com.earshot.app.data.db.Playlist
 import com.earshot.app.data.db.Podcast
 import com.earshot.app.data.TidyDefaults
@@ -198,7 +199,7 @@ class SyncEngine(private val app: EarshotApp) {
         return batch.size
     }
 
-    /** Listening history only goes up (this phone never needs the web's history). */
+    /** This phone's listening history goes up; the web's comes down in [applyListen] (Stats page). */
     private suspend fun pushListens(): Int {
         val dao = app.db.listens()
         var n = 0
@@ -326,6 +327,7 @@ class SyncEngine(private val app: EarshotApp) {
         if (anyPlayed) app.cleanupDownloads("sync")
         n += pullTable("settings", "rev_settings") { if (applySettings(it)) rulesChanged = true }
         n += phase7 { pullTable("playlists", "rev_playlists") { applyPlaylist(it) } }
+        n += phase7 { pullTable("listens", "rev_listens") { applyListen(it) } }
         // Tidy-up rules changed elsewhere (e.g. in the web player): apply them here now.
         if (rulesChanged) runCatching { repo.tidyInbox() }
         n += phase6 { pullTable("transcripts", "rev_transcripts", pageSize = 10) { o ->
@@ -504,6 +506,34 @@ class SyncEngine(private val app: EarshotApp) {
             ),
         )
         return requireNotNull(podcastDao.get(id))
+    }
+
+    /**
+     * Listening history recorded elsewhere (the web player), for the Stats page. Rows never change
+     * once uploaded, so one already here (including this phone's own, coming back) is left alone.
+     */
+    private suspend fun applyListen(o: JSONObject) {
+        val dao = app.db.listens()
+        val id = o.getString("id")
+        if (dao.get(id) != null) return
+        dao.upsert(
+            Listen(
+                id = id,
+                episodeId = o.optString("episode_id"),
+                feedUrl = o.optString("feed_url"),
+                podcastTitle = o.optString("podcast_title"),
+                episodeTitle = o.optString("episode_title"),
+                startedAt = o.optLong("started_at"),
+                endedAt = o.optLong("ended_at"),
+                listenedMs = o.optLong("listened_ms"),
+                fromMs = o.optLong("from_ms"),
+                toMs = o.optLong("to_ms"),
+                speed = o.optDouble("speed", 1.0).toFloat(),
+                device = o.optString("device", "web"),
+                dirty = false,
+                changedAt = o.optLong("changed_at"),
+            ),
+        )
     }
 
     private suspend fun applyBookmark(o: JSONObject) {

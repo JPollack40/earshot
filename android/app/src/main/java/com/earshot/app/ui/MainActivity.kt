@@ -46,6 +46,8 @@ import com.earshot.app.ui.screens.MiniPlayer
 import com.earshot.app.ui.screens.PlayerSheet
 import com.earshot.app.ui.screens.PodcastScreen
 import com.earshot.app.ui.screens.PlaylistScreen
+import com.earshot.app.ui.screens.StatsReviewScreen
+import com.earshot.app.ui.screens.StatsScreen
 import com.earshot.app.data.Settings
 import com.earshot.app.ui.screens.GlowMiniPlayer
 import com.earshot.app.ui.screens.GlowNavBar
@@ -143,6 +145,8 @@ fun EarshotRoot(vm: AppViewModel) {
                     Screen.Bookmarks -> BookmarksScreen(vm)
                     Screen.TranscriptSearch -> TranscriptSearchScreen(vm)
                     is Screen.PlaylistDetail -> PlaylistScreen(vm, screen.playlistId)
+                    Screen.Stats -> StatsScreen(vm)
+                    is Screen.StatsReview -> StatsReviewScreen(vm, screen.kind, screen.from)
                 }
             }
             ImportBanner(vm)

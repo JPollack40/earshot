@@ -515,6 +515,14 @@ interface ListenDao {
     @Query("SELECT COUNT(*) FROM listens")
     suspend fun count(): Int
 
+    /** All listening history (phone, car and web), for the Stats page. */
+    @Query("SELECT * FROM listens ORDER BY startedAt")
+    fun observeAll(): Flow<List<Listen>>
+
+    /** Known episode lengths, for "finished" on the Stats page. */
+    @Query("SELECT id, durationMs FROM episodes WHERE durationMs > 0")
+    suspend fun episodeLengths(): List<EpisodeLength>
+
     /**
      * Stretches still marked as in progress (changedAt = 0) when the player was stopped without
      * finishing them (e.g. the app was killed): finish them now so they get uploaded.
@@ -522,3 +530,6 @@ interface ListenDao {
     @Query("UPDATE listens SET dirty = 1, changedAt = :now WHERE changedAt = 0")
     suspend fun finishOrphans(now: Long): Int
 }
+
+/** An episode's id and length (Stats page). */
+data class EpisodeLength(val id: String, val durationMs: Long)

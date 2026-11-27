@@ -58,6 +58,10 @@ sealed interface Screen {
     data object TranscriptSearch : Screen
     /** A smart playlist's episodes (phase 7). */
     data class PlaylistDetail(val playlistId: String) : Screen
+    /** Listening stats (Stats phase). */
+    data object Stats : Screen
+    /** A week, month or year in review, for the calendar period starting at [from]. */
+    data class StatsReview(val kind: com.earshot.app.data.stats.ReviewKind, val from: Long) : Screen
 }
 
 /** Library tabs. Phase 7: Playlists added; the app opens on Podcasts. */
