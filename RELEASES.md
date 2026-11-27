@@ -72,8 +72,9 @@ Android only installs an update signed with the same key as the installed app. S
 **debug** build (signed with the VM's debug key), so a release APK can't be installed over it without
 uninstalling first, which deletes the phone's library database and downloads. Sync brings back most
 things (subscriptions, pins, queue, positions, transcripts, bookmarks, playlists), but not downloads or
-phone-only settings. Plan: keep Serena's phone on debug builds until phase 9's backup and restore exists, and
-use release builds for friends.
+phone-only settings. Plan: keep Serena's phone on debug builds for now, and use release builds for friends. To switch
+later: Settings > Backup > Back up everything, uninstall, install the release APK, then Settings > Backup >
+Restore from a backup (phase 9).
 
 ## Shrinking
 
