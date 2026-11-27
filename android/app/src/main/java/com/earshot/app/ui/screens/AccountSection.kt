@@ -10,7 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,9 +55,23 @@ fun AccountSection(vm: AppViewModel) {
             return@Column
         }
         val s = session
-        if (s == null) {
+        var formOpen by rememberSaveable { mutableStateOf(false) }
+        if (s == null && !formOpen) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Currently signed out", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Sign in to sync with the web player.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                FilledTonalButton(onClick = { formOpen = true }) { Text("Sign in") }
+            }
+        } else if (s == null) {
             var email by rememberSaveable { mutableStateOf("") }
             var password by rememberSaveable { mutableStateOf("") }
+            var showPassword by rememberSaveable { mutableStateOf(false) }
             val focus = LocalFocusManager.current
             Text(
                 "Sign in to sync subscriptions, queue, new episodes, positions and settings with the web player.",
@@ -72,7 +92,15 @@ fun AccountSection(vm: AppViewModel) {
                 onValueChange = { password = it },
                 label = { Text("Password") },
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showPassword = !showPassword }) {
+                        Icon(
+                            if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            contentDescription = if (showPassword) "Hide password" else "Show password",
+                        )
+                    }
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = {
                     focus.clearFocus()
@@ -92,6 +120,8 @@ fun AccountSection(vm: AppViewModel) {
                     },
                     enabled = !vm.signingIn && email.isNotBlank() && password.isNotEmpty(),
                 ) { Text("Sign in") }
+                Spacer(Modifier.size(8.dp))
+                OutlinedButton(onClick = { formOpen = false }, enabled = !vm.signingIn) { Text("Cancel") }
                 if (vm.signingIn) {
                     Spacer(Modifier.size(12.dp))
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)

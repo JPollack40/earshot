@@ -102,6 +102,8 @@ input.search { flex: 1; padding: 6px 10px; }
 .signin { max-width: 340px; margin: 12vh auto; display: flex; flex-direction: column; gap: 10px; padding: 0 16px; }
 .signin h1 { margin: 0; }
 .signin input { padding: 9px 10px; }
+.password { display: flex; gap: 6px; }
+.password input { flex: 1; }
 
 @media (max-width: 700px) {
   .chip { display: none; }
