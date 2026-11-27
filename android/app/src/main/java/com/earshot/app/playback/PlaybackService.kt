@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 private const val TAG = "Earshot"
 
@@ -122,11 +123,6 @@ class PlaybackService : MediaLibraryService() {
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
-
-        // The Sleep button's label follows the sleep timer, wherever it was set.
-        scope.launch {
-            app.player.sleepTimer.drop(1).collect { refreshButtons() }
-        }
 
         // Apply the loaded episode's settings (its podcast's, else the defaults) whenever the
         // episode or either set of settings changes.
@@ -217,26 +213,26 @@ class PlaybackService : MediaLibraryService() {
         if (old.skipBackMs != p.skipBackMs || old.skipForwardMs != p.skipForwardMs || old.speed != p.speed) {
             refreshButtons()
         }
+        if (old.speed != p.speed) {
+            // The speed list and its row at the top of the Queue tab show the current speed.
+            session?.notifyChildrenChanged(EpisodeMedia.SPEED, Settings.SPEED_CHOICES.size, null)
+            scope.launch { session?.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 1, null) }
+        }
     }
 
-    // ---- Playing-screen buttons: skip back / forward, Speed, Sleep, Mark played ----
+    // ---- Playing-screen buttons: skip back / forward, Speed, Mark played ----
 
-    private fun buttons() =
-        PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, prefs.speed, app.player.sleepTimer.value, sleepLabel())
+    private fun buttons() = PlayerButtons.all(prefs.skipBackMs, prefs.skipForwardMs, prefs.speed)
 
     private fun refreshButtons() {
         session?.setMediaButtonPreferences(buttons())
     }
 
-    private fun sleepLabel(): String = when (val t = app.player.sleepTimer.value) {
-        SleepTimer.Off -> "Sleep timer"
-        SleepTimer.EndOfEpisode -> "Sleep: end of episode"
-        is SleepTimer.At -> "Sleep at " + DateFormat.getTimeFormat(this).format(java.util.Date(t.endsAtMs))
-    }
+    /** Next speed in [PlayerButtons.SPEED_STEPS]. */
+    private fun stepSpeed() = setSpeed(PlayerButtons.nextSpeed(prefs.speed))
 
-    /** Next speed in [PlayerButtons.SPEED_STEPS], saved where the app would save it. */
-    private fun stepSpeed() {
-        val speed = PlayerButtons.nextSpeed(prefs.speed)
+    /** Sets the speed, saved where the app would save it. */
+    private fun setSpeed(speed: Float) {
         val id = player.currentMediaItem?.mediaId
         scope.launch {
             val podcast = id?.let { repo.episodes.getWithPodcast(it) }?.episode?.podcastId?.let { repo.podcasts.get(it) }
@@ -246,17 +242,6 @@ class PlaybackService : MediaLibraryService() {
             } else {
                 Settings.updatePlaybackDefaults(this@PlaybackService) { it.copy(speed = speed) }
             }
-        }
-    }
-
-    /** Off, 15, 30, 60 minutes, end of episode, off. */
-    private fun stepSleep() {
-        val conn = app.player
-        conn.connect() // the timer pauses through the app's connection, which may not be open in the car
-        when (val step = PlayerButtons.nextSleep(conn.sleepTimer.value)) {
-            PlayerButtons.SleepStep.Off -> conn.setSleepTimer(null)
-            is PlayerButtons.SleepStep.Minutes -> conn.setSleepTimer(step.minutes)
-            PlayerButtons.SleepStep.EndOfEpisode -> conn.sleepAtEndOfEpisode()
         }
     }
 
@@ -475,6 +460,10 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<MediaItemsWithStartPosition> {
             val requested = mediaItems.getOrNull(startIndex.coerceAtLeast(0)) ?: mediaItems.firstOrNull()
                 ?: return Futures.immediateFailedFuture(IllegalArgumentException("Nothing to play"))
+            // A speed picked from the speed list: set it and carry on with what's loaded.
+            if (requested.mediaId.startsWith(EpisodeMedia.SPEED_PREFIX)) {
+                return speedPicked(requested.mediaId.removePrefix(EpisodeMedia.SPEED_PREFIX).toFloatOrNull())
+            }
             // "Hey Google, play ... on Earshot" arrives with a search query and no id.
             val query = requested.requestMetadata.searchQuery
                 ?.takeIf { requested.mediaId.isEmpty() }
@@ -505,7 +494,7 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
             // Start from Media3's defaults for this controller (full control when trusted, read-only
-            // otherwise) and add the Speed, Sleep and Mark played buttons. Android Auto shows the
+            // otherwise) and add the Speed and Mark played buttons. Android Auto shows the
             // buttons the media notification's controller has, and its taps are checked against its
             // own controller, so every controller gets them. They only change Earshot's own settings.
             val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
@@ -513,8 +502,7 @@ class PlaybackService : MediaLibraryService() {
                 .setAvailableSessionCommands(
                     defaults.availableSessionCommands.buildUpon()
                         .add(PlayerButtons.speedCommand)
-                        .add(PlayerButtons.sleepCommand)
-                        .add(PlayerButtons.markPlayedCommand)
+                                .add(PlayerButtons.markPlayedCommand)
                         .build(),
                 )
             return Futures.immediateFuture(builder.build())
@@ -528,7 +516,6 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<SessionResult> {
             when (customCommand.customAction) {
                 PlayerButtons.SPEED -> stepSpeed()
-                PlayerButtons.SLEEP -> stepSleep()
                 PlayerButtons.MARK_PLAYED -> player.currentMediaItem?.mediaId?.let {
                     finishCurrent(it, playNext = player.playWhenReady, atEnd = false)
                 }
@@ -586,6 +573,9 @@ class PlaybackService : MediaLibraryService() {
             // (which is how Android Auto hears about changes) if onGetItem returns it as browsable.
             val folder = when {
                 mediaId == EpisodeMedia.ROOT -> EpisodeMedia.folder(EpisodeMedia.ROOT, "Earshot")
+                mediaId == EpisodeMedia.SPEED -> EpisodeMedia.speedFolder(prefs.speed, iconUri(PlayerButtons.speedIcon(prefs.speed)))
+                mediaId.startsWith(EpisodeMedia.SPEED_PREFIX) ->
+                    mediaId.removePrefix(EpisodeMedia.SPEED_PREFIX).toFloatOrNull()?.let { speedChoiceItem(it) }
                 mediaId.startsWith(EpisodeMedia.PODCAST_PREFIX) ->
                     mediaId.removePrefix(EpisodeMedia.PODCAST_PREFIX).toLongOrNull()
                         ?.let { repo.podcasts.get(it) }?.let(EpisodeMedia::podcastFolder)
@@ -607,7 +597,10 @@ class PlaybackService : MediaLibraryService() {
             val dao = repo.episodes
             val items: List<MediaItem> = when {
                 parentId == EpisodeMedia.ROOT -> tabs()
-                parentId == EpisodeMedia.QUEUE -> dao.getQueue().map { EpisodeMedia.item(it) }
+                parentId == EpisodeMedia.QUEUE ->
+                    listOf(EpisodeMedia.speedFolder(prefs.speed, iconUri(PlayerButtons.speedIcon(prefs.speed)))) +
+                        dao.getQueue().map { EpisodeMedia.item(it) }
+                parentId == EpisodeMedia.SPEED -> Settings.SPEED_CHOICES.map { speedChoiceItem(it) }
                 parentId == EpisodeMedia.INBOX -> EpisodeMedia.itemsByDate(dao.getInbox())
                 parentId == EpisodeMedia.LATEST -> EpisodeMedia.itemsByDate(dao.getLatest(LATEST_LIMIT))
                 parentId == EpisodeMedia.PODCASTS -> repo.podcasts.getAll().map(EpisodeMedia::podcastFolder)
@@ -642,6 +635,28 @@ class PlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = future {
             LibraryResult.ofItemList(pageOf(search(query), page, pageSize), params)
+        }
+    }
+
+    private fun speedChoiceItem(speed: Float): MediaItem =
+        EpisodeMedia.speedChoice(speed, abs(speed - prefs.speed) < 0.01f, iconUri(PlayerButtons.speedIcon(speed)))
+
+    /**
+     * Android Auto plays whatever is tapped in a list, so a speed from the speed list arrives as a
+     * request to play it. Set the speed, then hand back what was already loaded, at the same spot,
+     * so it carries on (Android Auto then shows the playing screen with the new speed).
+     */
+    private fun speedPicked(speed: Float?): ListenableFuture<MediaItemsWithStartPosition> {
+        if (speed != null) setSpeed(speed)
+        val count = player.mediaItemCount
+        if (count > 0 && player.playbackState != Player.STATE_ENDED) {
+            val items = (0 until count).map { player.getMediaItemAt(it) }
+            return Futures.immediateFuture(MediaItemsWithStartPosition(items, player.currentMediaItemIndex, player.currentPosition))
+        }
+        return future {
+            val head = repo.queueHead() ?: throw IllegalStateException("Speed set; nothing to play")
+            player.setPauseAtEndOfMediaItems(true)
+            MediaItemsWithStartPosition(playlist(head), 0, EpisodeMedia.startPosition(head))
         }
     }
 

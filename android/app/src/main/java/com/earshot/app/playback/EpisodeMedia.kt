@@ -23,6 +23,9 @@ object EpisodeMedia {
     const val LATEST = "latest"
     const val PODCASTS = "podcasts"
     const val PODCAST_PREFIX = "podcast:"
+    /** The speed list (a folder at the top of the Queue tab), and its entries ("speed:1.5"). */
+    const val SPEED = "speed"
+    const val SPEED_PREFIX = "speed:"
 
     /**
      * A playable episode, from its download when there is one. Android Auto shows its progress
@@ -157,4 +160,35 @@ object EpisodeMedia {
             )
             .build()
     }
+
+    /** "Playback speed: 1.3x", a folder holding [speedChoice]s. */
+    fun speedFolder(current: Float, icon: Uri): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(SPEED)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Playback speed: ${PlayerButtons.speedLabel(current)}")
+                    .setSubtitle("Tap to pick a speed")
+                    .setArtworkUri(icon)
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    .build(),
+            )
+            .build()
+
+    /** One speed in the list. Tapping it sets the speed and goes back to the playing screen. */
+    fun speedChoice(speed: Float, current: Boolean, icon: Uri): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(SPEED_PREFIX + speed)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(PlayerButtons.speedLabel(speed) + if (current) "  (current)" else "")
+                    .setArtworkUri(icon)
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MIXED)
+                    .build(),
+            )
+            .build()
 }
