@@ -4,6 +4,7 @@ package com.earshot.app.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,13 +52,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.data.Repository
+import com.earshot.app.data.search.SearchSource
 import com.earshot.app.ui.AppViewModel
 
 @Composable
 fun AddScreen(vm: AppViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     val library by vm.library.collectAsStateWithLifecycle()
-    val subscribedUrls = library.map { it.podcast.feedUrl }.toSet()
+    val subscribedUrls = library.map { Repository.feedKey(it.podcast.feedUrl) }.toSet()
     val focus = LocalFocusManager.current
     val looksLikeUrl = query.trim().let { it.contains("://") || (it.contains('.') && !it.contains(' ')) }
 
@@ -119,12 +121,27 @@ fun AddScreen(vm: AppViewModel) {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+            vm.searchSource?.takeIf { vm.searchResults.isNotEmpty() }?.let { source ->
+                Text(
+                    when (source) {
+                        SearchSource.PODCAST_INDEX -> "From Podcast Index. Tap a podcast to look before subscribing."
+                        SearchSource.APPLE -> "From Apple Podcasts. Tap a podcast to look before subscribing."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(vm.searchResults, key = { it.feedUrl }) { r ->
-                    val normalized = Repository.normalizeUrl(r.feedUrl)
+                    val normalized = Repository.feedKey(r.feedUrl)
                     val subscribed = normalized in subscribedUrls
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = vm.openingUrl == null) { vm.openPodcast(r.feedUrl) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Artwork(r.artworkUrl, 48)
@@ -132,7 +149,7 @@ fun AddScreen(vm: AppViewModel) {
                         Column(Modifier.weight(1f)) {
                             Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(
-                                r.author,
+                                listOfNotNull(r.author.ifBlank { null }, r.episodeCount?.let { "$it episodes" }).joinToString(" • "),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -140,6 +157,9 @@ fun AddScreen(vm: AppViewModel) {
                             )
                         }
                         when {
+                            vm.openingUrl == r.feedUrl -> Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            }
                             subscribed -> Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                                 Icon(Icons.Filled.Check, contentDescription = "Subscribed", tint = MaterialTheme.colorScheme.primary)
                             }

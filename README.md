@@ -36,7 +36,11 @@ One repo for the whole project:
 - **Per-podcast playback settings** (phase 4): sliders icon on a podcast page sets its own speed, Smart Speed, Voice Boost and skip lengths.
 - **Time saved** (phase 4): total in Settings (split into speed and Smart Speed), per episode under the player buttons.
 
-Not in this build yet: sync and the web player (phase 5), transcripts (phase 6).
+- **Podcast Index search** (phase 5a): search goes through Podcast Index via the Supabase function in `supabase/functions/podcast-search`, falling back to Apple's search. It needs `earshot.supabaseUrl` and `earshot.supabaseKey` in `android/local.properties` (not committed).
+- **Look before subscribing** (phase 5a): tap a search result to open its page, then play, queue or download episodes without subscribing. Queued ones stay until played.
+- **Search inside a podcast** (phase 5a): the magnifying glass on a podcast page searches its episode titles and show notes. Every word must match, and `"quoted phrases"` must match exactly.
+
+Not in this build yet: sync and the web player (phase 5b), transcripts (phase 6).
 
 
 ---

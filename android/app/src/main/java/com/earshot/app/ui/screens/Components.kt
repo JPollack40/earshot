@@ -102,6 +102,8 @@ fun EpisodeRow(
     onPlay: () -> Unit,
     onDownload: () -> Unit,
     leading: (@Composable () -> Unit)? = null,
+    /** Extra line under the title, e.g. the part of the show notes a search matched. */
+    snippet: String? = null,
 ) {
     val e = item.episode
     Row(
@@ -131,6 +133,15 @@ fun EpisodeRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (snippet != null) {
+                Text(
+                    snippet,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (!e.played && e.positionMs > 0 && e.durationMs > 0) {
                 Spacer(Modifier.height(4.dp))
                 LinearProgressIndicator(

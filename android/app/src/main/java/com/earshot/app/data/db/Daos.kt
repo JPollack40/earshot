@@ -28,6 +28,9 @@ interface PodcastDao {
     @Query("SELECT * FROM podcasts WHERE id = :id")
     suspend fun get(id: Long): Podcast?
 
+    @Query("SELECT * FROM podcasts")
+    suspend fun getAllIncludingHidden(): List<Podcast>
+
     @Query("SELECT * FROM podcasts WHERE feedUrl = :feedUrl LIMIT 1")
     suspend fun findByFeedUrl(feedUrl: String): Podcast?
 
@@ -59,6 +62,9 @@ interface PodcastDao {
 
     @Query("DELETE FROM podcasts WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("SELECT id FROM podcasts WHERE subscribed = 0")
+    suspend fun unsubscribedIds(): List<Long>
 
     @Query("UPDATE podcasts SET subscribed = :subscribed WHERE id = :id")
     suspend fun setSubscribed(id: Long, subscribed: Boolean)

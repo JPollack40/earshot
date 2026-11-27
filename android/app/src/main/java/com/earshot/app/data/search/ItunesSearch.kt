@@ -9,11 +9,13 @@ data class SearchResult(
     val author: String,
     val feedUrl: String,
     val artworkUrl: String?,
+    /** Known for Podcast Index results only. */
+    val episodeCount: Int? = null,
 )
 
 /**
- * Directory search through Apple's public, keyless search API.
- * Phase 5 adds Podcast Index search through a Supabase function, so its API secret never sits on the phone.
+ * Directory search through Apple's public, keyless search API. Used when Podcast Index isn't set up
+ * or fails (see [Directory]).
  */
 object ItunesSearch {
     suspend fun search(term: String): List<SearchResult> {
