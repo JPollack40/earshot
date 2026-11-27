@@ -122,7 +122,7 @@ fun ShareSettings(vm: AppViewModel, divider: @Composable () -> Unit) {
                 Text(
                     "Made $date with Earshot ${info.appVersion}: ${info.podcasts} podcasts, ${info.episodes} episodes.\n\n" +
                         "Everything on this phone is replaced by the backup and Earshot restarts. Downloads aren't in the backup; " +
-                        "they download again. If you use sync, sign in again afterwards.",
+                        "they download again. A phone that isn't signed in yet can sign in afterwards (Settings, Sync).",
                 )
             },
             confirmButton = { TextButton(onClick = vm::confirmRestore) { Text("Restore and restart") } },
@@ -172,7 +172,7 @@ fun CarSetupScreen(vm: AppViewModel) {
             Step(5, "Connect to the car", "Plug in or connect wirelessly. Earshot appears in the app list. If it doesn't, unplug, force stop Android Auto (its app info, Force stop) and connect again.")
             Step(6, "Try it", "Open Earshot in the car: Queue, New Episodes, Playlists and Podcasts are the tabs. Voice works too: \"Hey Google, play the latest <podcast> on Earshot\".")
             Text(
-                "Sync: if you have an Earshot account, sign in on the phone (Settings, Account) before driving, so your queue is there.",
+                "Sync: if you have an Earshot account, sign in on the phone (Settings, Sync) before driving, so your queue is there.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
