@@ -72,7 +72,12 @@ interface PodcastDao {
     @Query("SELECT id FROM podcasts WHERE subscribed = 0")
     suspend fun unsubscribedIds(): List<Long>
 
-    @Query("UPDATE podcasts SET subscribed = :subscribed, $TOUCH WHERE id = :id")
+    // Only a real change counts (tidying a hidden podcast mustn't overwrite a newer change made elsewhere).
+    @Query(
+        "UPDATE podcasts SET dirty = CASE WHEN subscribed IS NOT :subscribed THEN 1 ELSE dirty END, " +
+            "changedAt = CASE WHEN subscribed IS NOT :subscribed THEN $NOW_MS ELSE changedAt END, " +
+            "subscribed = :subscribed WHERE id = :id",
+    )
     suspend fun setSubscribed(id: Long, subscribed: Boolean)
 
     @Query("UPDATE podcasts SET pinned = :pinned, $TOUCH WHERE id = :id")
