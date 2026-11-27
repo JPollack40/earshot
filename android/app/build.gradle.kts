@@ -60,8 +60,9 @@ android {
     val keystore = Properties().apply {
         rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
     }
+    // Trimmed: a secret pasted from a file often ends with a line break, which would break the password.
     fun signing(env: String, prop: String): String? =
-        System.getenv(env)?.takeIf { it.isNotBlank() } ?: keystore.getProperty(prop)?.takeIf { it.isNotBlank() }
+        (System.getenv(env)?.trim()?.takeIf { it.isNotEmpty() } ?: keystore.getProperty(prop)?.trim()?.takeIf { it.isNotEmpty() })
     val releaseStore = signing("EARSHOT_KEYSTORE_FILE", "storeFile")
     signingConfigs {
         if (releaseStore != null) {
