@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.PlaylistRemove
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Pause
@@ -252,6 +253,9 @@ fun EpisodeSheet(
     onTranscript: () -> Unit = {},
     onTranscribe: () -> Unit = {},
     onOpenPodcast: (() -> Unit)? = null,
+    /** Phase 7b: shown only on podcast pages, and only when there's something to mark. */
+    onMarkOlder: (() -> Unit)? = null,
+    onMarkNewer: (() -> Unit)? = null,
 ) {
     val e = item.episode
     val notes = remember(e.description) { AnnotatedString.fromHtml(e.description) }
@@ -333,6 +337,26 @@ fun EpisodeSheet(
                         Icon(Icons.Filled.Archive, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Archive")
+                    }
+                }
+            }
+            if (onMarkOlder != null || onMarkNewer != null) {
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // The list is newest first, so newer episodes are above this one and older below.
+                    if (onMarkNewer != null) {
+                        OutlinedButton(onClick = onMarkNewer) {
+                            Icon(Icons.Filled.DoneAll, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Mark newer played")
+                        }
+                    }
+                    if (onMarkOlder != null) {
+                        OutlinedButton(onClick = onMarkOlder) {
+                            Icon(Icons.Filled.DoneAll, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Mark older played")
+                        }
                     }
                 }
             }
