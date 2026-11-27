@@ -391,6 +391,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---- Pins ----
+    fun setPinned(podcastId: Long, pinned: Boolean) {
+        viewModelScope.launch { repo.setPinned(podcastId, pinned) }
+    }
+
+    // ---- Sync account ----
+    val syncConfigured get() = app.sync.supabase.configured
+    val session = app.sync.supabase.session
+    val syncStatus = app.sync.status
+    var signingIn by mutableStateOf(false)
+        private set
+    var signInError by mutableStateOf<String?>(null)
+        private set
+
+    fun signIn(email: String, password: String) {
+        if (signingIn) return
+        viewModelScope.launch {
+            signingIn = true
+            signInError = null
+            try {
+                app.sync.supabase.signIn(email, password)
+                app.sync.resetForNewAccount()
+                say(if (app.sync.sync("sign-in")) "Signed in and synced" else "Signed in. Sync will retry shortly")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                signInError = e.message ?: "Couldn't sign in"
+            } finally {
+                signingIn = false
+            }
+        }
+    }
+
+    fun signOut() = app.sync.supabase.signOut()
+
+    fun syncNow() {
+        viewModelScope.launch {
+            say(if (app.sync.sync("Sync now")) "Synced" else "Sync failed: ${app.sync.status.value.error ?: "not signed in"}")
+        }
+    }
+
     fun skipBack() = player.skipBy(-currentPrefs.value.skipBackMs)
     fun skipForward() = player.skipBy(currentPrefs.value.skipForwardMs)
 }

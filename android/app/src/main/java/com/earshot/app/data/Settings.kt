@@ -72,13 +72,34 @@ object Settings {
     fun updatePlaybackDefaults(context: Context, change: (PlaybackDefaults) -> PlaybackDefaults) {
         val flow = playbackFlow(context)
         val d = synchronized(this) { change(flow.value).also { flow.value = it } }
+        savePlayback(context, d, changedAt = System.currentTimeMillis(), dirty = true)
+    }
+
+    private fun savePlayback(context: Context, d: PlaybackDefaults, changedAt: Long, dirty: Boolean) {
         prefs(context).edit()
             .putFloat("speed", d.speed)
             .putBoolean("smart_speed", d.smartSpeed)
             .putBoolean("voice_boost", d.voiceBoost)
             .putLong("skip_back_ms", d.skipBackMs)
             .putLong("skip_forward_ms", d.skipForwardMs)
+            .putLong("playback_changed_at", changedAt)
+            .putBoolean("playback_dirty", dirty)
             .apply()
+    }
+
+    // Sync of the playback defaults (one row on the server).
+    fun playbackChangedAt(context: Context): Long = prefs(context).getLong("playback_changed_at", 0)
+    fun playbackDirty(context: Context): Boolean = prefs(context).getBoolean("playback_dirty", true)
+
+    fun markPlaybackClean(context: Context, changedAt: Long) {
+        if (playbackChangedAt(context) == changedAt) prefs(context).edit().putBoolean("playback_dirty", false).apply()
+    }
+
+    /** Defaults changed on another device. */
+    fun applyRemotePlayback(context: Context, d: PlaybackDefaults, changedAt: Long) {
+        val flow = playbackFlow(context)
+        synchronized(this) { flow.value = d }
+        savePlayback(context, d, changedAt, dirty = false)
     }
 
     // ---- Time saved ----

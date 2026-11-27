@@ -61,6 +61,9 @@ fun SettingsScreen(vm: AppViewModel) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             val divider = @Composable { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp) }
+            AccountSection(vm)
+            divider()
+
             val d by vm.playbackDefaults.collectAsStateWithLifecycle()
             SectionHeader("Playback")
             Text(

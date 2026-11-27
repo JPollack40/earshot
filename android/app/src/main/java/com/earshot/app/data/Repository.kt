@@ -70,6 +70,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             // Same rule as a fresh subscribe: only the newest episode goes to the Inbox (when not
             // already played or queued). A preview has already stored every episode, so the refresh
             // above finds none "new" and can't do this itself.
+            episodes.markRecentForUpload(existing.id, System.currentTimeMillis() - AppDatabase.RECENT_MS)
             if (inboxNewest) {
                 episodes.getForPodcast(existing.id, 1).firstOrNull()?.episode?.let { newest ->
                     if (!newest.played && newest.queuePosition == null) episodes.setInInbox(newest.id, true)
@@ -88,7 +89,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 lastRefreshedAt = System.currentTimeMillis(),
             ),
         )
-        saveEpisodes(id, url, feed, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE)
+        saveEpisodes(id, url, feed, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE, upload = true)
         requireNotNull(podcasts.get(id))
     }
 
@@ -152,9 +153,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                         imageUrl = feed.imageUrl,
                         lastRefreshedAt = System.currentTimeMillis(),
                         subscribed = false,
+                        dirty = false, // uploaded only once one of its episodes is (see SyncEngine)
                     ),
                 )
-                saveEpisodes(id, url, feed, InboxMode.NONE)
+                saveEpisodes(id, url, feed, InboxMode.NONE, upload = false)
                 requireNotNull(podcasts.get(id))
             }
         }
@@ -247,6 +249,21 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             writeQueue(known + current.filter { it !in known })
         }
     }
+
+    /**
+     * After a sync brought in queue changes from another device: renumbers the queue 0..n-1 in its
+     * current order, removes what's played, prunes unneeded hidden podcasts, and downloads newly
+     * queued episodes (per the setting).
+     */
+    suspend fun tidyQueueAfterSync(newlyQueued: Collection<String>) {
+        queueLock.withLock {
+            writeQueue(episodes.queueIds())
+            pruneUnsubscribed()
+        }
+        for (id in newlyQueued) autoDownload(id)
+    }
+
+    suspend fun setPinned(podcastId: Long, pinned: Boolean) = podcasts.setPinned(podcastId, pinned)
 
     private suspend fun autoDownload(id: String) {
         if (!Settings.autoDownloadQueued(context)) return
@@ -378,7 +395,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             imageUrl = feed.imageUrl ?: podcast.imageUrl,
             refreshedAt = System.currentTimeMillis(),
         )
-        saveEpisodes(podcast.id, podcast.feedUrl, feed, inbox)
+        saveEpisodes(podcast.id, podcast.feedUrl, feed, inbox, upload = podcast.subscribed)
     }
 
     suspend fun refresh(podcastId: Long): Int = podcasts.get(podcastId)?.let { refresh(it) } ?: 0
@@ -412,7 +429,11 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
-    private suspend fun saveEpisodes(podcastId: Long, feedUrl: String, feed: ParsedFeed, inbox: InboxMode): Int {
+    /**
+     * [upload]: mark new episodes for the next sync when they matter to other devices (in the New
+     * Episodes list, or recent enough for the web player's Latest tab). False for previews.
+     */
+    private suspend fun saveEpisodes(podcastId: Long, feedUrl: String, feed: ParsedFeed, inbox: InboxMode, upload: Boolean): Int {
         val existing = episodes.idsForPodcast(podcastId).toHashSet()
         val parsed = feed.episodes.map { it.toEntity(podcastId, feedUrl) }.distinctBy { it.id }
         val newest = parsed.filter { it.id !in existing }
@@ -421,7 +442,12 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             InboxMode.NEWEST -> setOfNotNull(newest.maxByOrNull { it.pubDate }?.id)
             InboxMode.NONE -> emptySet()
         }
-        val fresh = newest.map { if (it.id in inboxIds) it.copy(inInbox = true) else it }
+        val now = System.currentTimeMillis()
+        val fresh = newest.map { e ->
+            val inInbox = e.id in inboxIds
+            val share = upload && (inInbox || e.pubDate > now - AppDatabase.RECENT_MS)
+            e.copy(inInbox = inInbox, dirty = share, changedAt = if (share) now else 0)
+        }
         db.withTransaction {
             episodes.insertAll(fresh)
             for (e in parsed) {
@@ -561,7 +587,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     }
 
     /** The podcast with this feed (including hidden and previewed ones), matched by [feedKey]. */
-    private suspend fun findPodcast(url: String): Podcast? {
+    suspend fun findPodcast(url: String): Podcast? {
         podcasts.findByFeedUrl(url)?.let { return it }
         val key = feedKey(url)
         return podcasts.getAllIncludingHidden().firstOrNull { feedKey(it.feedUrl) == key }

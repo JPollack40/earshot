@@ -175,7 +175,14 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                     showPlayback = true
                                 },
                             )
-                            if (!previewing) {
+                            if (!previewing && p != null) {
+                                DropdownMenuItem(
+                                    text = { Text(if (p.pinned) "Unpin" else "Pin to top") },
+                                    onClick = {
+                                        menuOpen = false
+                                        vm.setPinned(podcastId, !p.pinned)
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Unsubscribe") },
                                     onClick = {
