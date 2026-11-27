@@ -307,6 +307,13 @@ interface EpisodeDao {
     )
     suspend fun setPlayed(id: String, played: Boolean)
 
+    /**
+     * Marks many episodes played at once (phase 7b, "mark older/newer played"). Callers leave queued
+     * episodes out, so the queue isn't touched. Keep [ids] to 500 or fewer (SQLite's variable limit).
+     */
+    @Query("UPDATE episodes SET played = 1, positionMs = 0, inInbox = 0, $TOUCH WHERE id IN (:ids) AND played = 0")
+    suspend fun markPlayed(ids: List<String>): Int
+
     @Query("UPDATE episodes SET downloadState = :state, downloadProgress = :progress, localPath = :localPath WHERE id = :id")
     suspend fun setDownload(id: String, state: Int, progress: Int, localPath: String?)
 

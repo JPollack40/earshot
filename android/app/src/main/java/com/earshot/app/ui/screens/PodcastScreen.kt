@@ -221,6 +221,8 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
             showPodcast = false,
             modifier = Modifier.padding(padding).fillMaxSize(),
             snippets = if (searching) matches?.snippets.orEmpty() else emptyMap(),
+            // Phase 7b: "Mark older/newer played" counts the whole podcast, even while searching.
+            markRange = if (p != null && !previewing) episodes else null,
             header = {
                 if (p != null && searching) {
                     item(key = "matches") {

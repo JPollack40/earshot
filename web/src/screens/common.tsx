@@ -7,6 +7,7 @@ import * as store from "../store";
 import type { EpisodeRow } from "../types";
 import { episodeMeta, safeHtml } from "../util";
 import * as notes from "../notes";
+import { pickRange, type Direction } from "../markRange";
 import { Glyph } from "./Icons";
 
 export interface Nav {
@@ -84,6 +85,7 @@ export function EpisodeItem({
   draggable,
   onDragStart,
   onDropOn,
+  markRange,
 }: {
   e: EpisodeRow;
   podcastTitle?: string;
@@ -94,6 +96,8 @@ export function EpisodeItem({
   draggable?: boolean;
   onDragStart?: () => void;
   onDropOn?: () => void;
+  /** The podcast's whole episode list, for "Mark older/newer played" (podcast pages only). */
+  markRange?: EpisodeRow[];
 }) {
   const p = player.usePlayer();
   const [open, setOpen] = useState(false);
@@ -141,14 +145,47 @@ export function EpisodeItem({
           <Glyph name={isCurrent && p.playing ? "pause" : "play"} text={isCurrent && p.playing ? "❚❚" : "▶"} />
         </button>
       </div>
-      {open && <EpisodeSheet e={store.getState().episodes.get(e.id) ?? e} podcastTitle={podcastTitle} feed={feed} onClose={() => setOpen(false)} />}
+      {open && <EpisodeSheet e={store.getState().episodes.get(e.id) ?? e} podcastTitle={podcastTitle} feed={feed} markRange={markRange} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow; podcastTitle?: string; feed?: ParsedFeed; onClose: () => void }) {
+export function EpisodeSheet({
+  e,
+  podcastTitle,
+  feed,
+  markRange,
+  onClose,
+}: {
+  e: EpisodeRow;
+  podcastTitle?: string;
+  feed?: ParsedFeed;
+  markRange?: EpisodeRow[];
+  onClose: () => void;
+}) {
   const act = (f: () => void) => () => {
     f();
+    onClose();
+  };
+  const p = player.usePlayer();
+  // Phase 7b: what "Mark older/newer played" would change (queued and loaded episodes are left alone).
+  const older = markRange ? pickRange(markRange, e, "older", p.episode?.id) : null;
+  const newer = markRange ? pickRange(markRange, e, "newer", p.episode?.id) : null;
+  const markRangePlayed = (direction: Direction) => {
+    const pick = direction === "older" ? older : newer;
+    if (!pick || !pick.rows.length) return;
+    const n = pick.rows.length;
+    const show = feed?.title || podcastTitle || "this podcast";
+    const skippedNote = pick.skipped
+      ? ` ${pick.skipped} queued or playing episode${pick.skipped === 1 ? " is" : "s are"} left alone.`
+      : "";
+    const ok = confirm(
+      `Mark ${n} ${direction} episode${n === 1 ? "" : "s"} played?\n\nEvery unplayed episode of ${show} released ${
+        direction === "older" ? "before" : "after"
+      } "${e.title}" will be marked played.${skippedNote}`,
+    );
+    if (!ok) return;
+    store.markPlayedMany(pick.rows);
     onClose();
   };
   const n = notes.useNotes();
@@ -180,6 +217,13 @@ export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow
           <button onClick={act(() => store.setPlayed(e, !e.played, feed))}>{e.played ? "Mark unplayed" : "Mark played"}</button>
           {e.in_inbox && <button onClick={act(() => store.archive(e))}>Archive</button>}
         </div>
+        {(older?.rows.length || newer?.rows.length) ? (
+          <div className="actions">
+            {/* The list is newest first, so newer episodes are above this one and older below. */}
+            {!!newer?.rows.length && <button onClick={() => markRangePlayed("newer")}>Mark newer played</button>}
+            {!!older?.rows.length && <button onClick={() => markRangePlayed("older")}>Mark older played</button>}
+          </div>
+        ) : null}
         {n.available && (
           <div className="actions">
             <button onClick={act(() => navHolder.current?.open({ name: "transcript", episodeId: e.id }))}>
