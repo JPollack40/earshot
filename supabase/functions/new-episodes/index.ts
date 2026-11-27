@@ -194,7 +194,13 @@ Deno.serve(async (req: Request) => {
       if (lookedUp >= 50) break; // spread a big first run over a few checks
       lookedUp++;
       try {
-        const r = await podcastIndex(`/podcasts/byfeedurl?url=${encodeURIComponent(f.feed_url)}`);
+        // Podcast Index answers 400 or 404 for a feed it doesn't have: record it as not found
+        // (looked up again after a day) instead of retrying every 15 minutes.
+        const r = await podcastIndex(`/podcasts/byfeedurl?url=${encodeURIComponent(f.feed_url)}`)
+          .catch((e: Error) => {
+            if (/HTTP 40[04]$/.test(e.message)) return null;
+            throw e;
+          });
         const id = typeof r?.feed?.id === "number" && r.feed.id > 0 ? r.feed.id : null;
         f.pi_feed_id = id;
         await db("feed_checks?on_conflict=feed_url", {
