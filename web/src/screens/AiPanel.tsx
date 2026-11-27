@@ -110,7 +110,7 @@ export function AiPanel({ episode, podcastTitle, prefs, chapters }: { episode: E
       {ai.ads && ai.ads.length === 0 && <div className="muted small">No ads were found in this episode.</div>}
       {ai.ads?.map((a) => (
         <button key={a.startMs} className="ai-time" onClick={() => player.seekTo(a.startMs)}>
-          <span className="time">{formatClock(a.startMs)}</span> {a.label} ({formatClock(a.endMs - a.startMs)})
+          <span className="time">{formatClock(a.startMs)}</span> {a.label} ({a.endMs >= AD_TO_END ? "to the end" : formatClock(a.endMs - a.startMs)})
         </button>
       ))}
       <Button kind="ads" label="Find ads" again={!!ai.ads} />

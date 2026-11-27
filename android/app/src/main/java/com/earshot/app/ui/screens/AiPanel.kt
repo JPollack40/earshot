@@ -46,7 +46,7 @@ fun SkipAdChip(vm: AppViewModel, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         AssistChip(
             onClick = vm::skipAd,
-            label = { Text("Skip ad: ${a.label} (to ${formatClock(a.endMs)})") },
+            label = { Text("Skip ad: ${a.label} (to ${if (a.endMs >= AdSkip.TO_END) "the end" else formatClock(a.endMs)})") },
             leadingIcon = { Icon(Icons.Filled.FastForward, null, Modifier.size(18.dp)) },
             colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
             modifier = Modifier.padding(vertical = 2.dp),
@@ -142,7 +142,7 @@ fun AiDialog(vm: AppViewModel, item: EpisodeWithPodcast, onDismiss: () -> Unit) 
                 when {
                     ads == null -> Text("Find ad reads and breaks so they can be skipped.", style = MaterialTheme.typography.bodySmall)
                     ads.isEmpty() -> Text("No ads were found in this episode.", style = MaterialTheme.typography.bodySmall)
-                    else -> ads.forEach { a -> TimeRow(a.startMs, "${a.label} (${formatClock(a.endMs - a.startMs)})", jump) }
+                    else -> ads.forEach { a -> TimeRow(a.startMs, "${a.label} (${if (a.endMs >= AdSkip.TO_END) "to the end" else formatClock(a.endMs - a.startMs)})", jump) }
                 }
                 MakeButton(
                     label = if (ads == null) "Find ads" else "Find ads again",

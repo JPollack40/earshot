@@ -198,6 +198,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
 
             JumpBackChip(vm)
             SkipAdChip(vm)
+            val adNow by vm.currentAd.collectAsStateWithLifecycle()
 
             // ---- Transport ----
             Spacer(Modifier.height(8.dp))
@@ -219,7 +220,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         )
                     }
                 }
-                SkipButton(prefs.skipForwardMs, forward = true, onClick = vm::skipForward, onLongClick = { skipDialog = true })
+                SkipButton(prefs.skipForwardMs, forward = true, onClick = vm::skipForward, onLongClick = { skipDialog = true }, skipAd = adNow != null)
             }
             val saved = episode?.episode?.timeSavedMs ?: 0
             if (saved >= 1_000) {

@@ -33,6 +33,28 @@ object AdSkip {
         else -> "Skip automatically"
     }
 
+    /** An ad section that runs to the end of the episode (its real length isn't known here). */
+    const val TO_END = Long.MAX_VALUE / 4
+
+    private val AD_CHAPTER = Regex("""^\s*(ad|ads|ad break|advert|advertisement|commercial|sponsor|sponsored|sponsors)\b""", RegexOption.IGNORE_CASE)
+
+    /** True for a generated chapter that is an ad break ("Ad break", "Sponsor: …"). */
+    fun isAdChapter(title: String) = AD_CHAPTER.containsMatchIn(title)
+
+    /**
+     * Phase 14: ads from generated chapters, for episodes where Find ads hasn't run. The "ai" function's
+     * chapters mark ad breaks as their own chapter titled "Ad break" or "Sponsor: <name>"; each runs to
+     * the next chapter (the last one to the end). [chapters] are (start ms, title), in any order.
+     */
+    fun fromChapters(chapters: List<Pair<Long, String>>): List<AdSpan> {
+        val sorted = chapters.sortedBy { it.first }
+        return sorted.mapIndexedNotNull { i, (start, title) ->
+            if (!isAdChapter(title)) return@mapIndexedNotNull null
+            val end = sorted.getOrNull(i + 1)?.first ?: TO_END
+            if (end > start) AdSpan(start, end, title.trim()) else null
+        }
+    }
+
     /**
      * The ad playing at [positionMs], if any. An ad is only "playing" from its start up to 1.5 s
      * before its end, so seeking to its end never lands back inside it.

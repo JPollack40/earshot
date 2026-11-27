@@ -30,6 +30,7 @@ interface AiState {
   version: number;
 }
 
+const EMPTY: EpisodeAi = {};
 let state: AiState = { byEpisode: new Map(), running: new Set(), errors: new Map(), version: 0 };
 const listeners = new Set<() => void>();
 const fetched = new Set<string>();
@@ -49,13 +50,43 @@ export function useAiState(): AiState {
   );
 }
 
+/** An ad section that runs to the end of the episode (same as the phone's AdSkip.TO_END). */
+export const AD_TO_END = Number.MAX_SAFE_INTEGER / 4;
+const AD_CHAPTER = /^\s*(ad|ads|ad break|advert|advertisement|commercial|sponsor|sponsored|sponsors)\b/i;
+
+/**
+ * Phase 14: ads from generated chapters ("Ad break", "Sponsor: …"), for episodes where Find ads hasn't
+ * run. Each runs to the next chapter, the last one to the end. Same rule as the phone's AdSkip.fromChapters.
+ */
+export function adsFromChapters(chapters: Chapter[]): AdSpan[] {
+  const sorted = [...chapters].sort((a, b) => a.startMs - b.startMs);
+  const out: AdSpan[] = [];
+  sorted.forEach((c, i) => {
+    if (!AD_CHAPTER.test(c.title)) return;
+    const end = sorted[i + 1]?.startMs ?? AD_TO_END;
+    if (end > c.startMs) out.push({ startMs: c.startMs, endMs: end, label: c.title.trim() });
+  });
+  return out;
+}
+
+// The same object for the same results, so React effects that depend on it don't rerun.
+const withChapterAds = new WeakMap<EpisodeAi, EpisodeAi>();
+
 /** What has been made for this episode (fetched from the server the first time it's asked for). */
 export function useEpisodeAi(episodeId: string | null | undefined): EpisodeAi {
   const s = useAiState();
   useEffect(() => {
     if (episodeId) void load(episodeId);
   }, [episodeId]);
-  return (episodeId && s.byEpisode.get(episodeId)) || {};
+  const e = (episodeId && s.byEpisode.get(episodeId)) || EMPTY;
+  // Phase 14: without Find ads, the ad breaks in generated chapters count as found ads.
+  if (e.ads || !e.chapters) return e;
+  let out = withChapterAds.get(e);
+  if (!out) {
+    out = { ...e, ads: adsFromChapters(e.chapters) };
+    withChapterAds.set(e, out);
+  }
+  return out;
 }
 
 // Loose parsing of the stored shapes (times in ms).

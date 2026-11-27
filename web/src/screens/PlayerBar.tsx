@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchChapters, type Chapter } from "../feed";
-import { currentAd, useEpisodeAi } from "../ai";
+import { AD_TO_END, currentAd, useEpisodeAi } from "../ai";
 import * as player from "../player";
 import * as store from "../store";
 import { SKIPS_MS, SPEEDS, type PlaybackDefaults, type PodcastRow } from "../types";
@@ -104,7 +104,11 @@ export function SkipAdButton({ adSkip, className = "chip" }: { adSkip: string; c
   const ad = currentAd(ads, p.positionMs);
   if (!ad) return null;
   return (
-    <button className={`${className} on`} title={`Skip to ${formatClock(ad.endMs)}`} onClick={() => player.seekTo(ad.endMs)}>
+    <button
+      className={`${className} on`}
+      title={ad.endMs >= AD_TO_END ? "Skip to the end" : `Skip to ${formatClock(ad.endMs)}`}
+      onClick={() => player.seekTo(Math.min(ad.endMs, p.durationMs > 0 ? p.durationMs - 250 : ad.endMs))}
+    >
       ⏭ Skip ad: {ad.label}
     </button>
   );

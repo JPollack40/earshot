@@ -263,7 +263,14 @@ class PlaybackService : MediaLibraryService() {
                 .flatMapLatest<String?, Pair<String?, List<AdSpan>>> { id ->
                     if (id == null) flowOf(null to emptyList())
                     else app.db.episodeAi().observe(id).map { rows ->
-                        id to rows.firstOrNull { it.kind == AiKinds.ADS }?.let { EpisodeAiStore.parseAds(it.dataJson) }.orEmpty()
+                        // Phase 14: Find ads wins; without it, the ad breaks in generated chapters.
+                        id to (
+                            rows.firstOrNull { it.kind == AiKinds.ADS }?.let { EpisodeAiStore.parseAds(it.dataJson) }
+                                ?: rows.firstOrNull { it.kind == AiKinds.CHAPTERS }?.let { r ->
+                                    AdSkip.fromChapters(EpisodeAiStore.parseChapters(r.dataJson).map { it.startMs to it.title })
+                                }
+                                ?: emptyList()
+                            )
                     }
                 }
                 .collect { (id, list) ->

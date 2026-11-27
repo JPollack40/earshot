@@ -60,7 +60,7 @@ import com.earshot.app.ui.formatSpeed
 
 /** Player skip button: tap to skip, long-press to choose the length. */
 @Composable
-fun SkipButton(lengthMs: Long, forward: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun SkipButton(lengthMs: Long, forward: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, skipAd: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     Box(
         Modifier
@@ -76,6 +76,14 @@ fun SkipButton(lengthMs: Long, forward: Boolean, onClick: () -> Unit, onLongClic
             ),
         contentAlignment = Alignment.Center,
     ) {
+        // Phase 14: during a found ad the forward button skips the ad (as in the car).
+        if (skipAd) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(androidx.compose.material.icons.Icons.Filled.FastForward, contentDescription = "Skip ad", modifier = Modifier.size(32.dp))
+                Text("Skip ad", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            return@Box
+        }
         Icon(
             Icons.Filled.Replay,
             contentDescription = (if (forward) "Forward " else "Back ") + skipLengthName(lengthMs),

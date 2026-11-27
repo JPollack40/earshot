@@ -240,7 +240,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipAd() {
         val ad = currentAd.value ?: return
-        player.skipBy(ad.endMs - nowPlaying.value.positionMs)
+        val np = nowPlaying.value
+        // Back-to-back ads are skipped together; an ad that runs to the end goes to the end.
+        var to = AdSkip.skipTarget(ai.value.ads.orEmpty(), np.positionMs) ?: ad.endMs
+        if (np.durationMs > 0) to = minOf(to, np.durationMs)
+        player.skipBy(to - np.positionMs)
     }
 
     /** Makes chapters, a summary or the ad list for an episode from its transcript (Gemini, on the server). */
@@ -1005,5 +1009,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun skipBack() = player.skipBy(-currentPrefs.value.skipBackMs)
-    fun skipForward() = player.skipBy(currentPrefs.value.skipForwardMs)
+    /** Phase 14: during a found ad (Found ads = Show a Skip ad button), forward skips the ad, as in the car. */
+    fun skipForward() {
+        if (currentAd.value != null) skipAd() else player.skipBy(currentPrefs.value.skipForwardMs)
+    }
 }
