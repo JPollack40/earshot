@@ -262,6 +262,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Phase 14: logged too, so a failure can be traced afterwards.
+                android.util.Log.w("Earshot", "AI $kind failed for ${item.episode.title}: ${e.message}", e)
                 say(e.message ?: "That didn't work")
             }
         }
