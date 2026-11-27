@@ -13,10 +13,17 @@
 
 const API = "https://api.podcastindex.org/api/1.0";
 
+// The web player calls this from the browser, so it needs CORS headers (and an answer to the preflight).
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "apikey, authorization, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+};
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" },
   });
 }
 
@@ -45,6 +52,7 @@ async function sha1Hex(text: string): Promise<string> {
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "GET") return json({ error: "Use GET" }, 405);
   if (!hasProjectKey(req)) return json({ error: "Missing or unknown apikey" }, 401);
 
