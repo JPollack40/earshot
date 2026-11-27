@@ -31,12 +31,12 @@ jobs:
       - uses: actions/checkout@v7
 
       # Gradle's daemon toolchain (gradle/gradle-daemon-jvm.properties) asks for JDK 25.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Version from tag
         id: version
@@ -102,7 +102,7 @@ jobs:
           echo "path=android/$out" >> "$GITHUB_OUTPUT"
           rm -f "$RUNNER_TEMP/earshot-release.jks"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: earshot-${{ steps.version.outputs.name }}
           path: |
