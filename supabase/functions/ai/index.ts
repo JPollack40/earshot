@@ -176,9 +176,20 @@ Deno.serve(async (req: Request) => {
     }),
   });
   if (!res.ok) {
-    const detail = (await res.text()).slice(0, 400);
+    const detail = (await res.text()).slice(0, 800);
+    // Shows in Supabase > Edge Functions > ai > Logs.
+    console.error(`Gemini ${model} HTTP ${res.status}: ${detail}`);
     if (res.status === 429) return json({ error: "Gemini's free limit is used up for now. Try again later (limits reset over the day).", detail }, 429);
-    return json({ error: `Gemini returned HTTP ${res.status}`, detail }, 502);
+    let reason = "";
+    try {
+      reason = String(JSON.parse(detail)?.error?.message ?? "").slice(0, 200);
+    } catch (_) {
+      // not JSON
+    }
+    if (res.status === 404) {
+      return json({ error: `Gemini doesn't offer the model "${model}" to this key. Set the GEMINI_MODEL secret to one it does.`, detail }, 502);
+    }
+    return json({ error: `Gemini returned HTTP ${res.status}${reason ? `: ${reason}` : ""}`, detail }, 502);
   }
   // deno-lint-ignore no-explicit-any
   const out: any = await res.json();
@@ -188,9 +199,11 @@ Deno.serve(async (req: Request) => {
   try {
     parsed = JSON.parse(text);
   } catch (_) {
+    console.error(`Gemini ${model}: unreadable answer (finishReason ${out?.candidates?.[0]?.finishReason}): ${JSON.stringify(out).slice(0, 800)}`);
     return json({ error: "Gemini's answer wasn't readable. Try again.", detail: text.slice(0, 300) }, 502);
   }
   const data = normalise(kind, parsed, lastMs);
+  console.log(`Gemini ${model}: ${kind} for ${episodeId} OK`);
   if (kind === "chapters" && (data as { chapters: unknown[] }).chapters.length < 2) return json({ error: "Gemini couldn't find chapters in this episode." }, 502);
 
   const now = Date.now();
