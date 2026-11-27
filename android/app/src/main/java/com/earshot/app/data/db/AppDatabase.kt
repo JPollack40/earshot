@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(entities = [Podcast::class, Episode::class, Transcript::class, Bookmark::class, Playlist::class, Listen::class],
-    version = 7, exportSchema = false)
+    version = 8, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun podcasts(): PodcastDao
     abstract fun episodes(): EpisodeDao
@@ -118,12 +118,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 (phase 10): Podcasting 2.0 extras (funding, people, finished shows, season and episode
+         * numbers), the feed's stated length, skipped chapters, and the per-podcast ad trim. All new
+         * columns are nullable or default to 0, so nothing existing changes.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN fundingUrl TEXT")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN fundingText TEXT")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN personsJson TEXT")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN complete INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE podcasts ADD COLUMN adTrim TEXT")
+                db.execSQL("ALTER TABLE episodes ADD COLUMN season INTEGER")
+                db.execSQL("ALTER TABLE episodes ADD COLUMN episodeNo REAL")
+                db.execSQL("ALTER TABLE episodes ADD COLUMN personsJson TEXT")
+                db.execSQL("ALTER TABLE episodes ADD COLUMN feedDurationMs INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE episodes ADD COLUMN skippedChapters TEXT")
+            }
+        }
+
         /** Episodes published within this window are uploaded even without listening state. */
         const val RECENT_MS = 60L * 24 * 60 * 60 * 1000
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "earshot.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 // Upgrades must always migrate (subscriptions live here). Only a downgrade, which
                 // only happens when installing an older dev build, may start from scratch.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)

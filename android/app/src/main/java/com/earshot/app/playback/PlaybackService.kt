@@ -29,9 +29,12 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.earshot.app.EarshotApp
 import com.earshot.app.R
+import com.earshot.app.data.AdTrim
 import com.earshot.app.data.PlaybackPrefs
+import com.earshot.app.data.feed.SkippedChapters
 import com.earshot.app.data.PlaylistJson
 import com.earshot.app.data.Settings
+import com.earshot.app.data.VoiceMatch
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.ui.MainActivity
 import com.google.common.collect.ImmutableList
@@ -216,6 +219,28 @@ class PlaybackService : MediaLibraryService() {
                 .collect { session?.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 2, null) }
         }
 
+        // Phase 10: chapters to skip and ads to trim follow the loaded episode.
+        scope.launch {
+            loadedEpisodeId
+                .flatMapLatest { id -> if (id == null) flowOf(null) else repo.episodes.observeWithPodcast(id) }
+                .collect { ep ->
+                    loaded = ep
+                    val id = ep?.episode?.id
+                    if (id != chaptersFor) {
+                        chaptersFor = id
+                        chapters = emptyList()
+                        chapterJob?.cancel()
+                        if (ep != null) chapterJob = scope.launch { chapters = app.chapters.load(ep.episode) }
+                    }
+                }
+        }
+        scope.launch {
+            while (isActive) {
+                delay(500)
+                if (player.isPlaying) checkSkips()
+            }
+        }
+
         saveJob = scope.launch {
             var tick = 0
             while (isActive) {
@@ -252,6 +277,55 @@ class PlaybackService : MediaLibraryService() {
             // The speed list and its row at the top of the Queue tab show the current speed.
             session?.notifyChildrenChanged(EpisodeMedia.SPEED, Settings.SPEED_CHOICES.size, null)
             scope.launch { session?.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 1, null) }
+        }
+    }
+
+    // ---- Skipped chapters and ad trim (phase 10) ----
+
+    private var loaded: EpisodeWithPodcast? = null
+    private var chaptersFor: String? = null
+    private var chapters: List<com.earshot.app.data.feed.Chapter> = emptyList()
+    private var chapterJob: Job? = null
+    private var skippedJson: String? = null
+    private var skipped: Set<Long> = emptySet()
+
+    /**
+     * Runs twice a second while playing. Jumps over unticked chapters (carrying on past any that
+     * follow), skips ads stitched onto the start, and finishes the episode where ads stitched onto
+     * the end begin. Works the same from the app, the notification and Android Auto.
+     */
+    private fun checkSkips() {
+        val ep = loaded ?: return
+        val id = player.currentMediaItem?.mediaId ?: return
+        if (ep.episode.id != id || player.playbackState != Player.STATE_READY) return
+        val pos = player.currentPosition
+        val duration = player.duration.takeIf { it > 0 } ?: return
+        val extra = when (ep.podcastAdTrim) {
+            AdTrim.START, AdTrim.END -> AdTrim.extraMs(ep.episode.feedDurationMs, duration)
+            else -> 0L
+        }
+        if (extra > 0 && ep.podcastAdTrim == AdTrim.START && pos < extra - 1_000) {
+            Log.i(TAG, "Ad trim: skipping the first ${extra / 1000} s")
+            player.seekTo(extra)
+            return
+        }
+        val endAt = if (extra > 0 && ep.podcastAdTrim == AdTrim.END) duration - extra else duration
+        if (endAt < duration && pos >= endAt) {
+            Log.i(TAG, "Ad trim: the last ${extra / 1000} s are ads, finishing \"${ep.episode.title}\"")
+            finishCurrent(id, playNext = true, atEnd = false)
+            return
+        }
+        if (ep.episode.skippedChapters != skippedJson) {
+            skippedJson = ep.episode.skippedChapters
+            skipped = SkippedChapters.parse(skippedJson)
+        }
+        val target = SkippedChapters.skipTarget(chapters, skipped, pos, duration) ?: return
+        if (target >= endAt - 500) {
+            Log.i(TAG, "Skipped chapters run to the end: finishing \"${ep.episode.title}\"")
+            finishCurrent(id, playNext = true, atEnd = false)
+        } else {
+            Log.i(TAG, "Skipping chapter: $pos -> $target ms")
+            player.seekTo(target)
         }
     }
 
@@ -789,17 +863,35 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * What "play [query]" should start: nothing named, the top of the queue; a podcast's name, its
-     * newest unplayed episode; otherwise the newest episode whose title matches.
+     * What "play [query]" should start (phase 10, see data/VoiceMatch.kt):
+     *  - nothing, "podcasts", "Earshot": carry on with the loaded episode, else the top of the queue;
+     *  - "the latest <show>": that show's newest unplayed episode;
+     *  - a show's name (spelled loosely): its newest unplayed episode;
+     *  - otherwise the newest episode whose title matches (exactly, then loosely).
      */
     private suspend fun voiceSearch(query: String): EpisodeWithPodcast? {
-        if (query.isBlank()) return repo.queueHead()
-        val pattern = likePattern(query)
-        repo.podcasts.search(pattern).firstOrNull()?.let { p ->
-            val episodes = repo.episodes.getForPodcast(p.id, 50)
-            (episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull())?.let { return it }
+        val intent = VoiceMatch.parse(query)
+        Log.i(TAG, "Voice: \"$query\" -> $intent")
+        suspend fun newestOf(show: String): EpisodeWithPodcast? {
+            val podcast = VoiceMatch.best(show, repo.podcasts.getAll()) { it.title } ?: return null
+            val episodes = repo.episodes.getForPodcast(podcast.id, 50)
+            return episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
         }
-        return repo.episodes.search(pattern, 1).firstOrNull()
+        return when (intent) {
+            VoiceMatch.Intent.Resume -> {
+                val loaded = player.currentMediaItem?.mediaId?.takeIf { player.playbackState != Player.STATE_ENDED }
+                loaded?.let { repo.episodes.getWithPodcast(it) } ?: repo.queueHead()
+            }
+            is VoiceMatch.Intent.Latest -> newestOf(intent.show) ?: anyMatch(query)
+            is VoiceMatch.Intent.Any -> newestOf(intent.text) ?: anyMatch(intent.text)
+        }
+    }
+
+    /** An episode by title: a plain "contains" match first, then a loose one over recent episodes. */
+    private suspend fun anyMatch(text: String): EpisodeWithPodcast? {
+        repo.episodes.search(likePattern(text), 1).firstOrNull()?.let { return it }
+        val recent = repo.episodes.getQueue() + repo.episodes.getLatest(300)
+        return VoiceMatch.best(text, recent, min = 0.7) { it.episode.title }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

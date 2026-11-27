@@ -35,6 +35,9 @@ class EarshotApp : Application() {
     /** Two-way sync with Supabase (phase 5b). */
     val sync: SyncEngine by lazy { SyncEngine(this) }
 
+    /** Chapters from the feed, the audio file, or (phase 11) the transcript (phase 10). */
+    val chapters: com.earshot.app.data.ChapterLoader by lazy { com.earshot.app.data.ChapterLoader(this) }
+
     /** Transcripts and bookmarks (phase 6). */
     val transcripts: Transcripts by lazy { Transcripts(this) }
 

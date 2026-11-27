@@ -113,6 +113,7 @@ private fun episodeMeta(item: EpisodeWithPodcast, showPodcast: Boolean): String 
     }
     return listOfNotNull(
         item.podcastTitle.takeIf { showPodcast },
+        com.earshot.app.data.feed.episodeBadge(e.season, e.episodeNo),
         formatDate(e.pubDate).takeIf { it.isNotEmpty() },
         timeText.takeIf { it.isNotEmpty() },
     ).joinToString(" • ")
@@ -280,6 +281,15 @@ fun EpisodeSheet(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // podcast:person on the episode (guests and hosts), phase 10.
+                    val people = remember(e.personsJson) { com.earshot.app.data.feed.Persons.parse(e.personsJson) }
+                    if (people.isNotEmpty()) {
+                        Text(
+                            com.earshot.app.data.feed.Persons.summary(people),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))

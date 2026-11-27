@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import com.earshot.app.data.feed.Chapter
 import com.earshot.app.data.feed.ChaptersParser
+import com.earshot.app.data.feed.Persons
 import com.earshot.app.data.feed.FeedParser
 import com.earshot.app.data.feed.OpmlFeed
 import com.earshot.app.data.feed.OpmlParser
@@ -99,6 +100,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 description = feed.description,
                 imageUrl = feed.imageUrl,
                 lastRefreshedAt = System.currentTimeMillis(),
+                fundingUrl = feed.fundingUrl,
+                fundingText = feed.fundingText,
+                personsJson = Persons.toJson(feed.persons),
+                complete = feed.complete,
             ),
         )
         saveEpisodes(id, url, feed, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE, upload = true)
@@ -164,6 +169,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                         description = feed.description,
                         imageUrl = feed.imageUrl,
                         lastRefreshedAt = System.currentTimeMillis(),
+                        fundingUrl = feed.fundingUrl,
+                        fundingText = feed.fundingText,
+                        personsJson = Persons.toJson(feed.persons),
+                        complete = feed.complete,
                         subscribed = false,
                         dirty = false, // uploaded only once one of its episodes is (see SyncEngine)
                     ),
@@ -406,6 +415,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             description = feed.description.ifBlank { podcast.description },
             imageUrl = feed.imageUrl ?: podcast.imageUrl,
             refreshedAt = System.currentTimeMillis(),
+            fundingUrl = feed.fundingUrl,
+            fundingText = feed.fundingText,
+            personsJson = Persons.toJson(feed.persons),
+            complete = feed.complete,
         )
         // Rules use the podcast as it is now (they may have changed since [podcast] was read).
         val rules = podcasts.get(podcast.id) ?: podcast
@@ -414,10 +427,13 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     suspend fun refresh(podcastId: Long): Int = podcasts.get(podcastId)?.let { refresh(it) } ?: 0
 
-    /** Refreshes every feed; one broken feed doesn't stop the rest. */
+    /**
+     * Refreshes every feed; one broken feed doesn't stop the rest. Finished shows (phase 10:
+     * podcast:updateFrequency complete, itunes:complete) are skipped; their page's refresh still works.
+     */
     suspend fun refreshAll(): Int {
         var total = 0
-        for (p in podcasts.getAll()) {
+        for (p in podcasts.getAll().filter { !it.complete }) {
             total += try {
                 refresh(p)
             } catch (e: CancellationException) {
@@ -493,6 +509,9 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                         chaptersUrl = e.chaptersUrl,
                         transcriptUrl = e.transcriptUrl,
                         transcriptType = e.transcriptType,
+                        season = e.season,
+                        episodeNo = e.episodeNo,
+                        personsJson = e.personsJson,
                     )
                 }
             }
@@ -787,10 +806,14 @@ private fun ParsedEpisode.toEntity(podcastId: Long, feedUrl: String) = Episode(
     audioUrl = audioUrl,
     mimeType = mimeType,
     durationMs = durationMs,
+    feedDurationMs = durationMs,
     imageUrl = imageUrl,
     chaptersUrl = chaptersUrl,
     transcriptUrl = transcriptUrl,
     transcriptType = transcriptType,
+    season = season,
+    episodeNo = episodeNo,
+    personsJson = Persons.toJson(persons),
 )
 
 /** Which newly found episodes go to the Inbox. */

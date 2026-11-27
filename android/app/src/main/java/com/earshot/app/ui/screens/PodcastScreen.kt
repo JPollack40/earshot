@@ -2,6 +2,13 @@
 
 package com.earshot.app.ui.screens
 
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.platform.LocalUriHandler
+import com.earshot.app.data.AdTrim
+import com.earshot.app.data.feed.Persons
+
 import com.earshot.app.ui.theme.LocalGlow
 import com.earshot.app.ui.theme.rememberArtColor
 import androidx.compose.foundation.background
@@ -85,6 +92,8 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     var confirmUnsubscribe by remember { mutableStateOf(false) }
     var showPlayback by remember { mutableStateOf(false) }
     var showRules by remember { mutableStateOf(false) }
+    var showAdTrim by remember { mutableStateOf(false) }
+    var sortMode by rememberSaveable(podcastId) { mutableStateOf(EpisodeSort.NEWEST) }
     val defaults by vm.playbackDefaults.collectAsStateWithLifecycle()
     val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
     var descExpanded by remember { mutableStateOf(false) }
@@ -119,7 +128,9 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
         }
     }
     val searching = searchOpen && EpisodeSearch.terms(query).isNotEmpty()
-    val shown = if (searching) matches?.episodes.orEmpty() else episodes
+    val hasNumbers = remember(episodes) { episodes.any { it.episode.episodeNo != null } }
+    val sorted = remember(episodes, sortMode) { sortEpisodes(episodes, sortMode) }
+    val shown = if (searching) matches?.episodes.orEmpty() else sorted
 
     fun closeSearch() {
         searchOpen = false
@@ -186,7 +197,30 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                     showPlayback = true
                                 },
                             )
+                            DropdownMenuItem(
+                                text = { Text(if (sortMode == EpisodeSort.NEWEST) "Sort: oldest first" else "Sort: newest first") },
+                                onClick = {
+                                    menuOpen = false
+                                    sortMode = if (sortMode == EpisodeSort.NEWEST) EpisodeSort.OLDEST else EpisodeSort.NEWEST
+                                },
+                            )
+                            if (hasNumbers && sortMode != EpisodeSort.NUMBER) {
+                                DropdownMenuItem(
+                                    text = { Text("Sort: by episode number") },
+                                    onClick = {
+                                        menuOpen = false
+                                        sortMode = EpisodeSort.NUMBER
+                                    },
+                                )
+                            }
                             if (!previewing && p != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Trim inserted ads (${AdTrim.label(p.adTrim).lowercase()})") },
+                                    onClick = {
+                                        menuOpen = false
+                                        showAdTrim = true
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Automation (new episodes, tidy-up)") },
                                     onClick = {
@@ -321,6 +355,48 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                     )
                                 }
                             }
+                            // Podcasting 2.0 extras (phase 10): people, funding, finished shows.
+                            val people = remember(p.personsJson) { Persons.parse(p.personsJson) }
+                            if (people.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    Persons.summary(people),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (glow) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (p.complete) {
+                                Text(
+                                    "Finished show: not checked for new episodes automatically (refresh still works).",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (glow) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (p.adTrim != null) {
+                                Text(
+                                    "Trimming inserted ads: ${AdTrim.label(p.adTrim).lowercase()}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (glow) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { showAdTrim = true },
+                                )
+                            }
+                            p.fundingUrl?.let { url ->
+                                val uri = LocalUriHandler.current
+                                Spacer(Modifier.height(6.dp))
+                                OutlinedButton(onClick = { runCatching { uri.openUri(url) } }) {
+                                    Icon(Icons.Filled.Favorite, null, Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(p.fundingText?.take(40) ?: "Support this show", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            if (sortMode != EpisodeSort.NEWEST && !searching) {
+                                Text(
+                                    if (sortMode == EpisodeSort.NUMBER) "Sorted by episode number" else "Oldest first",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 6.dp).clickable { sortMode = EpisodeSort.NEWEST },
+                                )
+                            }
                             if (p.description.isNotBlank()) {
                                 Spacer(Modifier.height(8.dp))
                                 Text(
@@ -359,6 +435,14 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
         )
     }
 
+    if (showAdTrim && pod != null) {
+        AdTrimDialog(
+            current = pod.adTrim,
+            onPick = { vm.setAdTrim(podcastId, it); showAdTrim = false },
+            onDismiss = { showAdTrim = false },
+        )
+    }
+
     if (confirmUnsubscribe) {
         AlertDialog(
             onDismissRequest = { confirmUnsubscribe = false },
@@ -373,4 +457,45 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
             dismissButton = { TextButton(onClick = { confirmUnsubscribe = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** Podcast page episode order (phase 10). NUMBER: season, then episode number, low to high. */
+enum class EpisodeSort { NEWEST, OLDEST, NUMBER }
+
+fun sortEpisodes(list: List<EpisodeWithPodcast>, mode: EpisodeSort): List<EpisodeWithPodcast> = when (mode) {
+    EpisodeSort.NEWEST -> list
+    EpisodeSort.OLDEST -> list.sortedBy { it.episode.pubDate }
+    // Numbers compare as numbers (2 before 10); unnumbered episodes go last, oldest first.
+    EpisodeSort.NUMBER -> list.sortedWith(
+        compareBy<EpisodeWithPodcast>({ it.episode.episodeNo == null }, { it.episode.season ?: 0 }, { it.episode.episodeNo ?: 0.0 }, { it.episode.pubDate }),
+    )
+}
+
+@Composable
+private fun AdTrimDialog(current: String?, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Trim inserted ads") },
+        text = {
+            Column {
+                Text(
+                    "Some shows stitch ads onto every download, so the file is longer than the length the feed states. " +
+                        "Earshot can skip that extra time where this show puts its ads. Only when the difference is between " +
+                        "10 seconds and 20 minutes; episodes whose feed gives no length play in full.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                listOf(null, AdTrim.START, AdTrim.END).forEach { mode ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onPick(mode) }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = current == mode, onClick = { onPick(mode) })
+                        Text(AdTrim.label(mode))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

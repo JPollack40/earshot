@@ -12,7 +12,16 @@ data class ParsedFeed(
     val description: String,
     val imageUrl: String?,
     val episodes: List<ParsedEpisode>,
+    // Podcasting 2.0 extras (phase 10)
+    val fundingUrl: String? = null,
+    val fundingText: String? = null,
+    val persons: List<Person> = emptyList(),
+    /** podcast:updateFrequency complete="true" or itunes:complete "Yes": no new episodes will come. */
+    val complete: Boolean = false,
 )
+
+/** A podcast:person: host, guest and so on. [role] is lower-case ("host" when the feed doesn't say). */
+data class Person(val name: String, val role: String, val imageUrl: String?, val href: String?)
 
 data class ParsedEpisode(
     val guid: String,
@@ -26,6 +35,9 @@ data class ParsedEpisode(
     val chaptersUrl: String?,
     val transcriptUrl: String?,
     val transcriptType: String?,
+    val season: Int? = null,
+    val episodeNo: Double? = null,
+    val persons: List<Person> = emptyList(),
 )
 
 /** Streaming RSS parser covering plain RSS 2.0, iTunes tags and the Podcasting 2.0 namespace. */
@@ -63,6 +75,9 @@ object FeedParser {
         var transcriptUrl: String? = null
         var transcriptType: String? = null
         var transcriptRank = 0
+        var season: Int? = null
+        var episodeNo: Double? = null
+        val persons = mutableListOf<Person>()
 
         fun build(): ParsedEpisode? {
             val url = audioUrl ?: return null
@@ -79,6 +94,9 @@ object FeedParser {
                 chaptersUrl = chaptersUrl,
                 transcriptUrl = transcriptUrl,
                 transcriptType = transcriptType,
+                season = season,
+                episodeNo = episodeNo,
+                persons = persons.toList(),
             )
         }
     }
@@ -95,6 +113,10 @@ object FeedParser {
         var itunesImage: String? = null
         var rssImage: String? = null
         var inChannelImage = false
+        var fundingUrl: String? = null
+        var fundingText: String? = null
+        val persons = mutableListOf<Person>()
+        var complete = false
         var item: ItemBuilder? = null
         val episodes = mutableListOf<ParsedEpisode>()
 
@@ -121,8 +143,14 @@ object FeedParser {
                             "duration" -> cur.durationMs = parseDuration(readText(p))
                             "image" -> cur.imageUrl = p.getAttributeValue(null, "href")
                             "summary" -> cur.summary = readText(p)
+                            // podcast:season / podcast:episode win when both are present.
+                            "season" -> readText(p).toIntOrNull()?.let { if (cur.season == null) cur.season = it }
+                            "episode" -> readText(p).toDoubleOrNull()?.let { if (cur.episodeNo == null) cur.episodeNo = it }
                         }
                         NS_PODCAST -> when (name) {
+                            "season" -> readText(p).trim().toIntOrNull()?.let { cur.season = it }
+                            "episode" -> readText(p).trim().toDoubleOrNull()?.let { cur.episodeNo = it }
+                            "person" -> readPerson(p)?.let { cur.persons += it }
                             "chapters" -> cur.chaptersUrl = p.getAttributeValue(null, "url")
                             "transcript" -> {
                                 val url = p.getAttributeValue(null, "url")
@@ -149,6 +177,15 @@ object FeedParser {
                             "author" -> author = readText(p)
                             "image" -> itunesImage = p.getAttributeValue(null, "href")
                             "summary" -> summary = readText(p)
+                            "complete" -> if (readText(p).equals("yes", ignoreCase = true)) complete = true
+                        }
+                        NS_PODCAST -> when (name) {
+                            "funding" -> if (fundingUrl == null) {
+                                fundingUrl = p.getAttributeValue(null, "url")?.trim()?.takeIf { it.startsWith("http") }
+                                fundingText = readText(p).ifBlank { null }
+                            }
+                            "person" -> readPerson(p)?.let { persons += it }
+                            "updateFrequency" -> if (p.getAttributeValue(null, "complete")?.trim().equals("true", ignoreCase = true)) complete = true
                         }
                     }
                 }
@@ -170,7 +207,19 @@ object FeedParser {
             description = description.ifBlank { summary },
             imageUrl = itunesImage?.takeIf { it.isNotBlank() } ?: rssImage,
             episodes = episodes,
+            fundingUrl = fundingUrl,
+            fundingText = fundingText,
+            persons = persons,
+            complete = complete,
         )
+    }
+
+    private fun readPerson(p: XmlPullParser): Person? {
+        val role = p.getAttributeValue(null, "role")?.trim()?.lowercase()?.ifBlank { null } ?: "host"
+        val img = p.getAttributeValue(null, "img")?.trim()?.takeIf { it.startsWith("http") }
+        val href = p.getAttributeValue(null, "href")?.trim()?.takeIf { it.startsWith("http") }
+        val name = readText(p).ifBlank { return null }
+        return Person(name, role, img, href)
     }
 
     /** Reads all text inside the current element, skipping any nested tags. Leaves the parser on the element's end tag. */

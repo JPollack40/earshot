@@ -143,24 +143,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .flatMapLatest { id -> if (id == null) flowOf(null) else repo.observeEpisode(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** The playing episode's chapters: from the feed, the audio file or the transcript (phase 10). */
     val chapters: StateFlow<List<Chapter>> = currentEpisode
-        .map { it?.episode?.chaptersUrl }
-        .distinctUntilChanged()
-        .mapLatest { url ->
-            if (url == null) {
-                emptyList()
-            } else {
-                try {
-                    repo.fetchChapters(url).also { Log.i("Earshot", "Loaded ${it.size} chapters from $url") }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w("Earshot", "Couldn't load chapters from $url", e)
-                    emptyList()
-                }
-            }
-        }
+        .map { it?.episode }
+        .distinctUntilChanged { a, b -> a?.id == b?.id && a?.chaptersUrl == b?.chaptersUrl }
+        .mapLatest { ep -> if (ep == null) emptyList() else app.chapters.load(ep) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Phase 10: trim ads stitched onto this podcast's episodes ("start", "end" or null = off). Synced. */
+    fun setAdTrim(podcastId: Long, mode: String?) {
+        viewModelScope.launch { repo.podcasts.setAdTrim(podcastId, mode) }
+    }
+
+    /** Ticks or unticks a chapter of the playing episode; unticked chapters are skipped (synced). */
+    fun setChapterSkipped(startMs: Long, skip: Boolean) {
+        val ep = currentEpisode.value?.episode ?: return
+        viewModelScope.launch {
+            val now = repo.episodes.get(ep.id) ?: return@launch
+            val set = com.earshot.app.data.feed.SkippedChapters.parse(now.skippedChapters)
+                .filterNot { kotlin.math.abs(it - startMs) <= 1_000 }.toMutableSet()
+            if (skip) set += startMs
+            repo.episodes.setSkippedChapters(ep.id, com.earshot.app.data.feed.SkippedChapters.toJson(set))
+        }
+    }
 
     fun podcast(id: Long) = repo.observePodcast(id)
     fun episodesFor(podcastId: Long) = repo.observeEpisodes(podcastId)

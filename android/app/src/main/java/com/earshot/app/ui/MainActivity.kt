@@ -49,6 +49,7 @@ import com.earshot.app.ui.screens.PlaylistScreen
 import com.earshot.app.data.Settings
 import com.earshot.app.ui.screens.GlowMiniPlayer
 import com.earshot.app.ui.screens.GlowNavBar
+import com.earshot.app.ui.screens.JumpBackChip
 import com.earshot.app.ui.theme.EarshotTheme
 import com.earshot.app.ui.theme.LocalGlow
 
@@ -103,6 +104,7 @@ fun EarshotRoot(vm: AppViewModel) {
                 val queue by vm.queue.collectAsStateWithLifecycle()
                 val inbox by vm.inbox.collectAsStateWithLifecycle()
                 Column {
+                    if (!vm.showPlayer) JumpBackChip(vm)
                     if (now.episodeId != null) {
                         GlowMiniPlayer(
                             now = now,
@@ -123,12 +125,15 @@ fun EarshotRoot(vm: AppViewModel) {
                     )
                 }
             } else if (now.episodeId != null) {
-                MiniPlayer(
-                    now = now,
-                    onOpen = { vm.showPlayer = true },
-                    onTogglePlay = vm.player::togglePlay,
-                    onOpenPodcast = openPlayingPodcast,
-                )
+                Column {
+                    if (!vm.showPlayer) JumpBackChip(vm)
+                    MiniPlayer(
+                        now = now,
+                        onOpen = { vm.showPlayer = true },
+                        onTogglePlay = vm.player::togglePlay,
+                        onOpenPodcast = openPlayingPodcast,
+                    )
+                }
             }
         },
     ) { padding ->

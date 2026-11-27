@@ -29,6 +29,9 @@ data class NowPlaying(
     val speed: Float = 1f,
 )
 
+/** After a big jump, where "Back to mm:ss" returns to (phase 10). Shown until [untilMs] (wall clock). */
+data class JumpBack(val episodeId: String, val fromMs: Long, val untilMs: Long)
+
 sealed interface SleepTimer {
     data object Off : SleepTimer
     data class At(val endsAtMs: Long) : SleepTimer
@@ -51,6 +54,40 @@ class PlayerConnection(private val app: EarshotApp) {
     val sleepTimer: StateFlow<SleepTimer> = _sleep.asStateFlow()
     private var sleepJob: Job? = null
     private var tickJob: Job? = null
+
+    private val _jumpBack = MutableStateFlow<JumpBack?>(null)
+    val jumpBack: StateFlow<JumpBack?> = _jumpBack.asStateFlow()
+    private var jumpJob: Job? = null
+
+    /**
+     * A jump of 30 s or more within the playing episode (chapter, transcript line, bookmark,
+     * scrubber) offers a way back for a few seconds. Skip buttons don't count.
+     */
+    private fun noteJump(c: MediaController, targetMs: Long) {
+        val id = c.currentMediaItem?.mediaId ?: return
+        val from = c.currentPosition
+        if (kotlin.math.abs(targetMs - from) < JUMP_MIN_MS) return
+        val j = JumpBack(id, from, System.currentTimeMillis() + JUMP_SHOW_MS)
+        _jumpBack.value = j
+        jumpJob?.cancel()
+        jumpJob = app.appScope.launch {
+            delay(JUMP_SHOW_MS)
+            if (_jumpBack.value == j) _jumpBack.value = null
+        }
+    }
+
+    /** "Back to mm:ss": returns to where the last big jump started. */
+    fun undoJump() {
+        val j = _jumpBack.value ?: return
+        _jumpBack.value = null
+        withController { c ->
+            if (c.currentMediaItem?.mediaId == j.episodeId) c.seekTo(j.fromMs)
+        }
+    }
+
+    fun dismissJump() {
+        _jumpBack.value = null
+    }
 
     fun connect() {
         if (controller != null || future != null) return
@@ -162,6 +199,7 @@ class PlayerConnection(private val app: EarshotApp) {
         val id = item.episode.id
         withController { c ->
             if (c.currentMediaItem?.mediaId == id && c.playbackState != Player.STATE_ENDED) {
+                noteJump(c, positionMs)
                 c.seekTo(positionMs)
                 c.play()
                 return@withController
@@ -192,7 +230,10 @@ class PlayerConnection(private val app: EarshotApp) {
         c.seekTo(if (d > 0) target.coerceAtMost(d) else target)
     }
 
-    fun seekTo(positionMs: Long) = withController { it.seekTo(positionMs) }
+    fun seekTo(positionMs: Long) = withController {
+        noteJump(it, positionMs)
+        it.seekTo(positionMs)
+    }
 
     fun setSleepTimer(minutes: Int?) {
         sleepJob?.cancel()
@@ -212,5 +253,10 @@ class PlayerConnection(private val app: EarshotApp) {
     fun sleepAtEndOfEpisode() {
         sleepJob?.cancel()
         _sleep.value = SleepTimer.EndOfEpisode
+    }
+
+    private companion object {
+        const val JUMP_MIN_MS = 30_000L
+        const val JUMP_SHOW_MS = 8_000L
     }
 }

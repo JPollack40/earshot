@@ -131,8 +131,7 @@ class SyncEngine(private val app: EarshotApp) {
                 upsertPodcasts(hidden)
                 pushedPodcastIds += hidden.map { it.id }
             }
-            val rows = batch.mapNotNull { e -> byId[e.podcastId]?.let { episodeJson(e, it.feedUrl) } }
-            supabase.upsert("episodes", "user_id,id", JSONArray(rows))
+            upsertEpisodes(batch.mapNotNull { e -> byId[e.podcastId]?.let { e to it.feedUrl } })
             app.db.withTransaction { for (e in batch) episodeDao.markClean(e.id, e.changedAt) }
             n += batch.size
             if (batch.size < 500) break
@@ -147,10 +146,26 @@ class SyncEngine(private val app: EarshotApp) {
      */
     private var rulesColumns = true
 
+    /**
+     * Phase 10 columns (podcasts.ad_trim; episodes.skipped_chapters, season, episode_no) come from
+     * supabase/migrations/004_listening_upgrades.sql. Until it has been run, rows go up without them.
+     */
+    private var phase10Columns = true
+
     private suspend fun upsertPodcasts(list: List<Podcast>) {
+        if (rulesColumns && phase10Columns) {
+            try {
+                supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = true, p10 = true) }))
+                return
+            } catch (e: SupabaseException) {
+                if (!missingSchema(e)) throw e
+                phase10Columns = false
+                Log.w(TAG, "Sync: podcasts have no ad_trim column yet (run 004_listening_upgrades.sql)")
+            }
+        }
         if (rulesColumns) {
             try {
-                supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = true) }))
+                supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = true, p10 = false) }))
                 return
             } catch (e: SupabaseException) {
                 if (!missingSchema(e)) throw e
@@ -158,7 +173,21 @@ class SyncEngine(private val app: EarshotApp) {
                 Log.w(TAG, "Sync: podcasts have no rule columns yet (run 003_automation_playlists.sql)")
             }
         }
-        supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = false) }))
+        supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = false, p10 = false) }))
+    }
+
+    private suspend fun upsertEpisodes(rows: List<Pair<Episode, String>>) {
+        if (phase10Columns) {
+            try {
+                supabase.upsert("episodes", "user_id,id", JSONArray(rows.map { (e, feed) -> episodeJson(e, feed, p10 = true) }))
+                return
+            } catch (e: SupabaseException) {
+                if (!missingSchema(e)) throw e
+                phase10Columns = false
+                Log.w(TAG, "Sync: episodes have no phase 10 columns yet (run 004_listening_upgrades.sql)")
+            }
+        }
+        supabase.upsert("episodes", "user_id,id", JSONArray(rows.map { (e, feed) -> episodeJson(e, feed, p10 = false) }))
     }
 
     private fun missingSchema(e: SupabaseException): Boolean {
@@ -405,6 +434,7 @@ class SyncEngine(private val app: EarshotApp) {
             inboxKeep = inboxKeep,
             changedAt = changedAt,
         )
+        if (o.has("ad_trim")) podcastDao.applyRemoteAdTrim(local.id, o.optNullableString("ad_trim"))
         when {
             becomesSubscribed -> repo.subscribe(local.feedUrl, inboxNewest = false)
             local.subscribed && !subscribed -> repo.unsubscribe(local.id, keepId = PlaybackService.protectedEpisodeId)
@@ -469,6 +499,10 @@ class SyncEngine(private val app: EarshotApp) {
                         queuePosition = queuePosition,
                         dirty = false,
                         changedAt = changedAt,
+                        season = o.optNullableLong("season")?.toInt(),
+                        episodeNo = o.optNullableDouble("episode_no"),
+                        feedDurationMs = o.optLong("duration_ms"),
+                        skippedChapters = skippedChaptersOf(o),
                     ),
                 ),
             )
@@ -484,6 +518,7 @@ class SyncEngine(private val app: EarshotApp) {
             queuePosition = queuePosition,
             changedAt = changedAt,
         )
+        if (o.has("skipped_chapters")) episodeDao.applyRemoteSkippedChapters(id, skippedChaptersOf(o))
         return Applied(queued = queuePosition != null && local.queuePosition == null, played = played && !local.played)
     }
 
@@ -561,7 +596,10 @@ class SyncEngine(private val app: EarshotApp) {
 
     // ---------------------------------------------------------------- JSON
 
-    private fun podcastJson(p: Podcast, rules: Boolean) = JSONObject()
+    private fun skippedChaptersOf(o: JSONObject): String? =
+        o.optJSONArray("skipped_chapters")?.takeIf { it.length() > 0 }?.toString()
+
+    private fun podcastJson(p: Podcast, rules: Boolean, p10: Boolean) = JSONObject()
         .put("feed_url", p.feedUrl)
         .put("title", p.title)
         .put("author", p.author)
@@ -585,9 +623,10 @@ class SyncEngine(private val app: EarshotApp) {
                 put("inbox_days", p.inboxDays ?: JSONObject.NULL)
                 put("inbox_keep", p.inboxKeep ?: JSONObject.NULL)
             }
+            if (p10) put("ad_trim", p.adTrim ?: JSONObject.NULL)
         }
 
-    private fun episodeJson(e: Episode, feedUrl: String) = JSONObject()
+    private fun episodeJson(e: Episode, feedUrl: String, p10: Boolean) = JSONObject()
         .put("id", e.id)
         .put("feed_url", feedUrl)
         .put("guid", e.guid)
@@ -607,6 +646,13 @@ class SyncEngine(private val app: EarshotApp) {
         .put("in_inbox", e.inInbox)
         .put("queue_position", e.queuePosition ?: JSONObject.NULL)
         .put("changed_at", e.changedAt)
+        .apply {
+            if (p10) {
+                put("skipped_chapters", e.skippedChapters?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONObject.NULL)
+                put("season", e.season ?: JSONObject.NULL)
+                put("episode_no", e.episodeNo ?: JSONObject.NULL)
+            }
+        }
 
     private fun bookmarkJson(b: Bookmark) = JSONObject()
         .put("id", b.id)

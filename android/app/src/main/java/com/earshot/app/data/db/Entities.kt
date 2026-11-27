@@ -49,6 +49,17 @@ data class Podcast(
     val inboxDays: Int? = null,
     /** Keep only this many of the podcast's episodes in New Episodes (0 = no limit, null = app default). */
     val inboxKeep: Int? = null,
+    // Phase 10 (v8). From the feed: podcast:funding, podcast:person (JSON, see data/feed/Persons),
+    // and podcast:updateFrequency complete="true" / itunes:complete (a finished show: no automatic refreshes).
+    val fundingUrl: String? = null,
+    val fundingText: String? = null,
+    val personsJson: String? = null,
+    @ColumnInfo(defaultValue = "0") val complete: Boolean = false,
+    /**
+     * Phase 10 (v8), synced: trim ads stitched onto the episode ("start" or "end"; null = off).
+     * The extra length is the real file's length minus the length the feed states.
+     */
+    val adTrim: String? = null,
 )
 
 @Entity(
@@ -99,6 +110,14 @@ data class Episode(
     // Sync (v5), as on Podcast.
     @ColumnInfo(defaultValue = "0") val dirty: Boolean = false,
     @ColumnInfo(defaultValue = "0") val changedAt: Long = 0,
+    // Phase 10 (v8). Season and episode number (itunes: or podcast: tags), guests (podcast:person JSON).
+    val season: Int? = null,
+    val episodeNo: Double? = null,
+    val personsJson: String? = null,
+    /** The length the feed states (durationMs becomes the real length once played). 0 = unknown. */
+    @ColumnInfo(defaultValue = "0") val feedDurationMs: Long = 0,
+    /** Chapters unticked to be skipped: JSON array of their start times in ms (synced). Null = none. */
+    val skippedChapters: String? = null,
 )
 
 object DownloadState {
@@ -113,6 +132,7 @@ data class EpisodeWithPodcast(
     @Embedded val episode: Episode,
     val podcastTitle: String,
     val podcastImageUrl: String?,
+    val podcastAdTrim: String? = null,
 ) {
     val artworkUrl: String? get() = episode.imageUrl ?: podcastImageUrl
 }

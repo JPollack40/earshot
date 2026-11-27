@@ -68,6 +68,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import com.earshot.app.playback.SleepTimer
+import com.earshot.app.data.feed.SkippedChapters
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextDecoration
 import com.earshot.app.ui.theme.LocalGlow
 import com.earshot.app.ui.theme.rememberArtColor
 import com.earshot.app.ui.AppViewModel
@@ -121,8 +127,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
         ) {
             // Tapping the artwork or the podcast's name opens the podcast (phase 7).
             val openPodcast: () -> Unit = { episode?.episode?.podcastId?.let(vm::openPodcastPage) }
+            val playingChapter = chapters.lastOrNull { it.startMs <= (dragPosition?.toLong() ?: now.positionMs) }
             Artwork(
-                now.artworkUrl,
+                playingChapter?.imageUrl ?: now.artworkUrl,
                 if (glow) 280 else 220,
                 corner = if (glow) 14 else 12,
                 modifier = Modifier.clickable(onClickLabel = "Open podcast", onClick = openPodcast),
@@ -141,7 +148,15 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             val currentChapter = chapters.lastOrNull { it.startMs <= position }
             if (currentChapter != null) {
                 Spacer(Modifier.height(4.dp))
-                Text(currentChapter.title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                val uri = LocalUriHandler.current
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(currentChapter.title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    currentChapter.url?.let { link ->
+                        IconButton(onClick = { runCatching { uri.openUri(link) } }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open chapter link", Modifier.size(16.dp))
+                        }
+                    }
+                }
             }
 
             // ---- Scrubber ----
@@ -178,6 +193,8 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+
+            JumpBackChip(vm)
 
             // ---- Transport ----
             Spacer(Modifier.height(8.dp))
@@ -283,34 +300,69 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.onGloballyPositioned { chaptersTop = it.positionInParent().y.toInt() },
                 )
+                val skipped = episode?.episode?.skippedChapters.let { SkippedChapters.parse(it) }
+                val skippedCount = chapters.count { c -> skipped.any { kotlin.math.abs(it - c.startMs) <= 1_000 } }
                 Text(
-                    "Chapters",
+                    buildString {
+                        append("Chapters")
+                        if (chapters.any { it.generated }) append(" · generated from the transcript")
+                        if (skippedCount > 0) append(" · $skippedCount skipped")
+                    },
                     style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
+                Text(
+                    "Untick a chapter to skip it, here, in the notification and in the car.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                )
+                val uri = LocalUriHandler.current
                 chapters.forEach { ch ->
                     val active = ch == currentChapter
+                    val isSkipped = skipped.any { kotlin.math.abs(it - ch.startMs) <= 1_000 }
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .clickable { vm.player.seekTo(ch.startMs) }
-                            .background(if (active) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface)
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                            .background(if (active) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)
+                            .padding(vertical = 2.dp, horizontal = 0.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Checkbox(
+                            checked = !isSkipped,
+                            onCheckedChange = { vm.setChapterSkipped(ch.startMs, !it) },
+                            modifier = Modifier.size(36.dp),
+                        )
+                        if (ch.imageUrl != null) {
+                            Artwork(ch.imageUrl, 32, corner = 4)
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Text(
                             formatClock(ch.startMs),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(56.dp),
+                            modifier = Modifier.width(52.dp),
                         )
                         Text(
                             ch.title,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                textDecoration = if (isSkipped) TextDecoration.LineThrough else null,
+                            ),
+                            color = when {
+                                isSkipped -> MaterialTheme.colorScheme.onSurfaceVariant
+                                active -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurface
+                            },
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
+                        ch.url?.let { link ->
+                            IconButton(onClick = { runCatching { uri.openUri(link) } }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open chapter link", Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
             }

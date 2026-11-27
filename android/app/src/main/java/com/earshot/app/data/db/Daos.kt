@@ -14,7 +14,7 @@ private const val NOW_MS = "CAST((julianday('now') - 2440587.5) * 86400000 AS IN
 private const val TOUCH = "dirty = 1, changedAt = $NOW_MS"
 
 private const val EPISODE_JOIN =
-    "SELECT e.*, p.title AS podcastTitle, p.imageUrl AS podcastImageUrl " +
+    "SELECT e.*, p.title AS podcastTitle, p.imageUrl AS podcastImageUrl, p.adTrim AS podcastAdTrim " +
         "FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId"
 
 @Dao
@@ -49,9 +49,27 @@ interface PodcastDao {
     /** Feed-provided fields only, so a refresh never overwrites settings changed meanwhile. */
     @Query(
         "UPDATE podcasts SET title = :title, author = :author, description = :description, " +
-            "imageUrl = :imageUrl, lastRefreshedAt = :refreshedAt WHERE id = :id",
+            "imageUrl = :imageUrl, lastRefreshedAt = :refreshedAt, fundingUrl = :fundingUrl, fundingText = :fundingText, " +
+            "personsJson = :personsJson, complete = :complete WHERE id = :id",
     )
-    suspend fun updateMeta(id: Long, title: String, author: String, description: String, imageUrl: String?, refreshedAt: Long)
+    suspend fun updateMeta(
+        id: Long,
+        title: String,
+        author: String,
+        description: String,
+        imageUrl: String?,
+        refreshedAt: Long,
+        fundingUrl: String?,
+        fundingText: String?,
+        personsJson: String?,
+        complete: Boolean,
+    )
+
+    @Query("UPDATE podcasts SET adTrim = :adTrim, $TOUCH WHERE id = :id")
+    suspend fun setAdTrim(id: Long, adTrim: String?)
+
+    @Query("UPDATE podcasts SET adTrim = :adTrim WHERE id = :id")
+    suspend fun applyRemoteAdTrim(id: Long, adTrim: String?)
 
     @Query(
         "UPDATE podcasts SET speed = :speed, smartSpeed = :smartSpeed, voiceBoost = :voiceBoost, " +
@@ -273,7 +291,8 @@ interface EpisodeDao {
     @Query(
         "UPDATE episodes SET title = :title, description = :description, pubDate = :pubDate, " +
             "audioUrl = :audioUrl, mimeType = :mimeType, durationMs = CASE WHEN :durationMs > 0 THEN :durationMs ELSE durationMs END, " +
-            "imageUrl = :imageUrl, chaptersUrl = :chaptersUrl, transcriptUrl = :transcriptUrl, transcriptType = :transcriptType " +
+            "imageUrl = :imageUrl, chaptersUrl = :chaptersUrl, transcriptUrl = :transcriptUrl, transcriptType = :transcriptType, " +
+            "season = :season, episodeNo = :episodeNo, personsJson = :personsJson, feedDurationMs = :durationMs " +
             "WHERE id = :id",
     )
     suspend fun updateMeta(
@@ -288,7 +307,16 @@ interface EpisodeDao {
         chaptersUrl: String?,
         transcriptUrl: String?,
         transcriptType: String?,
+        season: Int?,
+        episodeNo: Double?,
+        personsJson: String?,
     )
+
+    @Query("UPDATE episodes SET skippedChapters = :skipped, $TOUCH WHERE id = :id")
+    suspend fun setSkippedChapters(id: String, skipped: String?)
+
+    @Query("UPDATE episodes SET skippedChapters = :skipped WHERE id = :id")
+    suspend fun applyRemoteSkippedChapters(id: String, skipped: String?)
 
     @Query("UPDATE episodes SET positionMs = :positionMs, lastPlayedAt = :at, $TOUCH WHERE id = :id")
     suspend fun savePosition(id: String, positionMs: Long, at: Long)
