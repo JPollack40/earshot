@@ -1,0 +1,11 @@
+{
+  "cases": [
+    { "a": "https://www.omnycontent.com/d/playlist/E73C/podcast.rss", "b": "https://omnycontent.com/d/playlist/e73c/podcast.rss", "same": true },
+    { "a": "http://feed.20k.org/", "b": "https://feed.20k.org", "same": true },
+    { "a": "feed://example.com/rss", "b": "https://example.com/rss", "same": true },
+    { "a": "example.com/rss/", "b": "https://www.example.com/rss", "same": true },
+    { "a": "  https://example.com/rss  ", "b": "https://example.com/rss", "same": true },
+    { "a": "https://feeds.simplecast.com/BqbsxVfO", "b": "https://feeds.simplecast.com/6owr3EpB", "same": false },
+    { "a": "https://example.com/a", "b": "https://example.com/a/b", "same": false }
+  ]
+}

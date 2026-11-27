@@ -1,0 +1,12 @@
+{
+  "normalize": [
+    { "in": "Don’t Panic", "out": "don't panic" },
+    { "in": "“Quoted” TITLE", "out": "\"quoted\" title" },
+    { "in": "‘Single’", "out": "'single'" }
+  ],
+  "words": [
+    { "in": " Trump, Election ,, ", "out": ["trump", "election"] },
+    { "in": "", "out": [] },
+    { "in": "Don’t stop", "out": ["don't stop"] }
+  ]
+}

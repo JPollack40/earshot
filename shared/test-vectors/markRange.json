@@ -1,0 +1,19 @@
+{
+  "episodes": [
+    { "id": "e1", "podcast": "p1", "pub": 100 },
+    { "id": "e2", "podcast": "p1", "pub": 200, "played": true },
+    { "id": "e3", "podcast": "p1", "pub": 300, "queue": 0 },
+    { "id": "e4", "podcast": "p1", "pub": 400 },
+    { "id": "e5", "podcast": "p1", "pub": 500 },
+    { "id": "e6", "podcast": "p1", "pub": 600 },
+    { "id": "e7", "podcast": "p1", "pub": 700 },
+    { "id": "t1", "podcast": "p1", "pub": 500 },
+    { "id": "other", "podcast": "p2", "pub": 50 }
+  ],
+  "cases": [
+    { "anchor": "e5", "direction": "older", "loaded": null, "ids": ["e1", "e4"], "skipped": 1 },
+    { "anchor": "e5", "direction": "newer", "loaded": "e7", "ids": ["e6"], "skipped": 1 },
+    { "anchor": "e1", "direction": "older", "loaded": null, "ids": [], "skipped": 0 },
+    { "anchor": "e1", "direction": "newer", "loaded": null, "ids": ["e4", "e5", "e6", "e7", "t1"], "skipped": 1 }
+  ]
+}

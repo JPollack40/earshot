@@ -134,6 +134,7 @@ dependencies {
     implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
 }
 
 /** The four values the app needs from google-services.json, for [packageName]; empty if the file is missing. */
