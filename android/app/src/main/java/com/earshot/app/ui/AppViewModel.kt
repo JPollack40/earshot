@@ -64,6 +64,10 @@ sealed interface Screen {
     data class PlaylistDetail(val playlistId: String) : Screen
     /** "Set up for your car" (phase 9): getting Earshot into Android Auto. */
     data object CarSetup : Screen
+    /** Listening stats (Stats phase). */
+    data object Stats : Screen
+    /** A week, month or year in review, for the calendar period starting at [from]. */
+    data class StatsReview(val kind: com.earshot.app.data.stats.ReviewKind, val from: Long) : Screen
 }
 
 /** Library tabs. Phase 7: Playlists added; the app opens on Podcasts. */
