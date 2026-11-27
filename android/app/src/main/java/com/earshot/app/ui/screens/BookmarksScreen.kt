@@ -131,11 +131,17 @@ private fun EpisodeGroupHeader(vm: AppViewModel, episodeId: String, sample: Book
             .padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(sample.imageUrl, 40)
+        val openPodcast: () -> Unit = { vm.openPodcastByFeed(sample.feedUrl) }
+        val canOpen = sample.feedUrl.isNotBlank()
+        Artwork(
+            sample.imageUrl,
+            40,
+            modifier = if (canOpen) Modifier.clickable(onClickLabel = "Open podcast", onClick = openPodcast) else Modifier,
+        )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(sample.episodeTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(sample.podcastTitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            PodcastLink(sample.podcastTitle, if (canOpen) openPodcast else null)
         }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }

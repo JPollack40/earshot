@@ -8,7 +8,9 @@ import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.Settings
 import com.earshot.app.data.db.Bookmark
 import com.earshot.app.data.db.Episode
+import com.earshot.app.data.db.Playlist
 import com.earshot.app.data.db.Podcast
+import com.earshot.app.data.TidyDefaults
 import com.earshot.app.playback.PlaybackService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
@@ -54,11 +56,15 @@ class SyncEngine(private val app: EarshotApp) {
     fun start() {
         app.appScope.launch {
             combine(
-                podcastDao.observeDirtyCount(),
-                episodeDao.observeDirtyCount(),
-                app.db.transcripts().observeDirtyCount(),
-                app.db.bookmarks().observeDirtyCount(),
-            ) { a, b, c, d -> a + b + c + d }
+                listOf(
+                    podcastDao.observeDirtyCount(),
+                    episodeDao.observeDirtyCount(),
+                    app.db.transcripts().observeDirtyCount(),
+                    app.db.bookmarks().observeDirtyCount(),
+                    app.db.playlists().observeDirtyCount(),
+                    app.db.listens().observeDirtyCount(),
+                ),
+            ) { counts -> counts.sum() }
                 .distinctUntilChanged() // playback saves positions every 5 s; react to new dirty rows, not each save
                 .filter { it > 0 }
                 .debounce(10_000)
@@ -98,7 +104,7 @@ class SyncEngine(private val app: EarshotApp) {
     /** After signing in on this phone: everything is uploaded again and everything pulled from the start. */
     suspend fun resetForNewAccount() {
         prefs.edit().remove("rev_podcasts").remove("rev_episodes").remove("rev_settings")
-            .remove("rev_transcripts").remove("rev_bookmarks").apply()
+            .remove("rev_transcripts").remove("rev_bookmarks").remove("rev_playlists").apply()
     }
 
     // ---------------------------------------------------------------- push
@@ -111,7 +117,7 @@ class SyncEngine(private val app: EarshotApp) {
         // player knows their title and artwork).
         val dirtyPodcasts = podcastDao.dirty()
         if (dirtyPodcasts.isNotEmpty()) {
-            supabase.upsert("podcasts", "user_id,feed_url", JSONArray(dirtyPodcasts.map(::podcastJson)))
+            upsertPodcasts(dirtyPodcasts)
             for (p in dirtyPodcasts) podcastDao.markClean(p.id, p.changedAt)
             n += dirtyPodcasts.size
         }
@@ -122,7 +128,7 @@ class SyncEngine(private val app: EarshotApp) {
             if (batch.isEmpty()) break
             val hidden = batch.mapNotNull { byId[it.podcastId] }.filter { !it.subscribed && it.id !in pushedPodcastIds }.distinctBy { it.id }
             if (hidden.isNotEmpty()) {
-                supabase.upsert("podcasts", "user_id,feed_url", JSONArray(hidden.map(::podcastJson)))
+                upsertPodcasts(hidden)
                 pushedPodcastIds += hidden.map { it.id }
             }
             val rows = batch.mapNotNull { e -> byId[e.podcastId]?.let { episodeJson(e, it.feedUrl) } }
@@ -131,7 +137,99 @@ class SyncEngine(private val app: EarshotApp) {
             n += batch.size
             if (batch.size < 500) break
         }
-        return n + pushSettings() + phase6 { pushTranscripts() } + phase6 { pushBookmarks() }
+        return n + pushSettings() + phase6 { pushTranscripts() } + phase6 { pushBookmarks() } +
+            phase7 { pushPlaylists() } + phase7 { pushListens() }
+    }
+
+    /**
+     * The rule columns on podcasts come from supabase/migrations/003_automation_playlists.sql. Until
+     * that has been run, podcasts go up without them (logged) so the rest of sync keeps working.
+     */
+    private var rulesColumns = true
+
+    private suspend fun upsertPodcasts(list: List<Podcast>) {
+        if (rulesColumns) {
+            try {
+                supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = true) }))
+                return
+            } catch (e: SupabaseException) {
+                if (!missingSchema(e)) throw e
+                rulesColumns = false
+                Log.w(TAG, "Sync: podcasts have no rule columns yet (run 003_automation_playlists.sql)")
+            }
+        }
+        supabase.upsert("podcasts", "user_id,feed_url", JSONArray(list.map { podcastJson(it, rules = false) }))
+    }
+
+    private fun missingSchema(e: SupabaseException): Boolean {
+        val m = e.message ?: ""
+        return e.status == 404 || m.contains("Could not find the") || m.contains("PGRST204") || m.contains("PGRST205")
+    }
+
+    /** Like [phase6], for the playlists and listens tables (003_automation_playlists.sql). */
+    private suspend fun phase7(block: suspend () -> Int): Int = try {
+        block()
+    } catch (e: SupabaseException) {
+        if (!missingSchema(e)) throw e
+        Log.w(TAG, "Sync: playlists/listens tables missing (run 003_automation_playlists.sql)")
+        0
+    }
+
+    private suspend fun pushPlaylists(): Int {
+        val dao = app.db.playlists()
+        val batch = dao.dirty(500)
+        if (batch.isNotEmpty()) {
+            val rows = JSONArray()
+            for (p in batch) {
+                rows.put(
+                    JSONObject()
+                        .put("id", p.id)
+                        .put("name", p.name)
+                        .put("position", p.position)
+                        .put("filters", JSONObject(p.filtersJson))
+                        .put("deleted", p.deleted)
+                        .put("changed_at", p.changedAt),
+                )
+            }
+            supabase.upsert("playlists", "user_id,id", rows)
+            for (p in batch) dao.markClean(p.id, p.changedAt)
+        }
+        dao.purgeDeleted(System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000)
+        return batch.size
+    }
+
+    /** Listening history only goes up (this phone never needs the web's history). */
+    private suspend fun pushListens(): Int {
+        val dao = app.db.listens()
+        var n = 0
+        for (round in 0 until 20) {
+            val batch = dao.dirty(500)
+            if (batch.isEmpty()) break
+            val rows = JSONArray()
+            for (l in batch) {
+                rows.put(
+                    JSONObject()
+                        .put("id", l.id)
+                        .put("episode_id", l.episodeId)
+                        .put("feed_url", l.feedUrl)
+                        .put("podcast_title", l.podcastTitle)
+                        .put("episode_title", l.episodeTitle)
+                        .put("started_at", l.startedAt)
+                        .put("ended_at", l.endedAt)
+                        .put("listened_ms", l.listenedMs)
+                        .put("from_ms", l.fromMs)
+                        .put("to_ms", l.toMs)
+                        .put("speed", l.speed.toDouble())
+                        .put("device", l.device)
+                        .put("changed_at", l.changedAt),
+                )
+            }
+            supabase.upsert("listens", "user_id,id", rows)
+            for (l in batch) dao.markClean(l.id, l.changedAt)
+            n += batch.size
+            if (batch.size < 500) break
+        }
+        return n
     }
 
     /**
@@ -192,12 +290,16 @@ class SyncEngine(private val app: EarshotApp) {
         if (!Settings.playbackDirty(app)) return 0
         val changedAt = Settings.playbackChangedAt(app).takeIf { it > 0 } ?: System.currentTimeMillis()
         val d = Settings.playbackDefaults(app).value
+        val t = Settings.tidyDefaults(app).value
+        // The tidy-up defaults (phase 7) ride in the same JSON as the playback defaults.
         val playback = JSONObject()
             .put("speed", d.speed.toDouble())
             .put("smartSpeed", d.smartSpeed)
             .put("voiceBoost", d.voiceBoost)
             .put("skipBackMs", d.skipBackMs)
             .put("skipForwardMs", d.skipForwardMs)
+            .put("inboxDays", t.inboxDays)
+            .put("inboxKeep", t.inboxKeep)
         supabase.upsert("settings", "user_id", JSONArray().put(JSONObject().put("playback", playback).put("changed_at", changedAt)))
         Settings.markPlaybackClean(app, Settings.playbackChangedAt(app))
         return 1
@@ -207,7 +309,8 @@ class SyncEngine(private val app: EarshotApp) {
 
     private suspend fun pull(): Int {
         var n = 0
-        n += pullTable("podcasts", "rev_podcasts") { applyPodcast(it) }
+        var rulesChanged = false
+        n += pullTable("podcasts", "rev_podcasts") { if (applyPodcast(it)) rulesChanged = true }
         val newlyQueued = mutableSetOf<String>()
         var anyPlayed = false
         var anyEpisode = false
@@ -221,7 +324,10 @@ class SyncEngine(private val app: EarshotApp) {
         }
         if (anyEpisode) repo.tidyQueueAfterSync(newlyQueued)
         if (anyPlayed) app.cleanupDownloads("sync")
-        n += pullTable("settings", "rev_settings") { applySettings(it) }
+        n += pullTable("settings", "rev_settings") { if (applySettings(it)) rulesChanged = true }
+        n += phase7 { pullTable("playlists", "rev_playlists") { applyPlaylist(it) } }
+        // Tidy-up rules changed elsewhere (e.g. in the web player): apply them here now.
+        if (rulesChanged) runCatching { repo.tidyInbox() }
         n += phase6 { pullTable("transcripts", "rev_transcripts", pageSize = 10) { o ->
             app.transcripts.applyRemote(
                 episodeId = o.getString("episode_id"),
@@ -255,13 +361,14 @@ class SyncEngine(private val app: EarshotApp) {
         }
     }
 
-    private suspend fun applyPodcast(o: JSONObject) {
+    /** Returns true if it changed the podcast's tidy-up rules. */
+    private suspend fun applyPodcast(o: JSONObject): Boolean {
         val feedUrl = o.getString("feed_url")
         val changedAt = o.optLong("changed_at")
         val subscribed = o.optBoolean("subscribed", true)
         var local = repo.findPodcast(feedUrl)
         if (local == null) {
-            if (!subscribed) return // hidden podcasts come in with their episodes, when needed
+            if (!subscribed) return false // hidden podcasts come in with their episodes, when needed
             try {
                 repo.subscribe(feedUrl, inboxNewest = false) // fetches the feed
             } catch (e: CancellationException) {
@@ -269,12 +376,16 @@ class SyncEngine(private val app: EarshotApp) {
             } catch (e: Exception) {
                 // A dead or unreachable feed mustn't block every later sync; it's skipped (logged).
                 Log.w(TAG, "Sync: couldn't subscribe to $feedUrl added elsewhere", e)
-                return
+                return false
             }
-            local = repo.findPodcast(feedUrl) ?: return
+            local = repo.findPodcast(feedUrl) ?: return false
         } else if (changedAt <= local.changedAt) {
-            return // this phone's copy is as new or newer
+            return false // this phone's copy is as new or newer
         }
+        // Rule columns are missing from rows written before 003 was run: keep this phone's values then.
+        fun <T> rule(name: String, read: () -> T?, mine: T?): T? = if (o.has(name)) read() else mine
+        val inboxDays = rule("inbox_days", { o.optNullableLong("inbox_days")?.toInt() }, local.inboxDays)
+        val inboxKeep = rule("inbox_keep", { o.optNullableLong("inbox_keep")?.toInt() }, local.inboxKeep)
         val becomesSubscribed = subscribed && !local.subscribed
         podcastDao.applyRemote(
             id = local.id,
@@ -285,12 +396,39 @@ class SyncEngine(private val app: EarshotApp) {
             voiceBoost = o.optNullableBoolean("voice_boost"),
             skipBackMs = o.optNullableLong("skip_back_ms"),
             skipForwardMs = o.optNullableLong("skip_forward_ms"),
+            action = rule("new_episode_action", { o.optNullableString("new_episode_action") }, local.newEpisodeAction),
+            includeWords = rule("include_words", { o.optNullableString("include_words") }, local.includeWords),
+            excludeWords = rule("exclude_words", { o.optNullableString("exclude_words") }, local.excludeWords),
+            minMinutes = rule("min_minutes", { o.optNullableLong("min_minutes")?.toInt() }, local.minMinutes),
+            maxMinutes = rule("max_minutes", { o.optNullableLong("max_minutes")?.toInt() }, local.maxMinutes),
+            inboxDays = inboxDays,
+            inboxKeep = inboxKeep,
             changedAt = changedAt,
         )
         when {
             becomesSubscribed -> repo.subscribe(local.feedUrl, inboxNewest = false)
             local.subscribed && !subscribed -> repo.unsubscribe(local.id, keepId = PlaybackService.protectedEpisodeId)
         }
+        return inboxDays != local.inboxDays || inboxKeep != local.inboxKeep
+    }
+
+    private suspend fun applyPlaylist(o: JSONObject) {
+        val dao = app.db.playlists()
+        val id = o.getString("id")
+        val changedAt = o.optLong("changed_at")
+        val local = dao.get(id)
+        if (local != null && local.changedAt >= changedAt) return
+        dao.upsert(
+            Playlist(
+                id = id,
+                name = o.optString("name"),
+                position = o.optInt("position"),
+                filtersJson = (o.optJSONObject("filters") ?: JSONObject()).toString(),
+                deleted = o.optBoolean("deleted"),
+                dirty = false,
+                changedAt = changedAt,
+            ),
+        )
     }
 
     private class Applied(val queued: Boolean, val played: Boolean)
@@ -395,11 +533,18 @@ class SyncEngine(private val app: EarshotApp) {
         )
     }
 
-    private fun applySettings(o: JSONObject) {
+    /** Returns true if it changed the tidy-up defaults. */
+    private fun applySettings(o: JSONObject): Boolean {
         val changedAt = o.optLong("changed_at")
-        if (changedAt <= Settings.playbackChangedAt(app)) return
-        val p = o.optJSONObject("playback") ?: return
+        if (changedAt <= Settings.playbackChangedAt(app)) return false
+        val p = o.optJSONObject("playback") ?: return false
         val cur = Settings.playbackDefaults(app).value
+        val tidy = Settings.tidyDefaults(app).value
+        val newTidy = TidyDefaults(
+            inboxDays = p.optInt("inboxDays", tidy.inboxDays),
+            inboxKeep = p.optInt("inboxKeep", tidy.inboxKeep),
+        )
+        Settings.applyRemoteTidy(app, newTidy)
         Settings.applyRemotePlayback(
             app,
             PlaybackDefaults(
@@ -411,11 +556,12 @@ class SyncEngine(private val app: EarshotApp) {
             ),
             changedAt,
         )
+        return newTidy != tidy
     }
 
     // ---------------------------------------------------------------- JSON
 
-    private fun podcastJson(p: Podcast) = JSONObject()
+    private fun podcastJson(p: Podcast, rules: Boolean) = JSONObject()
         .put("feed_url", p.feedUrl)
         .put("title", p.title)
         .put("author", p.author)
@@ -429,6 +575,17 @@ class SyncEngine(private val app: EarshotApp) {
         .put("skip_back_ms", p.skipBackMs ?: JSONObject.NULL)
         .put("skip_forward_ms", p.skipForwardMs ?: JSONObject.NULL)
         .put("changed_at", p.changedAt)
+        .apply {
+            if (rules) {
+                put("new_episode_action", p.newEpisodeAction ?: JSONObject.NULL)
+                put("include_words", p.includeWords ?: JSONObject.NULL)
+                put("exclude_words", p.excludeWords ?: JSONObject.NULL)
+                put("min_minutes", p.minMinutes ?: JSONObject.NULL)
+                put("max_minutes", p.maxMinutes ?: JSONObject.NULL)
+                put("inbox_days", p.inboxDays ?: JSONObject.NULL)
+                put("inbox_keep", p.inboxKeep ?: JSONObject.NULL)
+            }
+        }
 
     private fun episodeJson(e: Episode, feedUrl: String) = JSONObject()
         .put("id", e.id)

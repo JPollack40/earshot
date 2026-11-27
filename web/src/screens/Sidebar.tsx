@@ -11,6 +11,7 @@ export const TABS: { tab: Tab; label: string; short: string; icon: string }[] = 
   { tab: "queue", label: "Queue", short: "Queue", icon: "queue" },
   { tab: "new", label: "New Episodes", short: "New", icon: "new" },
   { tab: "latest", label: "Latest", short: "Latest", icon: "latest" },
+  { tab: "playlists", label: "Playlists", short: "Playlists", icon: "playlists" },
   { tab: "podcasts", label: "Podcasts", short: "Podcasts", icon: "podcasts" },
 ];
 
@@ -32,10 +33,11 @@ export function tabCount(s: store.State, tab: Tab): number | "" {
   if (tab === "queue") return store.queue(s).length || "";
   if (tab === "new") return store.inbox(s).length || "";
   if (tab === "podcasts") return store.library(s).length || "";
+  if (tab === "playlists") return store.playlists(s).length || "";
   return "";
 }
 
-/** Glow's left sidebar: the four sections, pinned podcasts, and account actions. */
+/** Glow's left sidebar: the five sections, pinned podcasts, and account actions. */
 export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: Nav; activeFeed: string | null; page: string }) {
   const s = store.useStore();
   const pinned = store.library(s).filter((p) => p.pinned);
@@ -104,7 +106,7 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
   );
 }
 
-/** Glow at phone width: the four sections as a bottom tab bar, like the Android app. */
+/** Glow at phone width: the five sections as a bottom tab bar, like the Android app. */
 export function BottomTabs({ tab, nav }: { tab: Tab | null; nav: Nav }) {
   const s = store.useStore();
   return (

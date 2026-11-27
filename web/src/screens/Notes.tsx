@@ -17,7 +17,7 @@ import {
 } from "../transcript";
 import type { EpisodeRow } from "../types";
 import { formatClock, searchTerms } from "../util";
-import { Art, type Nav } from "./common";
+import { Art, ArtLink, PodcastLink, type Nav } from "./common";
 import { Glyph } from "./Icons";
 
 // Phase 6 pages: an episode's transcript, all bookmarks, and search across transcripts.
@@ -28,6 +28,8 @@ export interface EpisodeInfo {
   episode: EpisodeRow | undefined;
   title: string;
   podcastTitle: string;
+  /** The podcast's feed, for opening it (phase 7); "" when unknown. */
+  feedUrl: string;
   image: string | null;
   audioUrl: string | null;
   pubDate: number;
@@ -42,6 +44,7 @@ export function episodeInfo(id: string, s: store.State = store.getState(), n: no
     episode: e,
     title: e?.title ?? b?.episode_title ?? "Episode",
     podcastTitle: pod?.title ?? b?.podcast_title ?? "",
+    feedUrl: e?.feed_url ?? b?.feed_url ?? "",
     image: e?.image_url ?? pod?.image_url ?? b?.image_url ?? null,
     audioUrl: e?.audio_url ?? b?.audio_url ?? null,
     pubDate: e?.pub_date ?? 0,
@@ -255,7 +258,8 @@ export function TranscriptPage({ episodeId, focusMs, nav }: { episodeId: string;
         <div className="grow ellipsis-col">
           <h1 className="ellipsis">{info.title}</h1>
           <div className="meta ellipsis">
-            {[info.podcastTitle, t ? (t.source === "deepgram" ? "Transcribed by Deepgram" : t.source === "gemini" ? "Transcribed by Gemini" : "Transcript from the feed") : null].filter(Boolean).join(" · ")}
+            <PodcastLink feedUrl={info.feedUrl} title={info.podcastTitle} />
+            {t ? `${info.podcastTitle ? " · " : ""}${t.source === "deepgram" ? "Transcribed by Deepgram" : t.source === "gemini" ? "Transcribed by Gemini" : "Transcript from the feed"}` : ""}
           </div>
         </div>
         {isLoaded && <BookmarkButton className="icon" iconOnly />}
@@ -511,11 +515,11 @@ export function BookmarksPage({ nav }: { nav: Nav }) {
           return (
             <div key={g.id} className="bm-group">
               <div className="row bm-head">
-                <Art url={info.image} size={40} />
+                {info.feedUrl ? <ArtLink url={info.image} size={40} feedUrl={info.feedUrl} /> : <Art url={info.image} size={40} />}
                 <button className="row-main" onClick={() => nav.open({ name: "transcript", episodeId: g.id })}>
                   <div className="title">{info.title}</div>
                   <div className="meta">
-                    {info.podcastTitle} · {g.list.length} bookmark{g.list.length === 1 ? "" : "s"}
+                    <PodcastLink feedUrl={info.feedUrl} title={info.podcastTitle} /> · {g.list.length} bookmark{g.list.length === 1 ? "" : "s"}
                   </div>
                 </button>
                 <Menu
@@ -618,13 +622,15 @@ export function TranscriptSearchPage({ nav }: { nav: Nav }) {
           const info = episodeInfo(hit.episodeId, s, n);
           return (
             <div key={hit.episodeId} className="bm-group">
-              <button className="row bm-head s-head" onClick={() => nav.open({ name: "transcript", episodeId: hit.episodeId })}>
-                <Art url={info.image} size={36} />
-                <div className="row-main">
+              <div className="row bm-head s-head">
+                {info.feedUrl ? <ArtLink url={info.image} size={36} feedUrl={info.feedUrl} /> : <Art url={info.image} size={36} />}
+                <button className="row-main" onClick={() => nav.open({ name: "transcript", episodeId: hit.episodeId })}>
                   <div className="title">{info.title}</div>
-                  <div className="meta">{info.podcastTitle}</div>
-                </div>
-              </button>
+                  <div className="meta">
+                    <PodcastLink feedUrl={info.feedUrl} title={info.podcastTitle} />
+                  </div>
+                </button>
+              </div>
               {hit.matches.map((m, i) => (
                 <button key={`${m.s}-${i}`} className="s-hit" onClick={() => nav.open({ name: "transcript", episodeId: hit.episodeId, focusMs: m.s })}>
                   <span className="time">{formatClock(m.s)}</span>

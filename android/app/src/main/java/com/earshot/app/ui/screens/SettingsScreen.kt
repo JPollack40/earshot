@@ -124,6 +124,10 @@ fun SettingsScreen(vm: AppViewModel) {
             }
             divider()
 
+            val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
+            TidySettings(tidy, vm::updateTidyDefaults)
+            divider()
+
             SectionHeader("Downloads")
             SettingRow(
                 title = "Download queued episodes",

@@ -6,8 +6,9 @@ import { formatDuration } from "../util";
 import { Art, EpisodeItem, type Nav } from "./common";
 import { Glyph, Icon } from "./Icons";
 import { AppearanceMenu, Hero, newCounts, signOut } from "./Sidebar";
+import { PlaylistsTab, TidyPanel, tidyLabel } from "./Playlists";
 
-export type Tab = "queue" | "new" | "latest" | "podcasts";
+export type Tab = "queue" | "new" | "latest" | "playlists" | "podcasts";
 
 export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
   const s = store.useStore();
@@ -15,6 +16,7 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
   const glow = a.theme === "glow";
   const p = player.usePlayer();
   const [dragId, setDragId] = useState<string | null>(null);
+  const [tidyOpen, setTidyOpen] = useState(false);
   const queue = store.queue(s);
   const inbox = store.inbox(s);
   const lib = store.library(s);
@@ -31,8 +33,8 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
   const header = glow ? (
     <Hero
       tint={tint}
-      eyebrow={{ queue: "Up next", new: "From your podcasts", latest: "Everything recent", podcasts: "Your library" }[tab]}
-      title={{ queue: "Queue", new: "New Episodes", latest: "Latest", podcasts: "Podcasts" }[tab]}
+      eyebrow={{ queue: "Up next", new: "From your podcasts", latest: "Everything recent", playlists: "Smart playlists", podcasts: "Your library" }[tab]}
+      title={{ queue: "Queue", new: "New Episodes", latest: "Latest", playlists: "Playlists", podcasts: "Podcasts" }[tab]}
       summary={
         tab === "queue"
           ? queue.length
@@ -44,7 +46,11 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
               : "All caught up"
             : tab === "latest"
               ? "Newest episodes across your podcasts"
-              : `${lib.length} podcast${lib.length === 1 ? "" : "s"}${lib.some((x) => x.pinned) ? ` · ${lib.filter((x) => x.pinned).length} pinned` : ""}`
+              : tab === "playlists"
+                ? store.playlists(s).length
+                  ? `${store.playlists(s).length} playlist${store.playlists(s).length === 1 ? "" : "s"}`
+                  : "Saved filters that keep themselves up to date"
+                : `${lib.length} podcast${lib.length === 1 ? "" : "s"}${lib.some((x) => x.pinned) ? ` · ${lib.filter((x) => x.pinned).length} pinned` : ""}`
       }
     >
       {/* At phone width there's no sidebar, so its actions sit here. */}
@@ -109,6 +115,9 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
         <button className={tab === "latest" ? "on" : ""} onClick={() => nav.showTab("latest")}>
           Latest
         </button>
+        <button className={tab === "playlists" ? "on" : ""} onClick={() => nav.showTab("playlists")}>
+          Playlists
+        </button>
         <button className={tab === "podcasts" ? "on" : ""} onClick={() => nav.showTab("podcasts")}>
           Podcasts {lib.length || ""}
         </button>
@@ -155,17 +164,20 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
 
       {s.loaded && tab === "new" && (
         <section className="list">
-          {inbox.length === 0 ? (
-            <div className="empty">All caught up. New episodes from your podcasts show up here.</div>
-          ) : (
-            <div className="subbar">
-              <span className="muted small">{inbox.length} new</span>
-              <span className="spacer" />
+          <div className="subbar">
+            <span className="muted small">{inbox.length ? `${inbox.length} new` : ""}</span>
+            <span className="spacer" />
+            <button className="text" title="Archive old New Episodes automatically" aria-expanded={tidyOpen} onClick={() => setTidyOpen(!tidyOpen)}>
+              {tidyLabel(s)}
+            </button>
+            {inbox.length > 0 && (
               <button className="text" onClick={store.archiveAll}>
                 Archive all
               </button>
-            </div>
-          )}
+            )}
+          </div>
+          {tidyOpen && <TidyPanel />}
+          {inbox.length === 0 && <div className="empty">All caught up. New episodes from your podcasts show up here.</div>}
           {inbox.map((e) => (
             <EpisodeItem
               key={e.id}
@@ -194,6 +206,8 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
           ))}
         </section>
       )}
+
+      {s.loaded && tab === "playlists" && <PlaylistsTab nav={nav} />}
 
       {s.loaded && tab === "podcasts" && glow && (
         <div className="subbar view-switch">

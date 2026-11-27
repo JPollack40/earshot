@@ -12,13 +12,15 @@ import com.earshot.app.playback.PlaybackService
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
-/** Once a day, deletes downloads that the retention settings say are no longer needed. */
+/** Once a day, deletes downloads that the retention settings say are no longer needed, and applies the tidy-up rules. */
 class CleanupWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as EarshotApp
         return try {
             val n = app.repository.cleanupDownloads(PlaybackService.protectedEpisodeId)
             Log.i("Earshot", "Daily download cleanup: $n deleted")
+            // Tidy-up rules (phase 7): New Episodes past their day limit go even without a refresh.
+            app.repository.tidyInbox()
             Result.success()
         } catch (e: CancellationException) {
             throw e

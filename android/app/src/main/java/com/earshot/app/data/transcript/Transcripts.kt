@@ -50,6 +50,9 @@ data class TranscriptHit(
     val podcastTitle: String,
     val artworkUrl: String?,
     val matches: List<Segment>,
+    /** For opening the podcast (phase 7): its id when the episode is in the library, else its feed. */
+    val podcastId: Long? = null,
+    val feedUrl: String = "",
 )
 
 /**
@@ -271,6 +274,8 @@ class Transcripts(private val app: EarshotApp) {
                 podcastTitle = ep?.podcastTitle ?: b?.podcastTitle.orEmpty(),
                 artworkUrl = ep?.artworkUrl ?: b?.imageUrl,
                 matches = idx.take(20).map { loaded.segments[it] },
+                podcastId = ep?.episode?.podcastId,
+                feedUrl = b?.feedUrl.orEmpty(),
             )
         }
         out

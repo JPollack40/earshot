@@ -5,7 +5,7 @@ import * as store from "../store";
 import { SKIPS_MS, SPEEDS, type PlaybackDefaults, type PodcastRow } from "../types";
 import { formatClock, hasOwnAudio, skipName, speedName } from "../util";
 import { setAppearance, useAppearance, useArtColor } from "../appearance";
-import { Art, PlayerError, type Nav } from "./common";
+import { Art, PlayerError, PodcastLink, type Nav } from "./common";
 import { Icon } from "./Icons";
 import { BookmarkButton, TranscriptButton } from "./Notes";
 
@@ -92,7 +92,10 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
             {p.error ? (
               <PlayerError className="g-error" />
             ) : (
-              <div className="meta ellipsis">{[chapter?.title, podcast?.title].filter(Boolean).join(" · ")}</div>
+              <div className="meta ellipsis">
+                {chapter?.title ? `${chapter.title} · ` : ""}
+                <PodcastLink feedUrl={e.feed_url} title={podcast?.title} />
+              </div>
             )}
           </div>
           <button className="icon g-mobile-panel" title="Now playing" onClick={() => setAppearance({ nowPanel: true })}>
@@ -151,7 +154,7 @@ export function PlayerBar({ prefs, podcast, nav }: { prefs: PlaybackDefaults; po
         </button>
         <div className="grow ellipsis-col">
           <div className="title ellipsis">{e.title}</div>
-          <div className="meta ellipsis">{chapter ? chapter.title : podcast?.title}</div>
+          <div className="meta ellipsis">{chapter ? chapter.title : <PodcastLink feedUrl={e.feed_url} title={podcast?.title} />}</div>
         </div>
         <button className="icon skip" title={`Back ${skipName(prefs.skipBackMs)}`} onClick={() => player.skipBy(-prefs.skipBackMs)}>
           ↺<small>{prefs.skipBackMs < 60000 ? prefs.skipBackMs / 1000 : `${prefs.skipBackMs / 60000}m`}</small>

@@ -7,6 +7,17 @@ import com.earshot.app.data.db.AppDatabase
 import com.earshot.app.data.db.DownloadState
 import com.earshot.app.data.db.Episode
 import com.earshot.app.data.db.Podcast
+import com.earshot.app.data.db.EpisodeWithPodcast
+import com.earshot.app.data.db.Playlist
+import com.earshot.app.data.db.PlaylistRow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import com.earshot.app.data.feed.Chapter
 import com.earshot.app.data.feed.ChaptersParser
 import com.earshot.app.data.feed.FeedParser
@@ -42,6 +53,7 @@ private const val TAG = "Earshot"
 class FeedFormatException(message: String, cause: Throwable) : IOException(message, cause)
 private const val DAY_MS = 24L * 60 * 60 * 1000
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class Repository(private val context: Context, private val db: AppDatabase) {
     val podcasts = db.podcasts()
     val episodes = db.episodes()
@@ -395,7 +407,9 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             imageUrl = feed.imageUrl ?: podcast.imageUrl,
             refreshedAt = System.currentTimeMillis(),
         )
-        saveEpisodes(podcast.id, podcast.feedUrl, feed, inbox, upload = podcast.subscribed)
+        // Rules use the podcast as it is now (they may have changed since [podcast] was read).
+        val rules = podcasts.get(podcast.id) ?: podcast
+        saveEpisodes(podcast.id, podcast.feedUrl, feed, inbox, upload = podcast.subscribed, rules = rules.takeIf { it.subscribed })
     }
 
     suspend fun refresh(podcastId: Long): Int = podcasts.get(podcastId)?.let { refresh(it) } ?: 0
@@ -413,6 +427,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 0
             }
         }
+        runCatching { tidyInbox() }.onFailure { Log.w(TAG, "Tidy-up after refresh failed", it) }
         return total
     }
 
@@ -433,12 +448,26 @@ class Repository(private val context: Context, private val db: AppDatabase) {
      * [upload]: mark new episodes for the next sync when they matter to other devices (in the New
      * Episodes list, or recent enough for the web player's Latest tab). False for previews.
      */
-    private suspend fun saveEpisodes(podcastId: Long, feedUrl: String, feed: ParsedFeed, inbox: InboxMode, upload: Boolean): Int {
+    private suspend fun saveEpisodes(
+        podcastId: Long,
+        feedUrl: String,
+        feed: ParsedFeed,
+        inbox: InboxMode,
+        upload: Boolean,
+        rules: Podcast? = null,
+    ): Int {
         val existing = episodes.idsForPodcast(podcastId).toHashSet()
         val parsed = feed.episodes.map { it.toEntity(podcastId, feedUrl) }.distinctBy { it.id }
         val newest = parsed.filter { it.id !in existing }
+        // New-episode rules (phase 7) apply to episodes found by a refresh of a subscribed podcast.
+        val actions = if (inbox == InboxMode.ALL_NEW && rules != null) {
+            newest.associate { it.id to Automation.actionFor(rules, it.title, it.durationMs) }
+        } else {
+            emptyMap()
+        }
         val inboxIds = when (inbox) {
-            InboxMode.ALL_NEW -> newest.map { it.id }.toSet()
+            InboxMode.ALL_NEW -> newest.filter { (actions[it.id] ?: Automation.NewEpisodeAction.INBOX) == Automation.NewEpisodeAction.INBOX }
+                .map { it.id }.toSet()
             InboxMode.NEWEST -> setOfNotNull(newest.maxByOrNull { it.pubDate }?.id)
             InboxMode.NONE -> emptySet()
         }
@@ -468,7 +497,161 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 }
             }
         }
+        // Rules that queue: oldest first, so the newest ends up first (play next) or last (end of queue).
+        for (e in newest.sortedBy { it.pubDate }) {
+            when (actions[e.id]) {
+                Automation.NewEpisodeAction.QUEUE_NEXT -> queueNext(e.id)
+                Automation.NewEpisodeAction.QUEUE_LAST -> queueLast(e.id)
+                Automation.NewEpisodeAction.SKIP -> Log.i(TAG, "Rule skipped new episode \"${e.title}\"")
+                else -> Unit
+            }
+        }
         return fresh.size
+    }
+
+    // ---- Automation (phase 7) ----
+
+    suspend fun updateRules(id: Long, change: (Podcast) -> Podcast) {
+        val p = podcasts.get(id) ?: return
+        val n = change(p)
+        podcasts.updateRules(
+            id = id,
+            action = n.newEpisodeAction?.takeIf { it != Automation.NewEpisodeAction.INBOX.key },
+            includeWords = n.includeWords?.trim()?.ifBlank { null },
+            excludeWords = n.excludeWords?.trim()?.ifBlank { null },
+            minMinutes = n.minMinutes?.takeIf { it > 0 },
+            maxMinutes = n.maxMinutes?.takeIf { it > 0 },
+            inboxDays = n.inboxDays,
+            inboxKeep = n.inboxKeep,
+        )
+        if (n.inboxDays != p.inboxDays || n.inboxKeep != p.inboxKeep) tidyInbox()
+    }
+
+    private val tidyLock = Mutex()
+
+    /**
+     * Applies the tidy-up rules to New Episodes: archives entries older than the podcast's (or the
+     * default) number of days, and beyond its "keep latest" count. Returns how many were archived.
+     */
+    suspend fun tidyInbox(now: Long = System.currentTimeMillis()): Int = withContext(Dispatchers.IO) {
+        tidyLock.withLock {
+            val d = Settings.tidyDefaults(context).value
+            val byId = podcasts.getAllIncludingHidden().associateBy { it.id }
+            val ids = Automation.toArchive(
+                inbox = episodes.inboxEntries(),
+                now = now,
+                days = { byId[it]?.inboxDays ?: d.inboxDays },
+                keep = { byId[it]?.inboxKeep ?: d.inboxKeep },
+            )
+            if (ids.isNotEmpty()) {
+                db.withTransaction { for (id in ids) episodes.setInInbox(id, false) }
+                Log.i(TAG, "Tidy-up archived ${ids.size} episode(s) from New Episodes")
+            }
+            ids.size
+        }
+    }
+
+    // ---- Smart playlists (phase 7) ----
+
+    val playlists = db.playlists()
+
+    fun observePlaylists() = playlists.observeAll()
+
+    fun selectPlaylistIds(filters: PlaylistFilters, rows: List<PlaylistRow>): List<String> = select(filters, rows)
+
+    private fun select(filters: PlaylistFilters, rows: List<PlaylistRow>): List<String> =
+        SmartPlaylists.select(
+            filters,
+            rows.map {
+                PlaylistCandidate(
+                    id = it.id,
+                    feedKey = feedKey(it.feedUrl),
+                    title = it.title,
+                    pubDate = it.pubDate,
+                    durationMs = it.durationMs,
+                    positionMs = it.positionMs,
+                    played = it.played,
+                    downloaded = it.downloadState == DownloadState.DONE,
+                )
+            },
+            System.currentTimeMillis(),
+            ::feedKey,
+        )
+
+    /** Episodes by id, in the order given. */
+    private suspend fun inOrder(ids: List<String>): List<EpisodeWithPodcast> {
+        if (ids.isEmpty()) return emptyList()
+        val byId = ids.chunked(500).flatMap { episodes.getManyWithPodcast(it) }.associateBy { it.episode.id }
+        return ids.mapNotNull { byId[it] }
+    }
+
+    /** The playlist's episodes now (Android Auto). */
+    suspend fun playlistEpisodes(filters: PlaylistFilters): List<EpisodeWithPodcast> = withContext(Dispatchers.IO) {
+        inOrder(select(filters, episodes.getPlaylistRows()))
+    }
+
+    /** The playlist's episodes, kept up to date (the Playlists tab). */
+    fun observePlaylistEpisodes(id: String): Flow<List<EpisodeWithPodcast>> =
+        combine(playlists.observe(id), episodes.observePlaylistRows()) { p, rows ->
+            if (p == null || p.deleted) emptyList() else select(PlaylistJson.parse(p.filtersJson), rows)
+        }
+            .distinctUntilChanged()
+            .flatMapLatest { ids ->
+                if (ids.isEmpty()) {
+                    flowOf(emptyList())
+                } else {
+                    episodes.observeManyWithPodcast(ids.take(500)).map { list ->
+                        val byId = list.associateBy { it.episode.id }
+                        ids.mapNotNull { byId[it] }
+                    }
+                }
+            }
+            .flowOn(Dispatchers.Default)
+
+    /** How many episodes each playlist has now, by playlist id (the Playlists tab). */
+    fun observePlaylistCounts(): Flow<Map<String, Int>> =
+        combine(playlists.observeAll(), episodes.observePlaylistRows()) { list, rows ->
+            list.associate { it.id to select(PlaylistJson.parse(it.filtersJson), rows).size }
+        }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
+    suspend fun createPlaylist(name: String, filters: PlaylistFilters): String {
+        val id = java.util.UUID.randomUUID().toString()
+        playlists.upsert(
+            Playlist(
+                id = id,
+                name = name.trim().ifBlank { "Playlist" },
+                position = playlists.maxPosition() + 1,
+                filtersJson = PlaylistJson.toText(filters),
+                dirty = true,
+                changedAt = System.currentTimeMillis(),
+            ),
+        )
+        return id
+    }
+
+    suspend fun updatePlaylist(id: String, name: String, filters: PlaylistFilters) {
+        val p = playlists.get(id) ?: return
+        playlists.upsert(
+            p.copy(
+                name = name.trim().ifBlank { p.name },
+                filtersJson = PlaylistJson.toText(filters),
+                dirty = true,
+                changedAt = maxOf(System.currentTimeMillis(), p.changedAt + 1),
+            ),
+        )
+    }
+
+    suspend fun deletePlaylist(id: String) {
+        val p = playlists.get(id) ?: return
+        playlists.upsert(p.copy(deleted = true, dirty = true, changedAt = maxOf(System.currentTimeMillis(), p.changedAt + 1)))
+    }
+
+    /** Adds episodes to the end of the queue, in order (skipping ones already queued). */
+    suspend fun queueAllLast(ids: List<String>): Int {
+        val queued = episodes.queueIds().toSet()
+        val add = ids.filter { it !in queued }
+        for (id in add) queueLast(id)
+        return add.size
     }
 
     // ---- Episode state ----

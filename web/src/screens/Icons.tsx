@@ -28,6 +28,20 @@ const paths: Record<string, React.ReactNode> = {
       <rect x="13" y="13" width="7" height="7" rx="1.5" />
     </>
   ),
+  playlists: (
+    <>
+      <path d="M4 6h11M4 11h11M4 16h7" />
+      <circle cx="17" cy="17" r="2.5" />
+      <path d="M19.5 17V6h2.5" />
+    </>
+  ),
+  rules: (
+    <>
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   play: <path d="M8 5v14l11-7z" fill="currentColor" stroke="none" />,
   pause: (

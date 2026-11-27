@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { DEFAULT_PLAYBACK, type EpisodeRow, type PlaybackDefaults, type PodcastRow } from "./types";
 import { feedKey } from "./util";
 import { flushNotes, pullNotes, resetNotes } from "./notes";
+import { filtersOf, type PlaylistFilters, type PlaylistRow } from "./playlists";
 
 // The web player's copy of the library, synced with the same Supabase tables as the phone.
 // A change here is applied locally at once and uploaded shortly after; the server keeps the newest
@@ -16,6 +17,10 @@ export interface State {
   episodes: Map<string, EpisodeRow>; // by id
   defaults: PlaybackDefaults;
   defaultsChangedAt: number;
+  /** Smart playlists by id, tombstones included (phase 7). */
+  playlists: Map<string, PlaylistRow>;
+  /** False until 003_automation_playlists.sql has been run (no playlists table, no rule columns). */
+  phase7: boolean;
   loaded: boolean;
   syncing: boolean;
   error: string | null;
@@ -27,13 +32,20 @@ let state: State = {
   episodes: new Map(),
   defaults: DEFAULT_PLAYBACK,
   defaultsChangedAt: 0,
+  playlists: new Map(),
+  phase7: true,
   loaded: false,
   syncing: false,
   error: null,
   version: 0,
 };
 const listeners = new Set<() => void>();
-const lastRev = { podcasts: 0, episodes: 0, settings: 0 };
+const lastRev = { podcasts: 0, episodes: 0, settings: 0, playlists: 0 };
+
+/** A table or column from a migration that hasn't been run yet. */
+function missingSchema(message: string) {
+  return /does not exist|could not find the|schema cache/i.test(message);
+}
 
 function emit() {
   state = { ...state, version: state.version + 1 };
@@ -54,7 +66,7 @@ export const getState = () => state;
 
 // ------------------------------------------------------------------ pull
 
-async function pullTable<T extends { rev?: number }>(table: "podcasts" | "episodes" | "settings", apply: (row: T) => void) {
+async function pullTable<T extends { rev?: number }>(table: "podcasts" | "episodes" | "settings" | "playlists", apply: (row: T) => void) {
   for (;;) {
     const { data, error } = await supabase.from(table).select("*").gt("rev", lastRev[table]).order("rev").limit(1000);
     if (error) throw new Error(error.message);
@@ -85,6 +97,17 @@ export async function pull() {
         state.defaultsChangedAt = r.changed_at;
       }
     });
+    // Smart playlists (skipped quietly until 003_automation_playlists.sql has been run).
+    try {
+      await pullTable<PlaylistRow>("playlists", (r) => {
+        const local = state.playlists.get(r.id);
+        if (!local || r.changed_at >= local.changed_at) state.playlists.set(r.id, r);
+      });
+      state.phase7 = true;
+    } catch (e) {
+      if (missingSchema(e instanceof Error ? e.message : String(e))) state.phase7 = false;
+      else throw e;
+    }
     state.loaded = true;
     state.error = null;
     // Transcripts and bookmarks (skipped quietly until 002_transcripts_bookmarks.sql has been run).
@@ -98,8 +121,8 @@ export async function pull() {
 }
 
 export function resetStore() {
-  state = { ...state, podcasts: new Map(), episodes: new Map(), loaded: false, defaults: DEFAULT_PLAYBACK, defaultsChangedAt: 0 };
-  lastRev.podcasts = lastRev.episodes = lastRev.settings = 0;
+  state = { ...state, podcasts: new Map(), episodes: new Map(), playlists: new Map(), loaded: false, defaults: DEFAULT_PLAYBACK, defaultsChangedAt: 0 };
+  lastRev.podcasts = lastRev.episodes = lastRev.settings = lastRev.playlists = 0;
   resetNotes();
   emit();
 }
@@ -108,7 +131,10 @@ export function resetStore() {
 
 const pendingEpisodes = new Map<string, EpisodeRow>();
 const pendingPodcasts = new Map<string, PodcastRow>();
+const pendingPlaylists = new Map<string, PlaylistRow>();
 let pendingSettings = false;
+
+const RULE_KEYS = ["new_episode_action", "include_words", "exclude_words", "min_minutes", "max_minutes", "inbox_days", "inbox_keep"] as const;
 let flushTimer: number | undefined;
 let flushAt = Infinity;
 
@@ -125,9 +151,11 @@ export async function flush() {
   flushAt = Infinity;
   const podcasts = [...pendingPodcasts.values()];
   const episodes = [...pendingEpisodes.values()];
+  const playlists = [...pendingPlaylists.values()];
   const settings = pendingSettings;
   pendingPodcasts.clear();
   pendingEpisodes.clear();
+  pendingPlaylists.clear();
   pendingSettings = false;
   const strip = <T extends { rev?: number }>(r: T) => {
     const { rev: _rev, ...rest } = r;
@@ -136,6 +164,20 @@ export async function flush() {
   try {
     if (podcasts.length) {
       const { error } = await supabase.from("podcasts").upsert(podcasts.map(strip), { onConflict: "user_id,feed_url" });
+      if (error && missingSchema(error.message)) {
+        // 003 hasn't been run: save everything except the rules.
+        state.phase7 = false;
+        const plain = podcasts.map((p) => {
+          const r: Record<string, unknown> = { ...strip(p) };
+          for (const k of RULE_KEYS) delete r[k];
+          return r;
+        });
+        const retry = await supabase.from("podcasts").upsert(plain, { onConflict: "user_id,feed_url" });
+        if (retry.error) throw new Error(retry.error.message);
+      } else if (error) throw new Error(error.message);
+    }
+    if (playlists.length && state.phase7) {
+      const { error } = await supabase.from("playlists").upsert(playlists.map(strip), { onConflict: "user_id,id" });
       if (error) throw new Error(error.message);
     }
     for (let i = 0; i < episodes.length; i += 500) {
@@ -151,6 +193,7 @@ export async function flush() {
   } catch (e) {
     // Put them back and try again later.
     for (const p of podcasts) if (!pendingPodcasts.has(p.feed_url)) pendingPodcasts.set(p.feed_url, p);
+    for (const p of playlists) if (!pendingPlaylists.has(p.id)) pendingPlaylists.set(p.id, p);
     for (const e2 of episodes) if (!pendingEpisodes.has(e2.id)) pendingEpisodes.set(e2.id, e2);
     pendingSettings ||= settings;
     state.error = `Couldn't save changes: ${e instanceof Error ? e.message : e}`;
@@ -160,7 +203,7 @@ export async function flush() {
 }
 
 /** True while changes are waiting to be uploaded (shown as "Saving…"). */
-export const hasPending = () => pendingEpisodes.size + pendingPodcasts.size > 0 || pendingSettings;
+export const hasPending = () => pendingEpisodes.size + pendingPodcasts.size + pendingPlaylists.size > 0 || pendingSettings;
 
 function putEpisode(e: EpisodeRow, delayMs = 1000) {
   const row = { ...e, changed_at: Math.max(Date.now(), e.changed_at + 1) };
@@ -176,7 +219,21 @@ function putPodcast(p: PodcastRow) {
   scheduleFlush(1000);
 }
 
+function putPlaylist(p: PlaylistRow) {
+  const row = { ...p, changed_at: Math.max(Date.now(), p.changed_at + 1) };
+  state.playlists.set(row.id, row);
+  pendingPlaylists.set(row.id, row);
+  scheduleFlush(800);
+}
+
 // ------------------------------------------------------------------ queries
+
+/** Live playlists, in their order. */
+export function playlists(s: State = state): PlaylistRow[] {
+  return [...s.playlists.values()]
+    .filter((p) => !p.deleted)
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
 
 export function queue(s: State = state): EpisodeRow[] {
   return [...s.episodes.values()].filter((e) => e.queue_position != null).sort((a, b) => a.queue_position! - b.queue_position!);
@@ -364,6 +421,39 @@ export function updatePodcastPlayback(feedUrl: string, patch: Partial<PodcastRow
     putPodcast({ ...p, ...patch });
     emit();
   }
+}
+
+/** A podcast's automation rules (phase 7). The phone applies them when it finds new episodes. */
+export function updateRules(feedUrl: string, patch: Partial<PodcastRow>) {
+  const p = state.podcasts.get(feedUrl);
+  if (p) {
+    putPodcast({ ...p, ...patch });
+    emit();
+  }
+}
+
+// ------------------------------------------------------------------ smart playlists (phase 7)
+
+export function createPlaylist(name: string, filters: PlaylistFilters): string {
+  const id = crypto.randomUUID();
+  const position = Math.max(-1, ...playlists().map((p) => p.position)) + 1;
+  putPlaylist({ id, name: name.trim() || "Playlist", position, filters, deleted: false, changed_at: 0 });
+  emit();
+  return id;
+}
+
+export function updatePlaylist(id: string, name: string, filters: PlaylistFilters) {
+  const p = state.playlists.get(id);
+  if (!p) return;
+  putPlaylist({ ...p, name: name.trim() || p.name, filters });
+  emit();
+}
+
+export function deletePlaylist(id: string) {
+  const p = state.playlists.get(id);
+  if (!p) return;
+  putPlaylist({ ...p, deleted: true, filters: filtersOf(p) });
+  emit();
 }
 
 export function updateDefaults(patch: Partial<PlaybackDefaults>) {

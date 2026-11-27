@@ -45,6 +45,7 @@ import com.earshot.app.ui.screens.LibraryScreen
 import com.earshot.app.ui.screens.MiniPlayer
 import com.earshot.app.ui.screens.PlayerSheet
 import com.earshot.app.ui.screens.PodcastScreen
+import com.earshot.app.ui.screens.PlaylistScreen
 import com.earshot.app.data.Settings
 import com.earshot.app.ui.screens.GlowMiniPlayer
 import com.earshot.app.ui.screens.GlowNavBar
@@ -76,6 +77,8 @@ class MainActivity : ComponentActivity() {
 fun EarshotRoot(vm: AppViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
+    val current by vm.currentEpisode.collectAsStateWithLifecycle()
+    val openPlayingPodcast: () -> Unit = { current?.episode?.podcastId?.let(vm::openPodcastPage) }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -109,6 +112,7 @@ fun EarshotRoot(vm: AppViewModel) {
                             onTogglePlay = vm.player::togglePlay,
                             onSkipBack = vm::skipBack,
                             onSkipForward = vm::skipForward,
+                            onOpenPodcast = openPlayingPodcast,
                         )
                     }
                     GlowNavBar(
@@ -123,6 +127,7 @@ fun EarshotRoot(vm: AppViewModel) {
                     now = now,
                     onOpen = { vm.showPlayer = true },
                     onTogglePlay = vm.player::togglePlay,
+                    onOpenPodcast = openPlayingPodcast,
                 )
             }
         },
@@ -137,6 +142,7 @@ fun EarshotRoot(vm: AppViewModel) {
                     is Screen.TranscriptView -> TranscriptScreen(vm, screen.episodeId, screen.focusMs)
                     Screen.Bookmarks -> BookmarksScreen(vm)
                     Screen.TranscriptSearch -> TranscriptSearchScreen(vm)
+                    is Screen.PlaylistDetail -> PlaylistScreen(vm, screen.playlistId)
                 }
             }
             ImportBanner(vm)

@@ -14,6 +14,8 @@ import { SignIn } from "./screens/SignIn";
 import { resolvePlayback } from "./util";
 import { BookmarksPage, TranscriptPage, TranscriptSearchPage } from "./screens/Notes";
 import { navHolder } from "./screens/common";
+import { PlaylistPage } from "./screens/Playlists";
+import { startListenLog } from "./listens";
 
 export type Route =
   | { name: "library" }
@@ -21,12 +23,14 @@ export type Route =
   | { name: "add" }
   | { name: "transcript"; episodeId: string; focusMs?: number }
   | { name: "bookmarks" }
-  | { name: "search" };
+  | { name: "search" }
+  | { name: "playlist"; id: string };
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [stack, setStack] = useState<Route[]>([{ name: "library" }]);
-  const [tab, setTab] = useState<Tab>("queue");
+  // Phase 7: the app opens on Podcasts (as on the phone).
+  const [tab, setTab] = useState<Tab>("podcasts");
   const look = useAppearance();
   const s = store.useStore();
   const p = player.usePlayer();
@@ -41,7 +45,11 @@ export function App() {
   useEffect(() => {
     if (!userId) return;
     store.startPolling();
-    return () => store.stopPolling();
+    const stopLog = startListenLog();
+    return () => {
+      store.stopPolling();
+      stopLog();
+    };
   }, [userId]);
 
   // Wire the player to the store: positions, durations, and what happens when an episode ends.
@@ -106,6 +114,7 @@ export function App() {
       {route.name === "transcript" && <TranscriptPage key={`${route.episodeId}-${route.focusMs ?? ""}`} episodeId={route.episodeId} focusMs={route.focusMs} nav={nav} />}
       {route.name === "bookmarks" && <BookmarksPage nav={nav} />}
       {route.name === "search" && <TranscriptSearchPage nav={nav} />}
+      {route.name === "playlist" && <PlaylistPage key={route.id} id={route.id} nav={nav} />}
     </>
   );
 

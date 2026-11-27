@@ -96,6 +96,7 @@ fun InboxList(vm: AppViewModel, modifier: Modifier = Modifier) {
                     onOpen = { openId = item.episode.id },
                     onPlay = { if (isCurrent) vm.player.togglePlay() else vm.play(item) },
                     onDownload = { vm.download(item) },
+                    onOpenPodcast = { vm.openPodcastPage(item.episode.podcastId) },
                 )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
@@ -158,6 +159,7 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
                             onOpen = { openId = item.episode.id },
                             onPlay = { if (isCurrent) vm.player.togglePlay() else vm.play(item) },
                             onDownload = { vm.download(item) },
+                            onOpenPodcast = { vm.openPodcastPage(item.episode.podcastId) },
                             leading = {
                                 Box(
                                     Modifier

@@ -98,12 +98,15 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
                 title = {
                     Column {
                         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
+                        val feed = bookmarks.firstOrNull()?.feedUrl.orEmpty()
+                        val podcastId = item?.episode?.podcastId
+                        PodcastLink(
                             podcastTitle,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            when {
+                                podcastId != null -> ({ vm.openPodcastPage(podcastId) })
+                                feed.isNotBlank() -> ({ vm.openPodcastByFeed(feed) })
+                                else -> null
+                            },
                         )
                     }
                 },

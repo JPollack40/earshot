@@ -83,6 +83,23 @@ interface PodcastDao {
     @Query("UPDATE podcasts SET pinned = :pinned, $TOUCH WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)
 
+    /** Automation rules (phase 7); null = not set. */
+    @Query(
+        "UPDATE podcasts SET newEpisodeAction = :action, includeWords = :includeWords, excludeWords = :excludeWords, " +
+            "minMinutes = :minMinutes, maxMinutes = :maxMinutes, inboxDays = :inboxDays, inboxKeep = :inboxKeep, $TOUCH " +
+            "WHERE id = :id",
+    )
+    suspend fun updateRules(
+        id: Long,
+        action: String?,
+        includeWords: String?,
+        excludeWords: String?,
+        minMinutes: Int?,
+        maxMinutes: Int?,
+        inboxDays: Int?,
+        inboxKeep: Int?,
+    )
+
     // ---- Sync ----
 
     @Query("SELECT * FROM podcasts WHERE dirty = 1")
@@ -98,8 +115,10 @@ interface PodcastDao {
     /** Applies a change from another device (not marked dirty). */
     @Query(
         "UPDATE podcasts SET subscribed = :subscribed, pinned = :pinned, speed = :speed, smartSpeed = :smartSpeed, " +
-            "voiceBoost = :voiceBoost, skipBackMs = :skipBackMs, skipForwardMs = :skipForwardMs, changedAt = :changedAt " +
-            "WHERE id = :id",
+            "voiceBoost = :voiceBoost, skipBackMs = :skipBackMs, skipForwardMs = :skipForwardMs, " +
+            "newEpisodeAction = :action, includeWords = :includeWords, excludeWords = :excludeWords, " +
+            "minMinutes = :minMinutes, maxMinutes = :maxMinutes, inboxDays = :inboxDays, inboxKeep = :inboxKeep, " +
+            "changedAt = :changedAt WHERE id = :id",
     )
     suspend fun applyRemote(
         id: Long,
@@ -110,6 +129,13 @@ interface PodcastDao {
         voiceBoost: Boolean?,
         skipBackMs: Long?,
         skipForwardMs: Long?,
+        action: String?,
+        includeWords: String?,
+        excludeWords: String?,
+        minMinutes: Int?,
+        maxMinutes: Int?,
+        inboxDays: Int?,
+        inboxKeep: Int?,
         changedAt: Long,
     )
 
@@ -171,6 +197,34 @@ interface EpisodeDao {
 
     @Query("UPDATE episodes SET inInbox = 0, $TOUCH WHERE inInbox = 1")
     suspend fun archiveInbox(): Int
+
+    /** New Episodes entries, for the tidy-up rules. */
+    @Query("SELECT id, podcastId, pubDate FROM episodes WHERE inInbox = 1")
+    suspend fun inboxEntries(): List<com.earshot.app.data.Automation.InboxEntry>
+
+    // ---- Smart playlists ----
+
+    /** What playlist filters look at, for every episode of a subscribed podcast. Re-emits on any change. */
+    @Query(
+        "SELECT e.id AS id, p.feedUrl AS feedUrl, e.title AS title, e.pubDate AS pubDate, e.durationMs AS durationMs, " +
+            "e.positionMs AS positionMs, e.played AS played, e.downloadState AS downloadState " +
+            "FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId WHERE p.subscribed = 1",
+    )
+    fun observePlaylistRows(): Flow<List<PlaylistRow>>
+
+    @Query(
+        "SELECT e.id AS id, p.feedUrl AS feedUrl, e.title AS title, e.pubDate AS pubDate, e.durationMs AS durationMs, " +
+            "e.positionMs AS positionMs, e.played AS played, e.downloadState AS downloadState " +
+            "FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId WHERE p.subscribed = 1",
+    )
+    suspend fun getPlaylistRows(): List<PlaylistRow>
+
+    /** Episodes by id (at most 500 at a time), in no particular order. */
+    @Query("$EPISODE_JOIN WHERE e.id IN (:ids)")
+    suspend fun getManyWithPodcast(ids: List<String>): List<EpisodeWithPodcast>
+
+    @Query("$EPISODE_JOIN WHERE e.id IN (:ids)")
+    fun observeManyWithPodcast(ids: List<String>): Flow<List<EpisodeWithPodcast>>
 
     // ---- Queue ----
 
@@ -387,4 +441,77 @@ interface BookmarkDao {
     /** Deletions that have reached the server and are older than [before] can go for good. */
     @Query("DELETE FROM bookmarks WHERE deleted = 1 AND dirty = 0 AND changedAt < :before")
     suspend fun purgeDeleted(before: Long)
+}
+
+/** One row for playlist filtering (see [EpisodeDao.observePlaylistRows]). */
+data class PlaylistRow(
+    val id: String,
+    val feedUrl: String,
+    val title: String,
+    val pubDate: Long,
+    val durationMs: Long,
+    val positionMs: Long,
+    val played: Boolean,
+    val downloadState: Int,
+)
+
+@Dao
+interface PlaylistDao {
+    @Query("SELECT * FROM playlists WHERE deleted = 0 ORDER BY position, name COLLATE NOCASE")
+    fun observeAll(): Flow<List<Playlist>>
+
+    @Query("SELECT * FROM playlists WHERE deleted = 0 ORDER BY position, name COLLATE NOCASE")
+    suspend fun getAll(): List<Playlist>
+
+    @Query("SELECT * FROM playlists WHERE id = :id")
+    suspend fun get(id: String): Playlist?
+
+    @Query("SELECT * FROM playlists WHERE id = :id")
+    fun observe(id: String): Flow<Playlist?>
+
+    @Query("SELECT COALESCE(MAX(position), -1) FROM playlists WHERE deleted = 0")
+    suspend fun maxPosition(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(p: Playlist)
+
+    @Query("SELECT * FROM playlists WHERE dirty = 1 LIMIT :limit")
+    suspend fun dirty(limit: Int): List<Playlist>
+
+    @Query("SELECT COUNT(*) FROM playlists WHERE dirty = 1")
+    fun observeDirtyCount(): Flow<Int>
+
+    @Query("UPDATE playlists SET dirty = 0 WHERE id = :id AND changedAt = :changedAt")
+    suspend fun markClean(id: String, changedAt: Long)
+
+    @Query("DELETE FROM playlists WHERE deleted = 1 AND dirty = 0 AND changedAt < :before")
+    suspend fun purgeDeleted(before: Long)
+}
+
+@Dao
+interface ListenDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(l: Listen)
+
+    @Query("SELECT * FROM listens WHERE id = :id")
+    suspend fun get(id: String): Listen?
+
+    @Query("SELECT * FROM listens WHERE dirty = 1 LIMIT :limit")
+    suspend fun dirty(limit: Int): List<Listen>
+
+    @Query("SELECT COUNT(*) FROM listens WHERE dirty = 1")
+    fun observeDirtyCount(): Flow<Int>
+
+    @Query("UPDATE listens SET dirty = 0 WHERE id = :id AND changedAt = :changedAt")
+    suspend fun markClean(id: String, changedAt: Long)
+
+    @Query("SELECT COUNT(*) FROM listens")
+    suspend fun count(): Int
+
+    /**
+     * Stretches still marked as in progress (changedAt = 0) when the player was stopped without
+     * finishing them (e.g. the app was killed): finish them now so they get uploaded.
+     */
+    @Query("UPDATE listens SET dirty = 1, changedAt = :now WHERE changedAt = 0")
+    suspend fun finishOrphans(now: Long): Int
 }

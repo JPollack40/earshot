@@ -16,6 +16,9 @@ import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.Settings
 import com.earshot.app.data.TimeSaved
+import com.earshot.app.data.TidyDefaults
+import com.earshot.app.data.PlaylistFilters
+import com.earshot.app.data.db.Playlist
 import com.earshot.app.data.db.Podcast
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.data.db.Bookmark
@@ -53,6 +56,18 @@ sealed interface Screen {
     data class TranscriptView(val episodeId: String, val focusMs: Long? = null) : Screen
     data object Bookmarks : Screen
     data object TranscriptSearch : Screen
+    /** A smart playlist's episodes (phase 7). */
+    data class PlaylistDetail(val playlistId: String) : Screen
+}
+
+/** Library tabs. Phase 7: Playlists added; the app opens on Podcasts. */
+object Tabs {
+    const val QUEUE = 0
+    const val NEW = 1
+    const val LATEST = 2
+    const val PLAYLISTS = 3
+    const val PODCASTS = 4
+    val NAMES = listOf("Queue", "New Episodes", "Latest", "Playlists", "Podcasts")
 }
 
 /** A Markdown file to hand to the share sheet. */
@@ -68,8 +83,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val backStack = mutableStateListOf<Screen>(Screen.Library)
     var showPlayer by mutableStateOf(false)
 
-    /** Library tab: 0 Queue, 1 New Episodes, 2 Latest, 3 Podcasts. Kept here so Glow's bottom bar can switch it. */
-    var libraryTab by mutableIntStateOf(0)
+    /** Library tab (see [Tabs]); opens on Podcasts. Kept here so Glow's bottom bar can switch it. */
+    var libraryTab by mutableIntStateOf(Tabs.PODCASTS)
 
     /** Glow's bottom bar: go back to the library on [tab], closing any pages on top (previews close as usual). */
     fun showTab(tab: Int) {
@@ -79,6 +94,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun navigate(screen: Screen) {
         backStack.add(screen)
+    }
+
+    /**
+     * Opens a podcast's page from anywhere its name or artwork shows (phase 7). Closes the player
+     * sheet. A podcast kept only for queued episodes opens as a preview, so all its episodes show.
+     */
+    fun openPodcastPage(podcastId: Long) {
+        showPlayer = false
+        if (backStack.lastOrNull() == Screen.PodcastDetail(podcastId)) return
+        viewModelScope.launch {
+            val p = repo.podcasts.get(podcastId) ?: return@launch
+            if (p.subscribed) navigate(Screen.PodcastDetail(podcastId)) else openPodcast(p.feedUrl)
+        }
+    }
+
+    /** The same, by feed address (bookmarks and transcripts keep only the feed). */
+    fun openPodcastByFeed(feedUrl: String) {
+        if (feedUrl.isBlank()) return
+        showPlayer = false
+        viewModelScope.launch {
+            val p = repo.findPodcast(feedUrl)
+            if (p != null && p.subscribed) openPodcastPage(p.id) else openPodcast(feedUrl)
+        }
     }
 
     fun back(): Boolean {
@@ -413,6 +451,58 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         updatePodcastPlayback(p.id) {
             if (on) it.copy(skipBackMs = cur.skipBackMs, skipForwardMs = cur.skipForwardMs)
             else it.copy(skipBackMs = null, skipForwardMs = null)
+        }
+    }
+
+    // ---- Automation (phase 7) ----
+    val tidyDefaults: StateFlow<TidyDefaults> = Settings.tidyDefaults(app)
+
+    fun updateTidyDefaults(change: (TidyDefaults) -> TidyDefaults) {
+        Settings.updateTidyDefaults(app, change)
+        viewModelScope.launch {
+            val n = repo.tidyInbox()
+            if (n > 0) say("Archived $n episode${if (n == 1) "" else "s"} from New Episodes")
+        }
+    }
+
+    fun updateRules(podcastId: Long, change: (Podcast) -> Podcast) {
+        viewModelScope.launch { repo.updateRules(podcastId, change) }
+    }
+
+    // ---- Smart playlists (phase 7) ----
+    val playlists: StateFlow<List<Playlist>> = repo.observePlaylists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val playlistCounts: StateFlow<Map<String, Int>> = repo.observePlaylistCounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    fun playlist(id: String): Flow<Playlist?> = repo.playlists.observe(id)
+
+    fun playlistEpisodes(id: String): Flow<List<EpisodeWithPodcast>> = repo.observePlaylistEpisodes(id)
+
+    fun createPlaylist(name: String, filters: PlaylistFilters) {
+        viewModelScope.launch {
+            val id = repo.createPlaylist(name, filters)
+            navigate(Screen.PlaylistDetail(id))
+        }
+    }
+
+    fun updatePlaylist(id: String, name: String, filters: PlaylistFilters) {
+        viewModelScope.launch { repo.updatePlaylist(id, name, filters) }
+    }
+
+    fun deletePlaylist(id: String) {
+        viewModelScope.launch {
+            repo.deletePlaylist(id)
+            if (backStack.lastOrNull() == Screen.PlaylistDetail(id)) back()
+            say("Playlist deleted")
+        }
+    }
+
+    fun queueAll(items: List<EpisodeWithPodcast>) {
+        viewModelScope.launch {
+            val n = repo.queueAllLast(items.map { it.episode.id })
+            say(if (n == 0) "All of these are already queued" else "Added $n episode${if (n == 1) "" else "s"} to the queue")
         }
     }
 

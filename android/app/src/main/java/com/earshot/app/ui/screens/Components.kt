@@ -78,6 +78,31 @@ fun Artwork(url: String?, size: Int, modifier: Modifier = Modifier, corner: Int 
     )
 }
 
+/**
+ * The podcast's name as a link (phase 7): tapping it opens the podcast. Same colour as the rest
+ * of the line, underlined so it reads as tappable.
+ */
+@Composable
+fun PodcastLink(
+    title: String,
+    onOpenPodcast: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.labelSmall,
+    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Text(
+        title,
+        style = style,
+        color = color,
+        textDecoration = if (onOpenPodcast != null) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.then(
+            if (onOpenPodcast != null) Modifier.clickable(onClickLabel = "Open podcast", onClick = onOpenPodcast) else Modifier,
+        ),
+    )
+}
+
 /** Second line under an episode title: "Podcast • Nov 24 • 1h 02m" or "… • 32m left". */
 private fun episodeMeta(item: EpisodeWithPodcast, showPodcast: Boolean): String {
     val e = item.episode
@@ -106,6 +131,8 @@ fun EpisodeRow(
     leading: (@Composable () -> Unit)? = null,
     /** Extra line under the title, e.g. the part of the show notes a search matched. */
     snippet: String? = null,
+    /** Opens the episode's podcast (tapping its artwork or name); null where the row is already on that page. */
+    onOpenPodcast: (() -> Unit)? = null,
 ) {
     val e = item.episode
     Row(
@@ -118,7 +145,11 @@ fun EpisodeRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading?.invoke()
-        Artwork(item.artworkUrl, 44)
+        Artwork(
+            item.artworkUrl,
+            44,
+            modifier = if (onOpenPodcast != null) Modifier.clickable(onClickLabel = "Open podcast", onClick = onOpenPodcast) else Modifier,
+        )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f).alpha(if (e.played) 0.5f else 1f)) {
             Text(
@@ -128,13 +159,27 @@ fun EpisodeRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                episodeMeta(item, showPodcast),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (showPodcast && onOpenPodcast != null) {
+                // The podcast's name is its own tap target; the rest of the line opens the episode.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PodcastLink(item.podcastTitle, onOpenPodcast, Modifier.weight(1f, fill = false))
+                    Text(
+                        episodeMeta(item, showPodcast = false).let { if (it.isEmpty()) "" else " • $it" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            } else {
+                Text(
+                    episodeMeta(item, showPodcast),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (snippet != null) {
                 Text(
                     snippet,
@@ -206,6 +251,7 @@ fun EpisodeSheet(
     bookmarkCount: Int = 0,
     onTranscript: () -> Unit = {},
     onTranscribe: () -> Unit = {},
+    onOpenPodcast: (() -> Unit)? = null,
 ) {
     val e = item.episode
     val notes = remember(e.description) { AnnotatedString.fromHtml(e.description) }
@@ -217,12 +263,20 @@ fun EpisodeSheet(
                 .padding(bottom = 24.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Artwork(item.artworkUrl, 56)
+                val open = onOpenPodcast?.let { { onDismiss(); it() } }
+                Artwork(
+                    item.artworkUrl,
+                    56,
+                    modifier = if (open != null) Modifier.clickable(onClickLabel = "Open podcast", onClick = open) else Modifier,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(e.title, style = MaterialTheme.typography.titleMedium)
+                    if (open != null) {
+                        PodcastLink(item.podcastTitle, open, style = MaterialTheme.typography.labelMedium)
+                    }
                     Text(
-                        episodeMeta(item, showPodcast = true),
+                        episodeMeta(item, showPodcast = open == null),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -315,7 +369,7 @@ fun EpisodeSheet(
 
 /** Slim now-playing bar above the system nav bar. */
 @Composable
-fun MiniPlayer(now: NowPlaying, onOpen: () -> Unit, onTogglePlay: () -> Unit) {
+fun MiniPlayer(now: NowPlaying, onOpen: () -> Unit, onTogglePlay: () -> Unit, onOpenPodcast: (() -> Unit)? = null) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 2.dp) {
         Column(Modifier.navigationBarsPadding()) {
             LinearProgressIndicator(
@@ -331,17 +385,15 @@ fun MiniPlayer(now: NowPlaying, onOpen: () -> Unit, onTogglePlay: () -> Unit) {
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Artwork(now.artworkUrl, 40)
+                Artwork(
+                    now.artworkUrl,
+                    40,
+                    modifier = if (onOpenPodcast != null) Modifier.clickable(onClickLabel = "Open podcast", onClick = onOpenPodcast) else Modifier,
+                )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(now.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        now.podcastTitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    PodcastLink(now.podcastTitle, onOpenPodcast)
                 }
                 if (now.isBuffering) {
                     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {

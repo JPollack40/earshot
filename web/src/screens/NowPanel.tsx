@@ -2,7 +2,7 @@ import { setAppearance, useArtColor } from "../appearance";
 import * as player from "../player";
 import type { PlaybackDefaults, PodcastRow } from "../types";
 import { episodeMeta, formatClock, safeHtml } from "../util";
-import { Art, type Nav } from "./common";
+import { Art, PodcastLink, type Nav } from "./common";
 import { Icon } from "./Icons";
 import { BookmarkButton, TranscriptButton } from "./Notes";
 import { AudioChips, audioChanger, GlowScrubber, SkipSelect, SleepSelect, useChapters } from "./PlayerBar";
@@ -30,7 +30,10 @@ export function NowPanel({ podcast, prefs, nav }: { podcast: PodcastRow | undefi
       </button>
       <div>
         <div className="np-title">{e.title}</div>
-        <div className="meta">{episodeMeta(e, podcast?.title)}</div>
+        <div className="meta">
+          <PodcastLink feedUrl={e.feed_url} title={podcast?.title} />
+          {episodeMeta(e) ? `${podcast?.title ? " • " : ""}${episodeMeta(e)}` : ""}
+        </div>
       </div>
       {/* Phone width: the player bar is reduced to a strip, so the big controls live here. */}
       <div className="np-phone">

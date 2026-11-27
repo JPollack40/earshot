@@ -30,6 +30,7 @@ import androidx.media3.session.SessionResult
 import com.earshot.app.EarshotApp
 import com.earshot.app.R
 import com.earshot.app.data.PlaybackPrefs
+import com.earshot.app.data.PlaylistJson
 import com.earshot.app.data.Settings
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.ui.MainActivity
@@ -51,6 +52,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -77,6 +79,7 @@ class PlaybackService : MediaLibraryService() {
     private var saveJob: Job? = null
     private val app get() = application as EarshotApp
     private val repo get() = app.repository
+    private val listening by lazy { ListeningLog(app) }
 
     override fun onCreate() {
         super.onCreate()
@@ -105,6 +108,7 @@ class PlaybackService : MediaLibraryService() {
             .build()
         player.setPauseAtEndOfMediaItems(true)
         player.addListener(listener)
+        listening.finishOrphans()
         skipPlayer = SkipLengthPlayer(player)
         skipPlayer.onJump = ::jumpTo
         prefs = PlaybackPrefs.resolve(Settings.playbackDefaults(this).value, null)
@@ -179,6 +183,37 @@ class PlaybackService : MediaLibraryService() {
                         }
                     }
                 }
+        }
+
+        scope.launch {
+            // Playlists tab (phase 7): the list of playlists, and each playlist's episodes.
+            var last: Map<String, List<String>>? = null
+            combine(repo.observePlaylists(), repo.episodes.observePlaylistRows()) { list, rows ->
+                val byId = rows.associateBy { it.id }
+                list.associate { p ->
+                    // What the car shows for each episode, minus the exact play position.
+                    p.id to (listOf(p.name) + repo.selectPlaylistIds(PlaylistJson.parse(p.filtersJson), rows).map { id ->
+                        byId[id]?.let { "$id|${it.played}|${it.positionMs > 0}|${it.downloadState}|${it.title}" } ?: id
+                    })
+                }
+            }
+                .flowOn(Dispatchers.Default)
+                .distinctUntilChanged()
+                .collect { now ->
+                    val before = last
+                    last = now
+                    if (before == null) return@collect
+                    val s = session ?: return@collect
+                    if (now.keys.toList() != before.keys.toList() || now.any { (id, v) -> before[id]?.firstOrNull() != v.first() }) {
+                        s.notifyChildrenChanged(EpisodeMedia.PLAYLISTS, now.size, null)
+                    }
+                    for ((id, v) in now) if (before[id] != v) s.notifyChildrenChanged(EpisodeMedia.PLAYLIST_PREFIX + id, v.size - 1, null)
+                }
+        }
+        scope.launch {
+            // The "More from <podcast>" row at the top of the Queue tab follows the loaded episode.
+            loadedEpisodeId.map { id -> id?.let { repo.episodes.get(it)?.podcastId } }.distinctUntilChanged().drop(1)
+                .collect { session?.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 2, null) }
         }
 
         saveJob = scope.launch {
@@ -291,6 +326,7 @@ class PlaybackService : MediaLibraryService() {
             pendingEpisodeId = id
         }
         val speed = player.playbackParameters.speed
+        listening.tick(id, player.currentPosition, elapsed, speed, inCar())
         pendingSpeedMs += elapsed * (speed - 1.0)
         val rate = player.audioFormat?.sampleRate ?: 0
         if (newFrames > 0 && rate > 0) pendingSmartMs += newFrames * 1000.0 / rate / speed
@@ -310,9 +346,16 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
+    /** True while Android Auto is connected (for the listening history's "car"). */
+    private fun inCar(): Boolean =
+        session?.connectedControllers?.any { it.packageName == ANDROID_AUTO_PACKAGE } == true
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (!isPlaying) scope.launch { savePosition() }
+            if (!isPlaying) {
+                listening.finish()
+                scope.launch { savePosition() }
+            }
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
@@ -598,6 +641,12 @@ class PlaybackService : MediaLibraryService() {
                 mediaId.startsWith(EpisodeMedia.PODCAST_PREFIX) ->
                     mediaId.removePrefix(EpisodeMedia.PODCAST_PREFIX).toLongOrNull()
                         ?.let { repo.podcasts.get(it) }?.let(EpisodeMedia::podcastFolder)
+                mediaId.startsWith(EpisodeMedia.MORE_FROM_PREFIX) ->
+                    mediaId.removePrefix(EpisodeMedia.MORE_FROM_PREFIX).toLongOrNull()
+                        ?.let { repo.podcasts.get(it) }?.let(EpisodeMedia::moreFromFolder)
+                mediaId.startsWith(EpisodeMedia.PLAYLIST_PREFIX) ->
+                    repo.playlists.get(mediaId.removePrefix(EpisodeMedia.PLAYLIST_PREFIX))
+                        ?.takeIf { !it.deleted }?.let { EpisodeMedia.playlistFolder(it, iconUri(R.drawable.ic_tab_playlists)) }
                 else -> tabs().firstOrNull { it.mediaId == mediaId }
             }
             val item = folder ?: repo.episodes.getWithPodcast(mediaId)?.let(EpisodeMedia::item)
@@ -618,6 +667,7 @@ class PlaybackService : MediaLibraryService() {
                 parentId == EpisodeMedia.ROOT -> tabs()
                 parentId == EpisodeMedia.QUEUE ->
                     listOf(EpisodeMedia.speedFolder(prefs.speed, iconUri(PlayerButtons.speedIcon(prefs.speed)))) +
+                        listOfNotNull(moreFromLoaded()) +
                         dao.getQueue().map { EpisodeMedia.item(it) }
                 parentId == EpisodeMedia.SPEED -> Settings.SPEED_CHOICES.map { speedChoiceItem(it) }
                 parentId == EpisodeMedia.INBOX -> EpisodeMedia.itemsByDate(dao.getInbox())
@@ -626,6 +676,17 @@ class PlaybackService : MediaLibraryService() {
                 parentId.startsWith(EpisodeMedia.PODCAST_PREFIX) -> {
                     val id = parentId.removePrefix(EpisodeMedia.PODCAST_PREFIX).toLongOrNull()
                     if (id == null) emptyList() else dao.getForPodcast(id, 100).map { EpisodeMedia.item(it) }
+                }
+                parentId.startsWith(EpisodeMedia.MORE_FROM_PREFIX) -> {
+                    val id = parentId.removePrefix(EpisodeMedia.MORE_FROM_PREFIX).toLongOrNull()
+                    if (id == null) emptyList() else dao.getForPodcast(id, 100).map { EpisodeMedia.item(it) }
+                }
+                parentId == EpisodeMedia.PLAYLISTS ->
+                    repo.playlists.getAll().map { EpisodeMedia.playlistFolder(it, iconUri(R.drawable.ic_tab_playlists)) }
+                parentId.startsWith(EpisodeMedia.PLAYLIST_PREFIX) -> {
+                    val p = repo.playlists.get(parentId.removePrefix(EpisodeMedia.PLAYLIST_PREFIX))
+                    if (p == null || p.deleted) emptyList()
+                    else repo.playlistEpisodes(PlaylistJson.parse(p.filtersJson)).map { EpisodeMedia.item(it) }
                 }
                 else -> return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
             }
@@ -657,6 +718,13 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** "More from <podcast>": the loaded episode's podcast, at the top of the car's Queue tab. */
+    private suspend fun moreFromLoaded(): MediaItem? {
+        val id = player.currentMediaItem?.mediaId ?: return null
+        val podcastId = repo.episodes.get(id)?.podcastId ?: return null
+        return repo.podcasts.get(podcastId)?.let(EpisodeMedia::moreFromFolder)
+    }
+
     private fun speedChoiceItem(speed: Float): MediaItem =
         EpisodeMedia.speedChoice(speed, abs(speed - prefs.speed) < 0.01f, iconUri(PlayerButtons.speedIcon(speed)))
 
@@ -685,14 +753,17 @@ class PlaybackService : MediaLibraryService() {
         return ImmutableList.copyOf(items.subList(from, to))
     }
 
-    /** The four tabs at the top of Android Auto, with their icons. */
+    /**
+     * The four tabs at the top of Android Auto (the most it shows), with their icons. Phase 7:
+     * Playlists took the Latest tab's place in the car (Latest stays on the phone and web).
+     */
     private fun tabs(): List<MediaItem> {
         val list = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
         val grid = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM
         return listOf(
             EpisodeMedia.folder(EpisodeMedia.QUEUE, "Queue", icon = iconUri(R.drawable.ic_tab_queue), childStyle = list),
             EpisodeMedia.folder(EpisodeMedia.INBOX, "New Episodes", icon = iconUri(R.drawable.ic_tab_new), childStyle = list),
-            EpisodeMedia.folder(EpisodeMedia.LATEST, "Latest", icon = iconUri(R.drawable.ic_tab_latest), childStyle = list),
+            EpisodeMedia.folder(EpisodeMedia.PLAYLISTS, "Playlists", icon = iconUri(R.drawable.ic_tab_playlists), childStyle = list),
             EpisodeMedia.folder(
                 EpisodeMedia.PODCASTS,
                 "Podcasts",
@@ -746,6 +817,7 @@ class PlaybackService : MediaLibraryService() {
         protectedEpisodeId = null
         trackTimeSaved()
         flushTimeSaved()
+        listening.finish()
         app.appScope.launch {
             if (saveId != null) dao.savePosition(saveId, position, System.currentTimeMillis())
             app.cleanupDownloads("playback session ended")
@@ -762,6 +834,7 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         private const val LATEST_LIMIT = 100
+        private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
 
         /**
          * Id of the episode loaded in the player, unless it has played to the end. Download cleanup

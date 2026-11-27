@@ -45,6 +45,7 @@ fun EpisodeList(
                 onPlay = { if (isCurrent) vm.player.togglePlay() else vm.play(item) },
                 onDownload = { vm.download(item) },
                 snippet = snippets[item.episode.id],
+                onOpenPodcast = if (showPodcast) ({ vm.openPodcastPage(item.episode.podcastId) }) else null,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
         }
@@ -76,5 +77,6 @@ fun EpisodeSheetFor(vm: AppViewModel, item: EpisodeWithPodcast?, onDismiss: () -
         bookmarkCount = bookmarks.count { it.episodeId == item.episode.id },
         onTranscript = { vm.navigate(Screen.TranscriptView(item.episode.id)) },
         onTranscribe = { vm.transcribeWithGemini(item.episode.id) },
+        onOpenPodcast = { vm.openPodcastPage(item.episode.podcastId) },
     )
 }

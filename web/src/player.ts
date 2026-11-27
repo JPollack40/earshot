@@ -40,6 +40,8 @@ function set(patch: Partial<PlayerState>) {
 }
 /** The current state, outside React. */
 export const snapshot = (): PlayerState => state;
+/** The playback speed in use (for the listening history). */
+export const currentSpeed = (): number => prefs.speed;
 
 export function usePlayer(): PlayerState {
   return useSyncExternalStore(

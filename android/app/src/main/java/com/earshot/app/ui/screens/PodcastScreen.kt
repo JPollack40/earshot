@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -83,7 +84,9 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmUnsubscribe by remember { mutableStateOf(false) }
     var showPlayback by remember { mutableStateOf(false) }
+    var showRules by remember { mutableStateOf(false) }
     val defaults by vm.playbackDefaults.collectAsStateWithLifecycle()
+    val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
     var descExpanded by remember { mutableStateOf(false) }
 
     // ---- Search within this podcast (titles and show notes, on the phone) ----
@@ -185,6 +188,13 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                             )
                             if (!previewing && p != null) {
                                 DropdownMenuItem(
+                                    text = { Text("Automation (new episodes, tidy-up)") },
+                                    onClick = {
+                                        menuOpen = false
+                                        showRules = true
+                                    },
+                                )
+                                DropdownMenuItem(
                                     text = { Text(if (p.pinned) "Unpin" else "Pin to top") },
                                     onClick = {
                                         menuOpen = false
@@ -276,6 +286,22 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                         Spacer(Modifier.width(6.dp))
                                         Text("Playback")
                                     }
+                                    FilledTonalButton(onClick = { showRules = true }) {
+                                        Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Rules")
+                                    }
+                                }
+                            }
+                            if (!previewing) {
+                                rulesSummary(p, tidy)?.let { summary ->
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        summary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (glow) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.clickable { showRules = true },
+                                    )
                                 }
                             }
                             if (previewing) {
@@ -321,6 +347,15 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
             defaults = defaults,
             onChange = { change -> vm.updatePodcastPlayback(podcastId, change) },
             onDismiss = { showPlayback = false },
+        )
+    }
+
+    if (showRules && pod != null) {
+        PodcastRulesDialog(
+            podcast = pod,
+            defaults = tidy,
+            onSave = { change -> vm.updateRules(podcastId, change) },
+            onDismiss = { showRules = false },
         )
     }
 

@@ -34,7 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -54,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.data.db.PodcastWithCount
 import com.earshot.app.ui.AppViewModel
 import com.earshot.app.ui.Screen
+import com.earshot.app.ui.Tabs
 import com.earshot.app.ui.formatDuration
 import com.earshot.app.ui.theme.LocalGlow
 import com.earshot.app.ui.theme.rememberArtColor
@@ -74,18 +75,21 @@ fun LibraryScreen(vm: AppViewModel) {
     val content: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier.fillMaxSize()) {
             if (!glow) {
-                PrimaryTabRow(selectedTabIndex = tab) {
-                    Tab(selected = tab == 0, onClick = { vm.libraryTab = 0 }, text = { TabLabel("Queue", queue.size) })
-                    Tab(selected = tab == 1, onClick = { vm.libraryTab = 1 }, text = { TabLabel("New Episodes", inbox.size) })
-                    Tab(selected = tab == 2, onClick = { vm.libraryTab = 2 }, text = { TabLabel("Latest", 0) })
-                    Tab(selected = tab == 3, onClick = { vm.libraryTab = 3 }, text = { TabLabel("Podcasts", library.size) })
+                // Five tabs (phase 7 added Playlists): scrollable, so they fit on the Fold's cover screen.
+                PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
+                    Tab(selected = tab == Tabs.QUEUE, onClick = { vm.libraryTab = Tabs.QUEUE }, text = { TabLabel("Queue", queue.size) })
+                    Tab(selected = tab == Tabs.NEW, onClick = { vm.libraryTab = Tabs.NEW }, text = { TabLabel("New Episodes", inbox.size) })
+                    Tab(selected = tab == Tabs.LATEST, onClick = { vm.libraryTab = Tabs.LATEST }, text = { TabLabel("Latest", 0) })
+                    Tab(selected = tab == Tabs.PLAYLISTS, onClick = { vm.libraryTab = Tabs.PLAYLISTS }, text = { TabLabel("Playlists", 0) })
+                    Tab(selected = tab == Tabs.PODCASTS, onClick = { vm.libraryTab = Tabs.PODCASTS }, text = { TabLabel("Podcasts", library.size) })
                 }
             }
             when {
-                tab == 0 -> QueueList(vm, Modifier.fillMaxSize())
-                tab == 1 -> InboxList(vm, Modifier.fillMaxSize())
+                tab == Tabs.QUEUE -> QueueList(vm, Modifier.fillMaxSize())
+                tab == Tabs.NEW -> InboxList(vm, Modifier.fillMaxSize())
                 library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) })
-                tab == 2 -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
+                tab == Tabs.LATEST -> EpisodeList(vm, latest, showPodcast = true, modifier = Modifier.fillMaxSize())
+                tab == Tabs.PLAYLISTS -> PlaylistsList(vm, Modifier.fillMaxSize())
                 else -> PodcastList(vm, library)
             }
         }
@@ -100,12 +104,13 @@ fun LibraryScreen(vm: AppViewModel) {
             GlowHero(
                 tint = tint,
                 eyebrow = null,
-                title = listOf("Queue", "New Episodes", "Latest", "Podcasts")[tab.coerceIn(0, 3)],
+                title = Tabs.NAMES[tab.coerceIn(0, Tabs.NAMES.lastIndex)],
                 summary = when (tab) {
-                    0 -> if (queue.isEmpty()) "Nothing queued" else "${queue.size} episode${if (queue.size == 1) "" else "s"}" +
+                    Tabs.QUEUE -> if (queue.isEmpty()) "Nothing queued" else "${queue.size} episode${if (queue.size == 1) "" else "s"}" +
                         (if (queueLeftMs > 0) " · about ${formatDuration(queueLeftMs)} left" else "")
-                    1 -> if (inbox.isEmpty()) "All caught up" else "${inbox.size} new"
-                    2 -> "Newest episodes across your podcasts"
+                    Tabs.NEW -> if (inbox.isEmpty()) "All caught up" else "${inbox.size} new"
+                    Tabs.LATEST -> "Newest episodes across your podcasts"
+                    Tabs.PLAYLISTS -> "Smart playlists that keep themselves up to date"
                     else -> "${library.size} podcast${if (library.size == 1) "" else "s"}" + (if (pinned > 0) " · $pinned pinned" else "")
                 },
                 top = {

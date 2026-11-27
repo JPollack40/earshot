@@ -6,6 +6,7 @@ import { plainText, safeHtml, searchTerms, skipName, snippet, speedName } from "
 import { useArtColor } from "../appearance";
 import { Art, EpisodeItem, type Nav } from "./common";
 import { Glyph } from "./Icons";
+import { RulesPanel } from "./Playlists";
 
 export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   const s = store.useStore();
@@ -16,6 +17,7 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
 
   useEffect(() => {
@@ -66,6 +68,11 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
         <button className="icon" title={searchOpen ? "Close search" : "Search this podcast"} onClick={() => (setSearchOpen(!searchOpen), setQuery(""))}>
           {searchOpen ? <Glyph name="close" text="✕" /> : <Glyph name="search" text="🔍" />}
         </button>
+        {subscribed && (
+          <button className="icon" title="Automation: where new episodes go, tidy-up" aria-pressed={showRules} onClick={() => setShowRules(!showRules)}>
+            <Glyph name="rules" text="⚡" />
+          </button>
+        )}
         {subscribed && (
           <button className="icon" title="Playback settings" onClick={() => setShowSettings(!showSettings)}>
             <Glyph name="sliders" text="⚙" />
@@ -145,6 +152,8 @@ export function PodcastPage({ feedUrl, nav }: { feedUrl: string; nav: Nav }) {
           </label>
         </div>
       )}
+
+      {showRules && podcast && !terms.length && <RulesPanel key={podcast.feed_url} podcast={podcast} />}
 
       {!terms.length && feed?.description && (
         <div className={`notes podcast-desc ${descOpen ? "open" : ""}`} onClick={() => setDescOpen(!descOpen)} dangerouslySetInnerHTML={{ __html: safeHtml(feed.description) }} />

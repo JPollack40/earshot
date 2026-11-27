@@ -102,6 +102,38 @@ object Settings {
         savePlayback(context, d, changedAt, dirty = false)
     }
 
+    // ---- Tidy-up defaults (phase 7), synced in the same settings row as the playback defaults ----
+
+    private var tidy: MutableStateFlow<TidyDefaults>? = null
+
+    fun tidyDefaults(context: Context): StateFlow<TidyDefaults> = tidyFlow(context).asStateFlow()
+
+    private fun tidyFlow(context: Context): MutableStateFlow<TidyDefaults> = synchronized(this) {
+        tidy ?: run {
+            val p = prefs(context)
+            MutableStateFlow(TidyDefaults(p.getInt("inbox_days", 0), p.getInt("inbox_keep", 0))).also { tidy = it }
+        }
+    }
+
+    /** A change made on this phone: saved, and the settings row is marked for upload. */
+    fun updateTidyDefaults(context: Context, change: (TidyDefaults) -> TidyDefaults) {
+        val flow = tidyFlow(context)
+        val t = synchronized(this) { change(flow.value).also { flow.value = it } }
+        prefs(context).edit()
+            .putInt("inbox_days", t.inboxDays)
+            .putInt("inbox_keep", t.inboxKeep)
+            .putLong("playback_changed_at", System.currentTimeMillis())
+            .putBoolean("playback_dirty", true)
+            .apply()
+    }
+
+    /** Tidy-up defaults changed on another device (called with [applyRemotePlayback]). */
+    fun applyRemoteTidy(context: Context, t: TidyDefaults) {
+        val flow = tidyFlow(context)
+        synchronized(this) { flow.value = t }
+        prefs(context).edit().putInt("inbox_days", t.inboxDays).putInt("inbox_keep", t.inboxKeep).apply()
+    }
+
     // ---- Time saved ----
 
     private var timeSaved: MutableStateFlow<TimeSaved>? = null

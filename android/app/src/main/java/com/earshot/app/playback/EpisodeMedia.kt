@@ -9,6 +9,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaConstants
 import com.earshot.app.data.db.DownloadState
 import com.earshot.app.data.db.EpisodeWithPodcast
+import com.earshot.app.data.db.Playlist
 import com.earshot.app.data.db.Podcast
 import java.io.File
 import java.util.Calendar
@@ -23,6 +24,11 @@ object EpisodeMedia {
     const val LATEST = "latest"
     const val PODCASTS = "podcasts"
     const val PODCAST_PREFIX = "podcast:"
+    /** Smart playlists (phase 7): the car's Playlists tab, and each playlist ("playlist:<id>"). */
+    const val PLAYLISTS = "playlists"
+    const val PLAYLIST_PREFIX = "playlist:"
+    /** "More from <podcast>" at the top of the Queue tab: the loaded episode's podcast. */
+    const val MORE_FROM_PREFIX = "morefrom:"
     /** The speed list (a folder at the top of the Queue tab), and its entries ("speed:1.5"). */
     const val SPEED = "speed"
     const val SPEED_PREFIX = "speed:"
@@ -151,6 +157,48 @@ object EpisodeMedia {
                 MediaMetadata.Builder()
                     .setTitle(p.title)
                     .setArtist(p.author.ifBlank { null })
+                    .setArtworkUri(p.imageUrl?.let { Uri.parse(it) })
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST)
+                    .setExtras(extras)
+                    .build(),
+            )
+            .build()
+    }
+
+    /** A smart playlist in the car's Playlists tab; its episodes are a list. */
+    fun playlistFolder(p: Playlist, icon: Uri): MediaItem {
+        val extras = Bundle()
+        extras.putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM)
+        return MediaItem.Builder()
+            .setMediaId(PLAYLIST_PREFIX + p.id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(p.name)
+                    .setArtworkUri(icon)
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
+                    .setExtras(extras)
+                    .build(),
+            )
+            .build()
+    }
+
+    /**
+     * "More from <podcast>" (phase 7): the nearest the car gets to tapping the podcast's name, since
+     * Android Auto's playing screen can't open a page. Opens that podcast's episodes.
+     */
+    fun moreFromFolder(p: Podcast): MediaItem {
+        val extras = Bundle()
+        extras.putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM)
+        return MediaItem.Builder()
+            .setMediaId(MORE_FROM_PREFIX + p.id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("More from ${p.title}")
+                    .setSubtitle("The playing episode's podcast")
                     .setArtworkUri(p.imageUrl?.let { Uri.parse(it) })
                     .setIsBrowsable(true)
                     .setIsPlayable(false)

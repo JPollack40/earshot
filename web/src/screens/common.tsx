@@ -26,6 +26,46 @@ export function playEpisode(e: EpisodeRow, feed?: ParsedFeed) {
   player.load(row, true);
 }
 
+/** Opens a podcast's page (phase 7: tapping a podcast's name or artwork anywhere). */
+export function openPodcast(feedUrl: string) {
+  if (feedUrl) navHolder.current?.open({ name: "podcast", feedUrl });
+}
+
+/**
+ * A podcast's name that opens the podcast. Used inside rows that are buttons themselves, so it's a
+ * span with the link role that stops the click from reaching the row.
+ */
+export function PodcastLink({ feedUrl, title, className }: { feedUrl: string; title: string | undefined; className?: string }) {
+  if (!title) return null;
+  if (!feedUrl) return <span className={className}>{title}</span>;
+  const go = (ev: React.SyntheticEvent) => {
+    ev.stopPropagation();
+    ev.preventDefault();
+    openPodcast(feedUrl);
+  };
+  return (
+    <span
+      role="link"
+      tabIndex={0}
+      className={`plink ${className ?? ""}`}
+      title={`Open ${title}`}
+      onClick={go}
+      onKeyDown={(ev) => (ev.key === "Enter" || ev.key === " ") && go(ev)}
+    >
+      {title}
+    </span>
+  );
+}
+
+/** Artwork that opens its podcast when clicked. */
+export function ArtLink({ url, size = 40, feedUrl }: { url: string | null | undefined; size?: number; feedUrl: string }) {
+  return (
+    <button className="art-button" title="Open podcast" onClick={() => openPodcast(feedUrl)}>
+      <Art url={url} size={size} />
+    </button>
+  );
+}
+
 export function Art({ url, size = 40 }: { url: string | null | undefined; size?: number }) {
   return url ? (
     <img className="art" src={url} width={size} height={size} loading="lazy" alt="" />
@@ -72,10 +112,19 @@ export function EpisodeItem({
         }}
       >
         {draggable && <span className="handle" title="Drag to reorder">≡</span>}
-        <Art url={e.image_url ?? art} />
+        {podcastTitle ? <ArtLink url={e.image_url ?? art} feedUrl={e.feed_url} /> : <Art url={e.image_url ?? art} />}
         <button className="row-main" onClick={() => setOpen(true)}>
           <div className={`title ${isCurrent ? "current" : ""}`}>{e.title}</div>
-          <div className="meta">{episodeMeta(e, podcastTitle)}</div>
+          <div className="meta">
+            {podcastTitle ? (
+              <>
+                <PodcastLink feedUrl={e.feed_url} title={podcastTitle} />
+                {episodeMeta(e) ? ` • ${episodeMeta(e)}` : ""}
+              </>
+            ) : (
+              episodeMeta(e)
+            )}
+          </div>
           {snippet && <div className="meta snippet">{snippet}</div>}
           {progress > 0 && (
             <div className="progress">
@@ -110,7 +159,16 @@ export function EpisodeSheet({ e, podcastTitle, feed, onClose }: { e: EpisodeRow
     <div className="scrim" onClick={onClose}>
       <div className="sheet" onClick={(ev) => ev.stopPropagation()}>
         <div className="sheet-title">{e.title}</div>
-        <div className="meta">{episodeMeta(e, podcastTitle)}</div>
+        <div className="meta">
+          {podcastTitle ? (
+            <>
+              <PodcastLink feedUrl={e.feed_url} title={podcastTitle} />
+              {episodeMeta(e) ? ` • ${episodeMeta(e)}` : ""}
+            </>
+          ) : (
+            episodeMeta(e)
+          )}
+        </div>
         <div className="actions">
           <button onClick={act(() => playEpisode(e, feed))}>Play</button>
           <button onClick={act(() => store.queueNext(e, feed))}>Play next</button>

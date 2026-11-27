@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Inbox
@@ -92,6 +93,7 @@ fun GlowMiniPlayer(
     onTogglePlay: () -> Unit,
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
+    onOpenPodcast: (() -> Unit)? = null,
 ) {
     val tint = rememberArtColor(now.artworkUrl, now.podcastTitle)
     val card = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -108,11 +110,15 @@ fun GlowMiniPlayer(
             .clickable(onClick = onOpen),
     ) {
         Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Artwork(now.artworkUrl, 40)
+            Artwork(
+                now.artworkUrl,
+                40,
+                modifier = if (onOpenPodcast != null) Modifier.clickable(onClickLabel = "Open podcast", onClick = onOpenPodcast) else Modifier,
+            )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(now.title, style = MaterialTheme.typography.bodyMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(now.podcastTitle, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                PodcastLink(now.podcastTitle, onOpenPodcast, color = Color.White.copy(alpha = 0.8f))
             }
             IconButton(onClick = onSkipBack) {
                 Icon(Icons.Filled.Replay, contentDescription = "Back " + skipLengthName(skipBackMs), tint = Color.White)
@@ -145,7 +151,7 @@ fun GlowMiniPlayer(
     }
 }
 
-/** Glow's bottom bar: the four library sections, on every screen. [selected] is -1 off the library. */
+/** Glow's bottom bar: the five library sections (see Tabs), on every screen. [selected] is -1 off the library. */
 @Composable
 fun GlowNavBar(selected: Int, queueCount: Int, newCount: Int, onSelect: (Int) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
@@ -160,6 +166,7 @@ fun GlowNavBar(selected: Int, queueCount: Int, newCount: Int, onSelect: (Int) ->
             Triple("Queue", Icons.AutoMirrored.Filled.PlaylistPlay, queueCount),
             Triple("New", Icons.Filled.Inbox, newCount),
             Triple("Latest", Icons.Filled.AccessTime, 0),
+            Triple("Playlists", Icons.AutoMirrored.Filled.QueueMusic, 0),
             Triple("Podcasts", Icons.Filled.GridView, 0),
         )
         items.forEachIndexed { i, (label, icon, count) ->

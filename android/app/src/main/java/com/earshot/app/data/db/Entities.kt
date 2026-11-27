@@ -36,6 +36,19 @@ data class Podcast(
     // Sync (v5): a user change sets dirty and changedAt (ms); a sync uploads dirty rows and clears dirty.
     @ColumnInfo(defaultValue = "0") val dirty: Boolean = true,
     @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
+    // Automation rules (v7), see data/Automation.kt. Null means "not set" (New Episodes, no filter, app default).
+    /** "inbox", "queue_next", "queue_last" or "skip". */
+    val newEpisodeAction: String? = null,
+    /** Comma-separated: a new episode is only added if its title contains one of these. */
+    val includeWords: String? = null,
+    /** Comma-separated: a new episode is skipped if its title contains one of these. */
+    val excludeWords: String? = null,
+    val minMinutes: Int? = null,
+    val maxMinutes: Int? = null,
+    /** Archive New Episodes released more than this many days ago (0 = never, null = app default). */
+    val inboxDays: Int? = null,
+    /** Keep only this many of the podcast's episodes in New Episodes (0 = no limit, null = app default). */
+    val inboxKeep: Int? = null,
 )
 
 @Entity(
@@ -148,6 +161,45 @@ data class Bookmark(
     val note: String = "",
     val createdAt: Long,
     @ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
+    @ColumnInfo(defaultValue = "1") val dirty: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * A smart playlist (v7): a name and saved filters ([filtersJson], see data/PlaylistJson.kt).
+ * [position] orders the Playlists tab. [deleted] marks a deletion that still has to reach other devices.
+ */
+@Entity(tableName = "playlists")
+data class Playlist(
+    @PrimaryKey val id: String,
+    val name: String,
+    @ColumnInfo(defaultValue = "0") val position: Int = 0,
+    val filtersJson: String,
+    @ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
+    @ColumnInfo(defaultValue = "1") val dirty: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * One stretch of listening (v7), kept for a future Stats page: from pressing play to pausing,
+ * switching episode or 30 minutes passing. Episode details are copied in so the history survives
+ * the episode leaving the library. [listenedMs] is real time heard; [fromMs]..[toMs] is the part
+ * of the episode covered. [device] is "phone", "car" (Android Auto connected) or "web".
+ */
+@Entity(tableName = "listens", indices = [Index("startedAt")])
+data class Listen(
+    @PrimaryKey val id: String,
+    val episodeId: String,
+    val feedUrl: String = "",
+    val podcastTitle: String = "",
+    val episodeTitle: String = "",
+    val startedAt: Long,
+    val endedAt: Long,
+    val listenedMs: Long,
+    val fromMs: Long,
+    val toMs: Long,
+    val speed: Float = 1f,
+    val device: String = "phone",
     @ColumnInfo(defaultValue = "1") val dirty: Boolean = true,
     @ColumnInfo(defaultValue = "0") val changedAt: Long = System.currentTimeMillis(),
 )

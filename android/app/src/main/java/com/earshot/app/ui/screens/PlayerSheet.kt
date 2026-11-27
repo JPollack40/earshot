@@ -119,7 +119,14 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Artwork(now.artworkUrl, if (glow) 280 else 220, corner = if (glow) 14 else 12)
+            // Tapping the artwork or the podcast's name opens the podcast (phase 7).
+            val openPodcast: () -> Unit = { episode?.episode?.podcastId?.let(vm::openPodcastPage) }
+            Artwork(
+                now.artworkUrl,
+                if (glow) 280 else 220,
+                corner = if (glow) 14 else 12,
+                modifier = Modifier.clickable(onClickLabel = "Open podcast", onClick = openPodcast),
+            )
             Spacer(Modifier.height(16.dp))
             Text(
                 now.title,
@@ -128,7 +135,7 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(now.podcastTitle, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PodcastLink(now.podcastTitle, openPodcast, style = MaterialTheme.typography.labelLarge)
 
             val position = dragPosition?.toLong() ?: now.positionMs
             val currentChapter = chapters.lastOrNull { it.startMs <= position }

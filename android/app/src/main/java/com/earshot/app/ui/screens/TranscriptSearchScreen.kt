@@ -121,11 +121,14 @@ fun TranscriptSearchScreen(vm: AppViewModel) {
                             .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Artwork(hit.artworkUrl, 36)
+                        val openPodcast: () -> Unit = {
+                            hit.podcastId?.let(vm::openPodcastPage) ?: vm.openPodcastByFeed(hit.feedUrl)
+                        }
+                        Artwork(hit.artworkUrl, 36, modifier = Modifier.clickable(onClickLabel = "Open podcast", onClick = openPodcast))
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(hit.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(hit.podcastTitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            PodcastLink(hit.podcastTitle, openPodcast)
                         }
                     }
                 }
