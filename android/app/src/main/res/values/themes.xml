@@ -5,5 +5,11 @@
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+
+    <!-- Android Auto reads its accent colour from colorAccent here (see the manifest). -->
+    <style name="Theme.Earshot.Car" parent="Theme.Earshot">
+        <item name="android:colorAccent">@color/accent</item>
     </style>
 </resources>

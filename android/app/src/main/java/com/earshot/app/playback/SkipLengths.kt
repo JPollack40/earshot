@@ -12,11 +12,34 @@ import com.google.common.collect.ImmutableList
  * The session's player. Skip back / forward use the current skip lengths (which can change at any
  * time, per podcast) instead of ExoPlayer's fixed increments. Everything that skips goes through
  * here: the app, the notification, the lock screen, headset buttons and Android Auto.
+ *
+ * The player holds the whole queue (so Android Auto can show it), but "next" and "previous" from
+ * steering-wheel and headset buttons still skip by time and never change episode. Picking another
+ * episode in the queue goes to [onJump], so the service can save the current position and start
+ * the chosen one where it was left off.
  */
 @OptIn(UnstableApi::class)
 class SkipLengthPlayer(player: Player) : ForwardingPlayer(player) {
     @Volatile var backMs = 15_000L
     @Volatile var forwardMs = 30_000L
+
+    /** Called (instead of seeking) when a controller asks for another item in the playlist. */
+    var onJump: ((index: Int) -> Unit)? = null
+
+    override fun seekToNext() = seekForward()
+    override fun seekToNextMediaItem() = seekForward()
+    override fun seekToPrevious() = seekBack()
+    override fun seekToPreviousMediaItem() = seekBack()
+
+    override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
+        val jump = onJump
+        if (jump != null && mediaItemIndex != currentMediaItemIndex) jump(mediaItemIndex) else super.seekTo(mediaItemIndex, positionMs)
+    }
+
+    override fun seekToDefaultPosition(mediaItemIndex: Int) {
+        val jump = onJump
+        if (jump != null && mediaItemIndex != currentMediaItemIndex) jump(mediaItemIndex) else super.seekToDefaultPosition(mediaItemIndex)
+    }
 
     override fun getSeekBackIncrement(): Long = backMs
     override fun getSeekForwardIncrement(): Long = forwardMs
