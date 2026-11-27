@@ -10,7 +10,7 @@ I already checked on the phone: a "radiolab" search came from Podcast Index, Rad
 2. Type `radiolab` and press search.
 3. Under the search box it should say **"From Podcast Index. Tap a podcast to look before subscribing."**
 4. The first result is **Radiolab, WNYC Studios • 680 episodes**. Most results now show an episode count.
-5. Search `behind the bastards`. It should show a check mark (you're subscribed), not a Subscribe button.
+5. Search `behind the bastards`. The first result (Cool Zone Media and iHeartPodcasts) shows a **check mark** because you're subscribed. The second one, by "Behind the Bastards" on Spreaker, is a separate copy of the feed, so it offers Subscribe. That's expected.
 
 ### 2. Look at a podcast without subscribing
 1. Search `radiolab` again and tap the **Radiolab (WNYC Studios)** row itself, not its Subscribe button.
