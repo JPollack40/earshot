@@ -20,7 +20,10 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.earshot.app"
+        // Phase 14: the app's ID is com.jpollack.earshot (registered with Google's developer verification;
+        // the old com.earshot.app had been seen on Android, so a free account couldn't register it).
+        // The code's namespace stays com.earshot.app, so no source files move.
+        applicationId = "com.jpollack.earshot"
         minSdk = 26
         targetSdk = 36
         // Release builds from GitHub Actions pass the version from the git tag (v0.8.0 -> "0.8.0", code 800).
@@ -46,7 +49,7 @@ android {
         // from the Firebase console into android/app/ (gitignored). The Google Services Gradle plugin
         // isn't used (it fails the build when the file is missing); the four values are read here and
         // the app starts Firebase itself. Without the file these are blank and notifications stay off.
-        val firebase = firebaseConfig(file("google-services.json"), "com.earshot.app")
+        val firebase = firebaseConfig(file("google-services.json"), "com.jpollack.earshot")
         buildConfigField("String", "FIREBASE_PROJECT_ID", quoted(firebase["projectId"].orEmpty()))
         buildConfigField("String", "FIREBASE_APP_ID", quoted(firebase["appId"].orEmpty()))
         buildConfigField("String", "FIREBASE_API_KEY", quoted(firebase["apiKey"].orEmpty()))
@@ -104,7 +107,7 @@ android {
     //   standard  = the app as today (no car app)
     //   twoIcons  = the same app (same id, so it updates the installed one) plus the templated car app:
     //               the Desktop Head Unit test of whether one app shows two icons in Android Auto
-    //   lab       = "Earshot Lab", a separate app (com.earshot.app.lab) beside the normal one, with the
+    //   lab       = "Earshot Lab", a separate app (com.jpollack.earshot.lab) beside the normal one, with the
     //               templated car app; its library arrives through sync after signing in
     // Code and manifest for the car app: src/carapp/ (shared by twoIcons and lab).
     if (carApp) {
