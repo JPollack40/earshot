@@ -65,7 +65,18 @@ Deno.serve(async (req: Request) => {
     await res.body?.cancel();
     return text("The feed is too large", 502);
   }
-  return new Response(res.body, {
+  // Phase 15: also cap feeds that don't say their size up front, while they stream through.
+  let seen = 0;
+  const capped = res.body?.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        seen += chunk.byteLength;
+        if (seen > MAX_BYTES) controller.error(new Error("The feed is too large"));
+        else controller.enqueue(chunk);
+      },
+    }),
+  );
+  return new Response(capped ?? null, {
     status: 200,
     headers: {
       ...CORS,
