@@ -488,6 +488,41 @@ class PlaybackService : MediaLibraryService() {
     private var pausedId: String? = null
     private var pausedByInterruption = false
 
+    // ---- Phase 20 (C2): the after-drive card ----
+
+    /** When the current drive began (Android Auto connected), or 0 when not driving. */
+    private var driveSince = 0L
+    private var driveBookmarks = 0
+    private val driveFinished = mutableListOf<String>()
+    private var driveEndJob: Job? = null
+
+    private fun carConnected() {
+        driveEndJob?.cancel()
+        if (driveSince == 0L) {
+            driveSince = System.currentTimeMillis()
+            driveBookmarks = 0
+            driveFinished.clear()
+            Log.i(TAG, "Drive started (Android Auto connected)")
+        }
+    }
+
+    /** Android Auto reconnects now and then mid-drive, so the drive only ends after 2 minutes without it. */
+    private fun carMaybeGone() {
+        driveEndJob?.cancel()
+        driveEndJob = scope.launch {
+            delay(120_000)
+            if (!inCar()) endDrive()
+        }
+    }
+
+    private fun endDrive() {
+        if (driveSince == 0L) return
+        val minutes = (System.currentTimeMillis() - driveSince) / 60_000
+        driveSince = 0L
+        Log.i(TAG, "Drive ended after $minutes min: $driveBookmarks bookmarks, ${driveFinished.size} finished")
+        AfterDrive.notify(app, driveBookmarks, driveFinished.toList())
+    }
+
     // ---- Phase 19: sentence starts, "Say that again, slower" ----
 
     private var sentencesFor: String? = null
@@ -616,6 +651,7 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             val b = app.transcripts.addBookmark(id, position) ?: return@launch
             Log.i(TAG, "Bookmarked ${b.episodeTitle} at ${b.positionMs} ms")
+            if (driveSince > 0) driveBookmarks++ // phase 20: for the after-drive card
             bookmarkFlash = true
             refreshButtons()
             bookmarkFlashJob?.cancel()
@@ -787,6 +823,7 @@ class PlaybackService : MediaLibraryService() {
         if (stopHere) app.player.setSleepTimer(null)
         scope.launch {
             repo.setPlayed(id, true) // also leaves the queue
+            if (driveSince > 0) player.currentMediaItem?.takeIf { it.mediaId == id }?.mediaMetadata?.title?.toString()?.let { driveFinished += it }
             if (player.currentMediaItem?.mediaId == id) {
                 // Phase 19 (B5): an empty queue can carry on from a chosen playlist.
                 val next = repo.queueHead() ?: repo.continueFromPlaylist(id)
@@ -949,10 +986,15 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            if (controller.packageName == ANDROID_AUTO_PACKAGE) carMaybeGone() // phase 20: after-drive card
+        }
+
         override fun onConnectAsync(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
+            if (controller.packageName == ANDROID_AUTO_PACKAGE) carConnected() // phase 20
             // Start from Media3's defaults for this controller (full control when trusted, read-only
             // otherwise) and add the Mark played and Bookmark buttons. Android Auto shows the
             // buttons the media notification's controller has, and taps are checked against its
