@@ -68,7 +68,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val theme by vm.appTheme.collectAsStateWithLifecycle()
-            EarshotTheme(glow = theme == Settings.THEME_GLOW) {
+            val black by vm.trueBlack.collectAsStateWithLifecycle()
+            val textSize by vm.textSize.collectAsStateWithLifecycle()
+            EarshotTheme(
+                glow = theme == Settings.THEME_GLOW,
+                trueBlack = black,
+                textScale = if (textSize == Settings.TEXT_COMFORTABLE) Settings.COMFORTABLE_SCALE else 1f,
+            ) {
                 EarshotRoot(vm)
             }
         }

@@ -2,6 +2,7 @@
 
 package com.earshot.app.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -9,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -89,14 +92,29 @@ private fun glowTypography(): Typography {
 /** True when the Glow theme is on, for screens whose layout differs between themes. */
 val LocalGlow = staticCompositionLocalOf { false }
 
-/** Dark and dense by default. [glow] picks the phase 5c look; false is Classic. */
+/**
+ * Dark and dense by default. [glow] picks the phase 5c look; false is Classic. Phase 22: [trueBlack] makes
+ * the backgrounds pure black (saves power on OLED screens), [textScale] above 1 makes all text bigger.
+ */
 @Composable
-fun EarshotTheme(glow: Boolean = false, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalGlow provides glow) {
+fun EarshotTheme(glow: Boolean = false, trueBlack: Boolean = false, textScale: Float = 1f, content: @Composable () -> Unit) {
+    val base = if (glow) GlowColors else ClassicColors
+    val colors = if (trueBlack) blackOf(base) else base
+    val density = LocalDensity.current
+    val scaled = if (textScale != 1f) Density(density.density, density.fontScale * textScale) else density
+    CompositionLocalProvider(LocalGlow provides glow, LocalDensity provides scaled) {
         if (glow) {
-            MaterialTheme(colorScheme = GlowColors, typography = glowTypography(), content = content)
+            MaterialTheme(colorScheme = colors, typography = glowTypography(), content = content)
         } else {
-            MaterialTheme(colorScheme = ClassicColors, content = content)
+            MaterialTheme(colorScheme = colors, content = content)
         }
     }
 }
+
+/** The same colours with pure black behind everything (cards stay a little lighter so they still show). */
+fun blackOf(c: ColorScheme): ColorScheme = c.copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0A0A0C),
+)

@@ -252,6 +252,35 @@ object Settings {
         prefs(context).edit { putString("app_theme", value) }
     }
 
+    // Phase 22: true black backgrounds (OLED) and text size, this phone only.
+    const val TEXT_COMPACT = "compact"
+    const val TEXT_COMFORTABLE = "comfortable"
+    /** How much bigger Comfortable makes all text, on top of the phone's own font size. */
+    const val COMFORTABLE_SCALE = 1.12f
+
+    private var trueBlack: MutableStateFlow<Boolean>? = null
+    private var textSize: MutableStateFlow<String>? = null
+
+    fun trueBlack(context: Context): StateFlow<Boolean> = synchronized(this) {
+        trueBlack ?: MutableStateFlow(prefs(context).getBoolean("true_black", false)).also { trueBlack = it }
+    }.asStateFlow()
+
+    fun setTrueBlack(context: Context, on: Boolean) {
+        trueBlack(context)
+        trueBlack?.value = on
+        prefs(context).edit { putBoolean("true_black", on) }
+    }
+
+    fun textSize(context: Context): StateFlow<String> = synchronized(this) {
+        textSize ?: MutableStateFlow(prefs(context).getString("text_size", TEXT_COMPACT) ?: TEXT_COMPACT).also { textSize = it }
+    }.asStateFlow()
+
+    fun setTextSize(context: Context, value: String) {
+        textSize(context)
+        textSize?.value = value
+        prefs(context).edit { putString("text_size", value) }
+    }
+
     // ---- Downloads ----
 
     /** Choices offered for [expireDays]; 0 means never. */

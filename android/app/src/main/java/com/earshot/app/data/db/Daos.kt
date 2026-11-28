@@ -205,6 +205,10 @@ interface EpisodeDao {
     @Query("$EPISODE_JOIN WHERE p.subscribed = 1 ORDER BY e.pubDate DESC LIMIT :limit")
     fun observeLatest(limit: Int): Flow<List<EpisodeWithPodcast>>
 
+    /** Phase 22 (B6): every episode of a followed show, plus anything queued, for the Library check-up. */
+    @Query("SELECT * FROM episodes WHERE queuePosition IS NOT NULL OR podcastId IN (SELECT id FROM podcasts WHERE subscribed = 1)")
+    suspend fun forCheckup(): List<Episode>
+
     /** Phase 20 (B3): all of a podcast's episodes, for the catch-up drip. */
     @Query("SELECT * FROM episodes WHERE podcastId = :podcastId")
     suspend fun allForPodcast(podcastId: Long): List<Episode>

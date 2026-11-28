@@ -635,6 +635,11 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     suspend fun setDrip(podcastId: Long, on: Boolean) = podcasts.setDrip(podcastId, on)
 
+    /** Phase 22 (B6): the Library check-up's suggestions now. */
+    suspend fun libraryCheckup(): List<LibraryCheckup.Finding> = withContext(Dispatchers.Default) {
+        LibraryCheckup.check(podcasts.getAll(), episodes.forCheckup(), System.currentTimeMillis())
+    }
+
     suspend fun continueFromPlaylist(finishedId: String): EpisodeWithPodcast? {
         val pid = Settings.queueEndPlaylistId(context) ?: return null
         val p = playlists.get(pid)?.takeIf { !it.deleted } ?: return null

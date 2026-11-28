@@ -337,6 +337,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Phase 10: trim ads stitched onto this podcast's episodes ("start", "end" or null = off). Synced. */
+    // ---- Phase 22 (B6): Library check-up on Stats ----
+
+    var checkup by mutableStateOf<List<com.earshot.app.data.LibraryCheckup.Finding>?>(null)
+        private set
+    private val checkupDismissed = mutableSetOf<String>()
+
+    private fun findingKey(f: com.earshot.app.data.LibraryCheckup.Finding) = "${f.kind}:${f.podcastId}"
+
+    fun refreshCheckup() {
+        viewModelScope.launch {
+            checkup = repo.libraryCheckup().filter { findingKey(it) !in checkupDismissed }
+        }
+    }
+
+    fun dismissFinding(f: com.earshot.app.data.LibraryCheckup.Finding) {
+        checkupDismissed += findingKey(f)
+        checkup = checkup?.filter { it != f }
+    }
+
+    /** The one-tap fix for a finding (suggestions only until this is tapped). */
+    fun fixFinding(f: com.earshot.app.data.LibraryCheckup.Finding) {
+        val K = com.earshot.app.data.LibraryCheckup.Kind
+        when (f.kind) {
+            K.PASSED_OVER -> f.podcastId?.let { id -> updateRules(id) { it.copy(newEpisodeAction = com.earshot.app.data.Automation.NewEpisodeAction.SKIP.key) } }
+            K.ALWAYS_FIRST -> f.podcastId?.let { id -> updateRules(id) { it.copy(newEpisodeAction = com.earshot.app.data.Automation.NewEpisodeAction.QUEUE_NEXT.key) } }
+            K.QUIET -> f.podcastId?.let { navigate(Screen.PodcastDetail(it)) }
+            K.STALE_QUEUE -> viewModelScope.launch { f.episodeIds.forEach { repo.removeFromQueue(it) } }
+        }
+        if (f.kind != K.QUIET) dismissFinding(f)
+    }
+
     /** Phase 20 (B3): catch-up drip for a serial show (this phone only). */
     fun setDrip(podcastId: Long, on: Boolean) {
         viewModelScope.launch { repo.setDrip(podcastId, on) }
@@ -824,6 +855,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val appTheme: StateFlow<String> = Settings.appTheme(app)
 
     fun setAppTheme(value: String) = Settings.setAppTheme(app, value)
+
+    // Phase 22: true black and text size.
+    val trueBlack: StateFlow<Boolean> = Settings.trueBlack(app)
+    fun setTrueBlack(on: Boolean) = Settings.setTrueBlack(app, on)
+    val textSize: StateFlow<String> = Settings.textSize(app)
+    fun setTextSize(value: String) = Settings.setTextSize(app, value)
 
     var autoDownloadQueued by mutableStateOf(Settings.autoDownloadQueued(app))
         private set

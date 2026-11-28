@@ -123,7 +123,42 @@ fun StatsScreen(vm: AppViewModel) {
         }
         StatsBody(vm, d.result, art, comparedWith = "the ${range.label.lowercase()} before", streaks = d.streaks)
         Reviews(vm, d.reviews)
+        LibraryCheckupSection(vm) // phase 22 (B6)
         Footer(d.historyStart)
+    }
+}
+
+/** Phase 22 (B6): suggestions for tidying the library. Nothing changes until a fix is tapped. */
+@Composable
+private fun LibraryCheckupSection(vm: AppViewModel) {
+    LaunchedEffect(Unit) { vm.refreshCheckup() }
+    val list = vm.checkup ?: return
+    Section("Library check-up") {
+        if (list.isEmpty()) {
+            Hint("All tidy: nothing to suggest.")
+            return@Section
+        }
+        Hint("Suggestions only. Nothing changes until you tap one.")
+        list.forEach { f ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Text(f.title, style = MaterialTheme.typography.bodyMedium)
+                Text(f.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row {
+                    val K = com.earshot.app.data.LibraryCheckup.Kind
+                    TextButton(onClick = { vm.fixFinding(f) }) {
+                        Text(
+                            when (f.kind) {
+                                K.PASSED_OVER -> "Stop adding new episodes"
+                                K.ALWAYS_FIRST -> "New episodes to the top of the queue"
+                                K.QUIET -> "Open the show"
+                                K.STALE_QUEUE -> "Take them out of the queue"
+                            },
+                        )
+                    }
+                    TextButton(onClick = { vm.dismissFinding(f) }) { Text("Not now") }
+                }
+            }
+        }
     }
 }
 

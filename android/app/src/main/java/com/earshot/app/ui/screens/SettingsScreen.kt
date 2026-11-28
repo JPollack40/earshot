@@ -78,6 +78,25 @@ fun SettingsScreen(vm: AppViewModel) {
                 { if (it == Settings.THEME_GLOW) "Glow" else "Classic" },
             ) { vm.setAppTheme(it) }
             divider()
+            // Phase 22
+            val black by vm.trueBlack.collectAsStateWithLifecycle()
+            SettingRow(
+                title = "True black",
+                subtitle = "Pure black behind everything. Saves a little battery on this phone's screen.",
+                onClick = { vm.setTrueBlack(!black) },
+            ) {
+                Switch(checked = black, onCheckedChange = vm::setTrueBlack)
+            }
+            divider()
+            val textSize by vm.textSize.collectAsStateWithLifecycle()
+            ChoiceRow(
+                "Text size",
+                "Comfortable makes all text a little bigger, on top of the phone's own font size.",
+                textSize,
+                listOf(Settings.TEXT_COMPACT, Settings.TEXT_COMFORTABLE),
+                { if (it == Settings.TEXT_COMFORTABLE) "Comfortable" else "Compact" },
+            ) { vm.setTextSize(it) }
+            divider()
 
             val d by vm.playbackDefaults.collectAsStateWithLifecycle()
             SectionHeader("Playback")
