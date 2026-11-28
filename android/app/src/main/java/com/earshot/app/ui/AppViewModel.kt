@@ -16,6 +16,7 @@ import com.earshot.app.data.ImportStatus
 import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.Settings
+import com.earshot.app.playback.OutputProfiles
 import com.earshot.app.data.SleepSchedule
 import com.earshot.app.data.TimeSaved
 import com.earshot.app.data.TidyDefaults
@@ -914,8 +915,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Settings that apply to the loaded episode right now. */
-    val currentPrefs: StateFlow<PlaybackPrefs> = combine(currentPodcast, playbackDefaults) { p, d -> PlaybackPrefs.resolve(d, p) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackPrefs.resolve(playbackDefaults.value, null))
+    // Phase 20 (C1): with per-output profiles on, the current output's settings sit on top of the defaults.
+    val currentPrefs: StateFlow<PlaybackPrefs> = combine(currentPodcast, OutputProfiles.effectiveDefaults(app)) { p, d -> PlaybackPrefs.resolve(d, p) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackPrefs.resolve(OutputProfiles.effectiveNow(app), null))
 
     fun updatePlaybackDefaults(change: (PlaybackDefaults) -> PlaybackDefaults) = Settings.updatePlaybackDefaults(app, change)
 
@@ -936,7 +938,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (p != null && p.hasOwnAudio()) {
             updatePodcastPlayback(p.id) { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
         } else {
-            updatePlaybackDefaults { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
+            OutputProfiles.update(app) { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
         }
     }
 

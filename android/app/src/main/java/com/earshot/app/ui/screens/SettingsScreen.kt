@@ -115,6 +115,8 @@ fun SettingsScreen(vm: AppViewModel) {
                 vm.updatePlaybackDefaults { it.copy(skipForwardMs = ms) }
             }
             divider()
+            OutputProfilesSetting() // phase 20 (C1)
+            divider()
             val rewind by vm.resumeRewind.collectAsStateWithLifecycle()
             SettingRow(
                 title = "Rewind a little after a pause",
