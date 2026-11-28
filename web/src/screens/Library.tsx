@@ -199,9 +199,18 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
                 setDragId(null);
               }}
               extra={
-                <button className="icon" title="Remove from queue" onClick={() => store.removeFromQueue(e)}>
-                  <Glyph name="close" text="✕" />
-                </button>
+                <>
+                  {/* Phase 22: Move up / down beside drag (keyboard and touch friendly). */}
+                  <button className="icon" title="Move up" aria-label={`Move ${e.title} up`} disabled={i === 0} onClick={() => store.moveInQueue(e.id, i - 1)}>
+                    ↑
+                  </button>
+                  <button className="icon" title="Move down" aria-label={`Move ${e.title} down`} disabled={i === queue.length - 1} onClick={() => store.moveInQueue(e.id, i + 1)}>
+                    ↓
+                  </button>
+                  <button className="icon" title="Remove from queue" onClick={() => store.removeFromQueue(e)}>
+                    <Glyph name="close" text="✕" />
+                  </button>
+                </>
               }
             />
           ))}

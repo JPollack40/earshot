@@ -214,3 +214,9 @@ mark { background: none; color: var(--accent); font-weight: 700; }
 .owner-crash { margin: 6px 0; }
 .owner-crash pre { white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; }
 @media (max-width: 640px) { .owner-table thead { display: none; } .owner-table td { display: block; border: 0; padding: 2px 0; } .owner-table tr { display: block; border-top: 1px solid var(--line); padding: 6px 0; } }
+
+/* Phase 22: keyboard shortcuts sheet */
+.shortcuts table { margin: 6px 14px 10px; border-collapse: collapse; font-size: 14px; }
+.shortcuts td { padding: 4px 12px 4px 0; vertical-align: top; }
+.shortcuts kbd { display: inline-block; min-width: 22px; text-align: center; padding: 1px 6px; margin-right: 4px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface2); font: inherit; font-size: 12px; }
+.shortcuts > button { margin-left: 14px; }

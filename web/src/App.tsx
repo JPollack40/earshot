@@ -24,6 +24,9 @@ import { ConfigBanner } from "./screens/ConfigBanner";
 import { HandoffBanner } from "./screens/HandoffBanner";
 import { OwnerPage } from "./screens/Owner";
 import { startHandoff } from "./handoff";
+import { actionFor, stepSpeed } from "./shortcuts";
+import { ShortcutsSheet } from "./screens/ShortcutsSheet";
+import { audioChanger } from "./screens/PlayerBar";
 
 // Phase 15: the Stats pages load only when opened (their charts and maths aren't needed at start).
 const StatsPage = lazy(() => import("./screens/Stats").then((m) => ({ default: m.StatsPage })));
@@ -103,14 +106,46 @@ export function App() {
     }
   }, [s.loaded]);
 
-  // Space bar plays and pauses (unless typing).
+  // Phase 22: keyboard shortcuts (Space plays and pauses as before); "?" lists them.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      const t = ev.target as HTMLElement;
-      if (ev.code === "Space" && !["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(t.tagName)) {
-        ev.preventDefault();
-        player.toggle();
+      const action = actionFor(ev);
+      if (!action) return;
+      const st = store.getState();
+      const cur = player.current();
+      const pod = cur ? st.podcasts.get(cur.feed_url) : undefined;
+      const prefsNow = resolvePlayback(st.defaults, pod);
+      switch (action) {
+        case "toggle":
+          player.toggle();
+          break;
+        case "back":
+          player.skipBy(-prefsNow.skipBackMs);
+          break;
+        case "forward":
+          player.skipBy(prefsNow.skipForwardMs);
+          break;
+        case "slower":
+        case "faster":
+          audioChanger(prefsNow, pod).changeAudio({ speed: stepSpeed(prefsNow.speed, action === "faster") });
+          break;
+        case "next": {
+          const next = store.queue().find((e) => e.id !== cur?.id);
+          if (next) player.load(next, true);
+          break;
+        }
+        case "search":
+          setStack((st2) => [...st2, { name: "search" }]);
+          break;
+        case "help":
+          setShortcutsOpen(true);
+          break;
+        case "close":
+          setShortcutsOpen(false);
+          return; // let other Escape handlers run too
       }
+      ev.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -152,6 +187,7 @@ export function App() {
       {route.name === "browseSettings" && <BrowseSettingsPage nav={nav} />}
       {route.name === "owner" && <OwnerPage nav={nav} />}
       <WhatsNew />
+      {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
     </>
   );
 
