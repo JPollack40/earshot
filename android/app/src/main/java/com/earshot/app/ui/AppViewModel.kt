@@ -809,6 +809,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Phase 17: Settings > Downloads > Storage limit. */
+    var storageCapGb by mutableIntStateOf(Settings.storageCapGb(app))
+        private set
+
+    fun updateStorageCapGb(gb: Int) {
+        Settings.setStorageCapGb(app, gb)
+        storageCapGb = gb
+        app.cleanupDownloads("storage limit changed")
+    }
+
     fun updateExpireDays(days: Int) {
         Settings.setExpireDays(app, days)
         expireDays = days

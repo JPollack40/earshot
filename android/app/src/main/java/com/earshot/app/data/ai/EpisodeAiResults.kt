@@ -78,4 +78,18 @@ object AdSkip {
         }
         return end
     }
+
+    /** Phase 17: how much of the ad's end Smart Next leaves to play, so the show's return isn't clipped. */
+    const val NEXT_LEAD_IN_MS = 1_000L
+
+    /**
+     * Phase 17: where a steering-wheel / earbud Next goes while a found ad plays: just before the ad (and any
+     * straight after it) ends, or [TO_END] when it runs to the end. Null when no ad is playing, so Next
+     * skips by time. Ads already skipped once count too: Next is an explicit press.
+     */
+    fun nextTarget(ads: List<AdSpan>, positionMs: Long): Long? {
+        val end = skipTarget(ads, positionMs) ?: return null
+        if (end >= TO_END) return TO_END
+        return (end - NEXT_LEAD_IN_MS).coerceAtLeast(positionMs + 1)
+    }
 }

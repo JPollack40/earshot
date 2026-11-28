@@ -293,6 +293,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     private suspend fun autoDownload(id: String) {
         if (!Settings.autoDownloadQueued(context)) return
         val e = episodes.get(id) ?: return
+        if (overStorageCap()) {
+            Log.i(TAG, "Not downloading \"${e.title}\" automatically: downloads are at the storage limit")
+            return
+        }
         if (e.played) return
         val fileOk = e.downloadState == DownloadState.DONE && e.localPath?.let { File(it).exists() } == true
         if (e.downloadState == DownloadState.NONE || e.downloadState == DownloadState.FAILED ||
@@ -861,8 +865,39 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 deleted++
                 Log.i(TAG, "Deleted download of \"${e.title}\" ($reason)")
             }
+            deleted += deleteOverCap(protectedId, now)
             deleted + deleteOrphanFiles(now)
         }
+    }
+
+    /** Phase 17: deletes downloads until they fit in the storage limit ([StorageCap]). */
+    private suspend fun deleteOverCap(protectedId: String?, now: Long): Int {
+        val cap = Settings.storageCapGb(context) * StorageCap.GB
+        if (cap <= 0) return 0
+        val done = episodes.completedDownloads()
+        val items = done.mapNotNull { e ->
+            val f = e.localPath?.let { File(it) }?.takeIf { it.exists() } ?: return@mapNotNull null
+            StorageCap.Item(
+                id = e.id,
+                bytes = f.length(),
+                keep = e.queuePosition != null && !e.played,
+                lastUsedAt = maxOf(e.downloadedAt, e.lastPlayedAt),
+                downloadedAt = e.downloadedAt,
+            )
+        }
+        val ids = StorageCap.toDelete(items, cap, protectedId, now).toSet()
+        for (e in done.filter { it.id in ids }) {
+            e.localPath?.let { File(it).delete() }
+            episodes.clearDownload(e.id)
+            Log.i(TAG, "Deleted download of \"${e.title}\" (over the ${Settings.storageCapGb(context)} GB storage limit)")
+        }
+        return ids.size
+    }
+
+    /** Phase 17: true when downloads already take the storage limit (automatic downloads wait). */
+    suspend fun overStorageCap(): Boolean {
+        val cap = Settings.storageCapGb(context) * StorageCap.GB
+        return cap > 0 && downloadsUsage().second >= cap
     }
 
     /**

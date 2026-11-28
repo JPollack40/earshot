@@ -284,6 +284,13 @@ object Settings {
         prefs(context).edit { putBoolean("download_wifi_only", wifiOnly) }
     }
 
+    /** Phase 17: the most space downloads may take, in GB (0 = no limit). See [StorageCap]. */
+    fun storageCapGb(context: Context): Int = prefs(context).getInt("storage_cap_gb", 0)
+
+    fun setStorageCapGb(context: Context, gb: Int) {
+        prefs(context).edit { putInt("storage_cap_gb", gb) }
+    }
+
     /** Download an episode as soon as it's added to the queue. */
     fun autoDownloadQueued(context: Context): Boolean = prefs(context).getBoolean("auto_download_queued", true)
 

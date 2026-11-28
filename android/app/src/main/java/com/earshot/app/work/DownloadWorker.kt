@@ -49,6 +49,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         return try {
             val file = withContext(Dispatchers.IO) { downloadTo(episode, dao) }
             dao.markDownloaded(id, file.absolutePath, System.currentTimeMillis())
+            if (Settings.storageCapGb(app) > 0) app.cleanupDownloads("download finished") // phase 17: storage limit
             Result.success()
         } catch (e: CancellationException) {
             withContext(NonCancellable) { dao.setDownload(id, DownloadState.NONE, 0, null) }

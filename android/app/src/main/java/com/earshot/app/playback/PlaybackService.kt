@@ -133,6 +133,7 @@ class PlaybackService : MediaLibraryService() {
         listening.finishOrphans()
         skipPlayer = SkipLengthPlayer(player)
         skipPlayer.onJump = ::jumpTo
+        skipPlayer.onNext = ::smartNext
         prefs = PlaybackPrefs.resolve(Settings.playbackDefaults(this).value, null)
         player.setPlaybackSpeed(prefs.speed)
 
@@ -522,6 +523,23 @@ class PlaybackService : MediaLibraryService() {
         Log.i(TAG, "Skip ad (button): ${player.currentPosition} -> $to ms")
         if (duration > 0 && to >= duration - 500) finishCurrent(id, playNext = true, atEnd = false) else player.seekTo(to)
         updateAdButton()
+    }
+
+    /**
+     * Phase 17: steering-wheel / earbud Next during a found ad (any ad mode but Off): to just before the
+     * ad ends, or the end of the episode when the ad runs to the end. False when no ad is playing, so
+     * Next skips by time as before.
+     */
+    private fun smartNext(): Boolean {
+        val id = player.currentMediaItem?.mediaId ?: return false
+        if (adsFor != id || ads.isEmpty() || Settings.adSkip(app).value == AdSkip.OFF) return false
+        val pos = player.currentPosition
+        val to = AdSkip.nextTarget(ads, pos) ?: return false
+        val duration = player.duration
+        Log.i(TAG, "Smart Next: in an ad at $pos ms, jumping to ${if (to >= AdSkip.TO_END) "the end" else "$to ms"}")
+        if (to >= AdSkip.TO_END || (duration > 0 && to >= duration - 500)) finishCurrent(id, playNext = true, atEnd = false) else player.seekTo(to)
+        updateAdButton()
+        return true
     }
 
     /** Bookmarks the playing moment (Bookmark button in Android Auto or the notification). */
