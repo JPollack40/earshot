@@ -126,6 +126,18 @@ fun SettingsScreen(vm: AppViewModel) {
             divider()
             SleepScheduleSetting(vm.sleepSchedule, vm::updateSleepSchedule)
             divider()
+            // Phase 19 (B5): carry on from a playlist when the queue runs out.
+            val playlists by vm.playlists.collectAsStateWithLifecycle()
+            val live = playlists.filter { !it.deleted }
+            ChoiceRow(
+                "When the queue ends",
+                "Carry on with the next unplayed episode of a playlist (it joins the queue). Phone and car.",
+                vm.queueEndPlaylistId?.takeIf { id -> live.any { it.id == id } },
+                listOf<String?>(null) + live.map { it.id },
+                label = { id -> if (id == null) "Stop" else live.firstOrNull { it.id == id }?.name ?: "Stop" },
+                onPick = vm::updateQueueEndPlaylist,
+            )
+            divider()
 
             val saved by vm.timeSaved.collectAsStateWithLifecycle()
             SectionHeader("Time saved")

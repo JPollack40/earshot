@@ -135,6 +135,7 @@ class PlaybackService : MediaLibraryService() {
         skipPlayer = SkipLengthPlayer(player)
         skipPlayer.onJump = ::jumpTo
         skipPlayer.onNext = ::smartNext
+        skipPlayer.snapBack = { raw, from -> snapToSentence(raw, from) }
         prefs = PlaybackPrefs.resolve(Settings.playbackDefaults(this).value, null)
         player.setPlaybackSpeed(prefs.speed)
 
@@ -294,10 +295,23 @@ class PlaybackService : MediaLibraryService() {
                     ads = list
                 }
         }
+        // Phase 19: sentence starts of the loaded episode's timed transcript (skip back, Say that again).
+        scope.launch {
+            loadedEpisodeId
+                .flatMapLatest<String?, Pair<String?, LongArray>> { id ->
+                    if (id == null) flowOf(null to LongArray(0))
+                    else app.transcripts.observe(id).map { t -> id to (if (t != null && t.timed) SentenceSnap.starts(t.segments) else LongArray(0)) }
+                }
+                .collect { (id, starts) ->
+                    sentencesFor = id
+                    sentenceStarts = starts
+                }
+        }
         scope.launch {
             while (isActive) {
                 delay(500)
                 if (player.isPlaying) checkSkips()
+                checkSayAgain()
                 updateChapterArt()
                 updateAdButton()
             }
@@ -327,6 +341,7 @@ class PlaybackService : MediaLibraryService() {
         val old = prefs
         prefs = p
         Log.i(TAG, "Playback settings: $p")
+        sayAgainFor = null // phase 19: a speed change ends "Say that again"
         if (player.playbackParameters.speed != p.speed) player.setPlaybackSpeed(p.speed)
         if (player.skipSilenceEnabled != p.smartSpeed) player.skipSilenceEnabled = p.smartSpeed
         audio.voiceBoost.enabled = p.voiceBoost
@@ -473,6 +488,46 @@ class PlaybackService : MediaLibraryService() {
     private var pausedId: String? = null
     private var pausedByInterruption = false
 
+    // ---- Phase 19: sentence starts, "Say that again, slower" ----
+
+    private var sentencesFor: String? = null
+    private var sentenceStarts: LongArray = LongArray(0)
+
+    private fun startsForCurrent(): LongArray =
+        if (sentencesFor != null && sentencesFor == player.currentMediaItem?.mediaId) sentenceStarts else LongArray(0)
+
+    /** A skip back's target moved to a sentence start, when the playing episode has a timed transcript. */
+    private fun snapToSentence(rawTargetMs: Long, fromMs: Long, maxExtraMs: Long = SentenceSnap.MAX_EXTRA_MS): Long =
+        SentenceSnap.snapBack(startsForCurrent(), rawTargetMs, fromMs, maxExtraMs)
+
+    /** While "Say that again" plays: the episode, and where it goes back to the listener's speed. */
+    private var sayAgainFor: String? = null
+    private var sayAgainUntil = 0L
+
+    private fun sayAgain() {
+        val id = player.currentMediaItem?.mediaId ?: return
+        val pos = if (sayAgainFor == id) sayAgainUntil else player.currentPosition // a second tap keeps the first end
+        val from = SentenceSnap.againFrom(startsForCurrent(), pos)
+        Log.i(TAG, "Say that again: $pos -> $from ms at ${SAY_AGAIN_SPEED}x")
+        sayAgainFor = id
+        sayAgainUntil = pos
+        player.setPlaybackSpeed(SAY_AGAIN_SPEED)
+        player.seekTo(from)
+        if (!player.playWhenReady) player.play()
+    }
+
+    private fun checkSayAgain() {
+        val id = sayAgainFor ?: return
+        if (player.currentMediaItem?.mediaId != id || player.currentPosition >= sayAgainUntil) endSayAgain()
+    }
+
+    private fun endSayAgain() {
+        if (sayAgainFor == null) return
+        sayAgainFor = null
+        Log.i(TAG, "Say that again: back to ${prefs.speed}x")
+        player.setPlaybackSpeed(prefs.speed)
+    }
+
     private fun rewindAfterPause() {
         val at = pausedAt
         pausedAt = 0L
@@ -480,7 +535,9 @@ class PlaybackService : MediaLibraryService() {
         if (player.currentMediaItem?.mediaId != pausedId) return
         val back = ResumeRewind.amountMs(SystemClock.elapsedRealtime() - at, pausedByInterruption)
         if (back <= 0) return
-        val to = (player.currentPosition - back).coerceAtLeast(0)
+        val from = player.currentPosition
+        // Phase 19: to a sentence start when there's one within 3 s more.
+        val to = snapToSentence((from - back).coerceAtLeast(0), from, maxExtraMs = 3_000)
         Log.i(TAG, "Resume rewind: back ${back / 1000} s after ${(SystemClock.elapsedRealtime() - at) / 1000} s" + if (pausedByInterruption) " (interrupted)" else "")
         player.seekTo(to)
         pausedAt = 0L // the seek above isn't a listener's choice; nothing more to do
@@ -616,7 +673,7 @@ class PlaybackService : MediaLibraryService() {
         }
         val speed = player.playbackParameters.speed
         listening.tick(id, player.currentPosition, elapsed, speed, inCar())
-        pendingSpeedMs += elapsed * (speed - 1.0)
+        if (sayAgainFor == null) pendingSpeedMs += elapsed * (speed - 1.0) // phase 19: the slow replay isn't "lost" time
         val rate = player.audioFormat?.sampleRate ?: 0
         if (newFrames > 0 && rate > 0) pendingSmartMs += newFrames * 1000.0 / rate / speed
     }
@@ -731,7 +788,8 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             repo.setPlayed(id, true) // also leaves the queue
             if (player.currentMediaItem?.mediaId == id) {
-                val next = repo.queueHead()
+                // Phase 19 (B5): an empty queue can carry on from a chosen playlist.
+                val next = repo.queueHead() ?: repo.continueFromPlaylist(id)
                 if (next != null) {
                     Log.i(TAG, "Up next: ${next.episode.title}")
                     load(next, EpisodeMedia.startPosition(next), play = playNext && !stopHere)
@@ -907,6 +965,7 @@ class PlaybackService : MediaLibraryService() {
                         .add(PlayerButtons.bookmarkCommand)
                         .add(PlayerButtons.skipAdCommand)
                         .add(PlayerButtons.aiSweepCommand)
+                        .add(PlayerButtons.sayAgainCommand)
                         .build(),
                 )
             // Voice "play X on Earshot" in Android Auto comes from the Google app as a play-from-search.
@@ -950,6 +1009,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 PlayerButtons.BOOKMARK -> bookmarkNow()
                 PlayerButtons.SKIP_AD -> skipAdNow()
+                PlayerButtons.SAY_AGAIN -> sayAgain()
                 PlayerButtons.AI_SWEEP -> player.currentMediaItem?.mediaId?.let {
                     Log.i(TAG, "AI sweep requested for $it")
                     com.earshot.app.work.AiSweepWorker.enqueue(app, it)
@@ -1276,6 +1336,8 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         private const val CONTINUE_LIMIT = 20
+        /** Phase 19: "Say that again, slower". */
+        private const val SAY_AGAIN_SPEED = 0.8f
         private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
 
         /**

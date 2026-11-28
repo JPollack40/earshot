@@ -76,8 +76,13 @@ class SkipLengthPlayer(player: Player) : ForwardingPlayer(player) {
     override fun getSeekBackIncrement(): Long = backMs
     override fun getSeekForwardIncrement(): Long = forwardMs
 
+    /** Phase 19: moves a skip back's target to a sentence start (raw target, from) when a timed transcript has one. */
+    var snapBack: ((rawTargetMs: Long, fromMs: Long) -> Long)? = null
+
     override fun seekBack() {
-        seekTo((currentPosition - backMs).coerceAtLeast(0))
+        val from = currentPosition
+        val raw = (from - backMs).coerceAtLeast(0)
+        seekTo(snapBack?.invoke(raw, from) ?: raw)
     }
 
     override fun seekForward() {

@@ -255,6 +255,12 @@ class PlayerConnection(private val app: EarshotApp) {
         c.seekTo(if (d > 0) target.coerceAtMost(d) else target)
     }
 
+    /** Phase 19: skip back through the service, which lands it on a sentence start when it can. */
+    fun skipBackSnapped() = withController { it.seekBack() }
+
+    /** Phase 19: "Say that again, slower": the last sentence again at 0.8x, then back to speed. */
+    fun sayAgain() = withController { it.sendCustomCommand(PlayerButtons.sayAgainCommand, android.os.Bundle.EMPTY) }
+
     fun seekTo(positionMs: Long) = withController {
         noteJump(it, positionMs)
         it.seekTo(positionMs)

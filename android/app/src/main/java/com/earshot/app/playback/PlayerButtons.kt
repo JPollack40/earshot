@@ -12,7 +12,7 @@ import kotlin.math.abs
 
 /**
  * The extra buttons on the playing screen in Android Auto (and in the phone's media notification):
- * AI sweep (phase 14), Bookmark and Mark played, custom session commands handled by the service. Speed lives in its own list in the
+ * AI sweep (phase 14), Bookmark, Mark played and Say that again (phase 19), custom session commands handled by the service. Speed lives in its own list in the
  * car (a row at the top of the Queue tab); there's no sleep timer there (the listener is driving).
  */
 object PlayerButtons {
@@ -27,6 +27,10 @@ object PlayerButtons {
     /** Phase 14: "AI sweep" (broom): transcript, chapters and ads for the playing episode in one go. */
     const val AI_SWEEP = "com.earshot.app.AI_SWEEP"
     val aiSweepCommand = SessionCommand(AI_SWEEP, Bundle.EMPTY)
+
+    /** Phase 19: "Say that again, slower": replays the last sentence at 0.8x, then back to speed. */
+    const val SAY_AGAIN = "com.earshot.app.SAY_AGAIN"
+    val sayAgainCommand = SessionCommand(SAY_AGAIN, Bundle.EMPTY)
 
     /** "1.3x", "2x" */
     fun speedLabel(speed: Float): String =
@@ -92,6 +96,14 @@ object PlayerButtons {
                 CommandButton.Builder(CommandButton.ICON_CHECK_CIRCLE_UNFILLED)
                     .setSessionCommand(markPlayedCommand)
                     .setDisplayName("Mark played")
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
+                    .build(),
+            )
+            .add(
+                CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                    .setCustomIconResId(R.drawable.ic_say_again)
+                    .setSessionCommand(sayAgainCommand)
+                    .setDisplayName("Say that again")
                     .setSlots(CommandButton.SLOT_OVERFLOW)
                     .build(),
             )

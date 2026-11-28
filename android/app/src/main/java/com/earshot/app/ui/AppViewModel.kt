@@ -237,6 +237,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---- Phase 19 (A2): Catch me up ----
+    /** The recap, its episode and whether it's "last 5 minutes" (lastMinutes > 0). */
+    var recap by mutableStateOf<Triple<String, Int, com.earshot.app.data.ai.EpisodeSummary>?>(null)
+        private set
+    var recapping by mutableStateOf(false)
+        private set
+    var recapError by mutableStateOf<String?>(null)
+        private set
+
+    fun catchMeUp(item: EpisodeWithPodcast, lastMinutes: Int = 0) {
+        if (recapping) return
+        val upTo = nowPlaying.value.takeIf { it.episodeId == item.episode.id }?.positionMs ?: item.episode.positionMs
+        recapping = true
+        recapError = null
+        viewModelScope.launch {
+            try {
+                recap = Triple(item.episode.id, lastMinutes, app.ai.recap(item.episode, item.podcastTitle, upTo, lastMinutes))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                recapError = e.message ?: "That didn't work"
+            } finally {
+                recapping = false
+            }
+        }
+    }
+
+    fun recapFor(episodeId: String) = recap?.takeIf { it.first == episodeId }
+
     /** The answer, only if it's for [episodeId] (a new episode starts a fresh question). */
     fun answerFor(episodeId: String) = askAnswer?.takeIf { askFor == episodeId }
 
@@ -817,6 +846,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Phase 19 (B5): Settings > Playback > When the queue ends (a playlist id, or null to stop). */
+    var queueEndPlaylistId by mutableStateOf(Settings.queueEndPlaylistId(app))
+        private set
+
+    fun updateQueueEndPlaylist(id: String?) {
+        Settings.setQueueEndPlaylistId(app, id)
+        queueEndPlaylistId = id
+    }
+
     /** Phase 17: Settings > Playback > Automatic sleep timer. */
     var sleepSchedule by mutableStateOf(Settings.sleepSchedule(app))
         private set
@@ -1158,7 +1196,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun skipBack() = player.skipBy(-currentPrefs.value.skipBackMs)
+    /** Phase 19: through the service, so a timed transcript lets it land on a sentence start. */
+    fun skipBack() = player.skipBackSnapped()
     /** Phase 14: during a found ad (Found ads = Show a Skip ad button), forward skips the ad, as in the car. */
     fun skipForward() {
         if (currentAd.value != null) skipAd() else player.skipBy(currentPrefs.value.skipForwardMs)

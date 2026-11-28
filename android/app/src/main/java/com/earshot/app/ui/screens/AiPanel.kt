@@ -80,6 +80,23 @@ fun AiDialog(vm: AppViewModel, item: EpisodeWithPodcast, onDismiss: () -> Unit) 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                // ---- Catch me up (phase 19, A2) ----
+                Section("Catch me up")
+                Text("A recap of only what you've heard so far, with no spoilers.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MakeButton(label = "Recap so far", busy = vm.recapping) { vm.catchMeUp(item) }
+                    MakeButton(label = "Last 5 minutes", busy = vm.recapping) { vm.catchMeUp(item, lastMinutes = 5) }
+                }
+                vm.recapError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                vm.recapFor(id)?.let { (_, last, r) ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(if (last > 0) "The last $last minutes" else "So far", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    r.text.split("\n").filter { it.isNotBlank() }.forEach {
+                        Text(it.trim(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp))
+                    }
+                    r.points.forEach { p -> TimeRow(p.atMs, p.text, jump) }
+                }
+
                 // ---- Ask about this episode (phase 13) ----
                 Section("Ask about this episode")
                 androidx.compose.material3.OutlinedTextField(

@@ -106,6 +106,37 @@ class EpisodeAiStore(private val app: EarshotApp) {
         return EpisodeAnswer(question, data.optString("answer").trim(), quotes, res.optString("model"))
     }
 
+    /**
+     * Phase 19 (A2): "Catch me up": a recap of the episode up to [upToMs] (no spoilers), or of only the
+     * [lastMinutes] before it. Not saved: it depends on where you are.
+     */
+    suspend fun recap(episode: Episode, podcastTitle: String, upToMs: Long, lastMinutes: Int = 0): EpisodeSummary {
+        com.earshot.app.data.RemoteConfig.require { it.aiOn }
+        if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to use AI features")
+        val t = app.db.transcripts().get(episode.id)
+            ?: throw IllegalStateException("Get a transcript first (Transcript, then Transcribe)")
+        if (!t.timed) throw IllegalStateException("This transcript has no timings. Transcribe the episode instead.")
+        if (t.dirty) app.sync.sync("ai")
+        val res = app.sync.supabase.function(
+            "ai",
+            JSONObject()
+                .put("episodeId", episode.id)
+                .put("kind", "recap")
+                .put("upToMs", upToMs)
+                .put("lastMinutes", lastMinutes)
+                .put("title", episode.title)
+                .put("podcast", podcastTitle),
+            readTimeoutMs = 180_000,
+        )
+        val data = res.optJSONObject("data") ?: throw IllegalStateException(res.optString("error").ifBlank { "No recap" })
+        val a = data.optJSONArray("points") ?: JSONArray()
+        val points = (0 until a.length()).mapNotNull { i ->
+            val q = a.optJSONObject(i) ?: return@mapNotNull null
+            SummaryPoint(q.optLong("at"), q.optString("text").trim()).takeIf { it.text.isNotEmpty() }
+        }
+        return EpisodeSummary(data.optString("summary").trim(), points, res.optString("model"))
+    }
+
     /** A row from sync (public.episode_ai). Newer rows win. */
     suspend fun applyRemote(o: JSONObject) {
         val episodeId = o.getString("episode_id")

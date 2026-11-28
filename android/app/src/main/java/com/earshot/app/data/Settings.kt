@@ -284,6 +284,13 @@ object Settings {
         prefs(context).edit { putBoolean("download_wifi_only", wifiOnly) }
     }
 
+    /** Phase 19 (B5): the playlist to carry on from when the queue runs out, or null to stop (as before). */
+    fun queueEndPlaylistId(context: Context): String? = prefs(context).getString("queue_end_playlist", null)
+
+    fun setQueueEndPlaylistId(context: Context, id: String?) {
+        prefs(context).edit { if (id == null) remove("queue_end_playlist") else putString("queue_end_playlist", id) }
+    }
+
     /** Phase 17: the automatic sleep timer ([SleepSchedule]). This phone only. */
     fun sleepSchedule(context: Context): SleepSchedule = SleepSchedule.fromJson(prefs(context).getString("sleep_schedule", null))
 
