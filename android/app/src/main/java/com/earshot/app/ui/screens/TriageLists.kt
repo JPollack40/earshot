@@ -255,7 +255,14 @@ private fun SwipeRow(
     endToStart: SwipeAction?,
     content: @Composable () -> Unit,
 ) {
-    val state = rememberSwipeToDismissBoxState()
+    // Not saved with the list (PR D, test B3): the list keeps each row's saved state by its key, so after
+    // a swipe and Undo the episode came back already "swiped" and was removed again, over and over.
+    // (The box keeps the state if Compose skips the inner block on a later pass; the first pass always runs it.)
+    val box = remember { arrayOfNulls<androidx.compose.material3.SwipeToDismissBoxState>(1) }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.runtime.saveable.LocalSaveableStateRegistry provides null) {
+        box[0] = rememberSwipeToDismissBoxState()
+    }
+    val state = box[0]!!
     val scope = rememberCoroutineScope()
     SwipeToDismissBox(
         state = state,
