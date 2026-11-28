@@ -107,7 +107,7 @@ and paste it to Claude.
 
 ## Versions (checked November 2026)
 
-AGP 9.5.0 · Gradle 9.6.0 · Kotlin 2.4.20 (built in through AGP 9) · KSP 2.3.13 · Compose BOM 2026.11.01 ·
+AGP 9.5.3 · Gradle 9.6.0 · Kotlin 2.4.21 (built in through AGP 9) · KSP 2.3.14 · Compose BOM 2026.11.01 ·
 Media3 1.11.1 · Room 2.8.5 · WorkManager 2.12.0 · Coil 3.6.3
 
 All versions are in `android/gradle/libs.versions.toml`.
