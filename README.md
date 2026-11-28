@@ -10,7 +10,6 @@ Earshot is a podcast app built for one listener and a few friends. It's a native
 | `android/` | Android app and Android Auto: Kotlin, Jetpack Compose, Media3, Room, WorkManager |
 | `web/` | Web player: React + TypeScript (Vite), hosted on GitHub Pages |
 | `supabase/` | Sync database (SQL migrations), edge functions, and SQL rule tests. See `supabase/README.md` |
-| `docs/` | Older phase test steps and notes |
 | `shared/test-vectors/` | Cases that both the Kotlin and TypeScript code are tested against, so the two apps follow the same rules |
 
 ---
