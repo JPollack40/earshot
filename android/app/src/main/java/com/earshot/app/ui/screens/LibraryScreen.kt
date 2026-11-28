@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -89,7 +90,7 @@ fun LibraryScreen(vm: AppViewModel) {
                 tab == Tabs.NEW -> InboxList(vm, Modifier.fillMaxSize())
                 // Phase 13: Browse took the Latest tab's place (Latest is now a smart playlist).
                 tab == Tabs.BROWSE -> BrowseTab(vm, Modifier.fillMaxSize())
-                library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) })
+                library.isEmpty() -> EmptyLibrary(onAdd = { vm.navigate(Screen.Add) }, onBrowse = { vm.showTab(Tabs.BROWSE) })
                 tab == Tabs.PLAYLISTS -> PlaylistsList(vm, Modifier.fillMaxSize())
                 else -> PodcastList(vm, library)
             }
@@ -248,24 +249,51 @@ private fun PodcastList(vm: AppViewModel, library: List<PodcastWithCount>) {
 }
 
 @Composable
-private fun EmptyLibrary(onAdd: () -> Unit) {
+private fun EmptyLibrary(onAdd: () -> Unit, onBrowse: () -> Unit) {
+    // Phase 22: a 3-step first run for friends (it shows only while the library is empty).
+    var step by remember { mutableIntStateOf(0) }
+    val steps = FIRST_RUN_STEPS
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("No podcasts yet", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Step ${step + 1} of ${steps.size}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(steps[step].first, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Search for a show, paste an RSS feed link, import your subscriptions (OPML) from your current app, or look around in Browse.",
+            steps[step].second,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onAdd) { Text("Add podcasts") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (step > 0) TextButton(onClick = { step-- }) { Text("Back") }
+            if (step < steps.size - 1) {
+                Button(onClick = { step++ }) { Text("Next") }
+            } else {
+                Button(onClick = onAdd) { Text("Add podcasts") }
+                TextButton(onClick = onBrowse) { Text("Browse") }
+            }
+        }
+        if (step < steps.size - 1) {
+            TextButton(onClick = onAdd) { Text("Skip, add podcasts now") }
+        }
     }
 }
+
+/** Phase 22: the first-run steps (title, text). */
+internal val FIRST_RUN_STEPS = listOf(
+    "Welcome to Earshot" to "A podcast player for your phone, your car and the web. Everything you do syncs between them when you're signed in (Settings > Sync).",
+    "New Episodes and your queue" to "New episodes from your shows land in New Episodes. Swipe right to add one to your queue, left to archive it. The queue plays in order, top first. Pin a show to give it its own shortcut.",
+    "Add your shows" to "Search for a show, paste an RSS feed link, import your subscriptions (OPML) from your current app, or look around in Browse. In the car, Earshot shows up in Android Auto (Settings > Set up for your car).",
+)
 
 /** Compact tab label with an optional count, so four tabs fit on the Fold's cover screen. */
 @Composable

@@ -1,0 +1,34 @@
+# Phase 22: a daily check that the two podcast directories Earshot searches still answer.
+# A failed run makes GitHub email the repo owner (Settings > Notifications > Actions), so a broken
+# search is noticed before a friend runs into it. Reads only public endpoints, with the web player's
+# publishable key (it ships inside every page load anyway).
+name: Daily health check
+
+on:
+  schedule:
+    - cron: "17 11 * * *" # every day, 11:17 UTC (early morning in New York)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Podcast Index (through the podcast-search function)
+        run: |
+          url=$(sed -n 's/.*SUPABASE_URL = "\(.*\)".*/\1/p' web/src/config.ts)
+          key=$(sed -n 's/.*SUPABASE_KEY = "\(.*\)".*/\1/p' web/src/config.ts)
+          body=$(curl -sS --fail-with-body --max-time 30 -H "apikey: $key" "$url/functions/v1/podcast-search?q=radiolab")
+          count=$(echo "$body" | jq '.results | length')
+          echo "Podcast Index results: $count"
+          test "$count" -gt 0
+      - name: Apple Podcasts search
+        run: |
+          body=$(curl -sS --fail-with-body --max-time 30 "https://itunes.apple.com/search?media=podcast&limit=5&term=radiolab")
+          count=$(echo "$body" | jq '.resultCount')
+          echo "Apple results: $count"
+          test "$count" -gt 0

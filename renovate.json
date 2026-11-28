@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Phase 22: dependency updates once a month, grouped into one pull request per area, with GitHub Actions pinned to exact commits. Nothing merges by itself.",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "schedule": ["* 0-6 1 * *"],
+  "timezone": "America/New_York",
+  "prConcurrentLimit": 4,
+  "automerge": false,
+  "packageRules": [
+    { "matchFileNames": ["android/**"], "groupName": "Android" },
+    { "matchFileNames": ["web/**"], "groupName": "Web player" },
+    { "matchFileNames": ["supabase/**"], "groupName": "Supabase tests" },
+    { "matchManagers": ["github-actions"], "groupName": "GitHub Actions" }
+  ]
+}

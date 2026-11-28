@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Phase 22: what Android's own backup (Google account) and phone-to-phone transfer may copy.
+  Only the settings. The library database is too big for Android's backup (25 MB) and comes back
+  from sync anyway; the sign-in, sync position and this phone's id must not move to another phone.
+  Earshot's own "Back up everything" file (Settings) is unchanged.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="settings.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="settings.xml" />
+    </device-transfer>
+</data-extraction-rules>

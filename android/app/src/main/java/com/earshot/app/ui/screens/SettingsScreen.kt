@@ -50,14 +50,43 @@ import com.earshot.app.ui.formatSpeed
 
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
+    // Phase 22: Settings search (shows only the groups that match).
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val shown = remember(query) { com.earshot.app.ui.SettingsSearch.groups(query) }
+    val show = { group: String -> group in shown }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = {
+                    if (searching) {
+                        androidx.compose.material3.TextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("Search settings") },
+                            singleLine = true,
+                            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Text("Settings")
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                        Icon(
+                            if (searching) androidx.compose.material.icons.Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                            contentDescription = if (searching) "Close search" else "Search settings",
+                        )
                     }
                 },
             )
@@ -65,230 +94,260 @@ fun SettingsScreen(vm: AppViewModel) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             val divider = @Composable { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp) }
-            AccountSection(vm)
-            divider()
-
-            val theme by vm.appTheme.collectAsStateWithLifecycle()
-            SectionHeader("Appearance")
-            ChoiceRow(
-                "Theme",
-                "Glow: artwork colours and larger titles. Classic: the original look. This phone only.",
-                theme,
-                listOf(Settings.THEME_GLOW, Settings.THEME_CLASSIC),
-                { if (it == Settings.THEME_GLOW) "Glow" else "Classic" },
-            ) { vm.setAppTheme(it) }
-            divider()
-            // Phase 22
-            val black by vm.trueBlack.collectAsStateWithLifecycle()
-            SettingRow(
-                title = "True black",
-                subtitle = "Pure black behind everything. Saves a little battery on this phone's screen.",
-                onClick = { vm.setTrueBlack(!black) },
-            ) {
-                Switch(checked = black, onCheckedChange = vm::setTrueBlack)
-            }
-            divider()
-            val textSize by vm.textSize.collectAsStateWithLifecycle()
-            ChoiceRow(
-                "Text size",
-                "Comfortable makes all text a little bigger, on top of the phone's own font size.",
-                textSize,
-                listOf(Settings.TEXT_COMPACT, Settings.TEXT_COMFORTABLE),
-                { if (it == Settings.TEXT_COMFORTABLE) "Comfortable" else "Compact" },
-            ) { vm.setTextSize(it) }
-            divider()
-            val swipes by vm.inboxSwipes.collectAsStateWithLifecycle()
-            ChoiceRow(
-                "New Episodes: swipe right",
-                null,
-                swipes.first,
-                listOf(Settings.SWIPE_QUEUE_LAST, Settings.SWIPE_QUEUE_NEXT),
-                { if (it == Settings.SWIPE_QUEUE_NEXT) "Play next" else "End of queue" },
-            ) { vm.setInboxSwipes(it, swipes.second) }
-            divider()
-            ChoiceRow(
-                "New Episodes: swipe left",
-                null,
-                swipes.second,
-                listOf(Settings.SWIPE_ARCHIVE, Settings.SWIPE_MARK_PLAYED),
-                { if (it == Settings.SWIPE_MARK_PLAYED) "Mark played" else "Archive" },
-            ) { vm.setInboxSwipes(swipes.first, it) }
-            divider()
-
-            val d by vm.playbackDefaults.collectAsStateWithLifecycle()
-            SectionHeader("Playback")
-            Text(
-                "Defaults for every podcast. A podcast can have its own (podcast page, sliders icon).",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            ChoiceRow("Speed", null, d.speed, Settings.SPEED_CHOICES, ::formatSpeed) { s ->
-                vm.updatePlaybackDefaults { it.copy(speed = s) }
-            }
-            divider()
-            SettingRow(
-                title = "Smart Speed",
-                subtitle = "Shortens silences in speech.",
-                onClick = { vm.updatePlaybackDefaults { it.copy(smartSpeed = !it.smartSpeed) } },
-            ) {
-                Switch(checked = d.smartSpeed, onCheckedChange = { b -> vm.updatePlaybackDefaults { it.copy(smartSpeed = b) } })
-            }
-            divider()
-            SettingRow(
-                title = "Voice Boost",
-                subtitle = "Evens out loudness and lifts quiet voices.",
-                onClick = { vm.updatePlaybackDefaults { it.copy(voiceBoost = !it.voiceBoost) } },
-            ) {
-                Switch(checked = d.voiceBoost, onCheckedChange = { b -> vm.updatePlaybackDefaults { it.copy(voiceBoost = b) } })
-            }
-            divider()
-            ChoiceRow("Skip back", "Also: long-press the button in the player.", d.skipBackMs, Settings.SKIP_CHOICES_MS, ::skipLengthName) { ms ->
-                vm.updatePlaybackDefaults { it.copy(skipBackMs = ms) }
-            }
-            divider()
-            ChoiceRow("Skip forward", null, d.skipForwardMs, Settings.SKIP_CHOICES_MS, ::skipLengthName) { ms ->
-                vm.updatePlaybackDefaults { it.copy(skipForwardMs = ms) }
-            }
-            divider()
-            OutputProfilesSetting() // phase 20 (C1)
-            divider()
-            // Phase 20 (C5)
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            var handoff by remember { mutableStateOf(com.earshot.app.data.Handoff.enabled(ctx)) }
-            SettingRow(
-                title = "Continue between phone and web",
-                subtitle = "Starting an episode here pauses it in the web player (and the other way round), and opening the app offers Continue here. Needs sign-in.",
-                onClick = { handoff = !handoff; com.earshot.app.data.Handoff.setEnabled(ctx, handoff) },
-            ) {
-                Switch(checked = handoff, onCheckedChange = { handoff = it; com.earshot.app.data.Handoff.setEnabled(ctx, it) })
-            }
-            divider()
-            val rewind by vm.resumeRewind.collectAsStateWithLifecycle()
-            SettingRow(
-                title = "Rewind a little after a pause",
-                subtitle = "On resuming, back up 2 s (10 s after an hour or more), and at least 3 s after a call or navigation prompt. Phone and car.",
-                onClick = { vm.updateResumeRewind(!rewind) },
-            ) {
-                Switch(checked = rewind, onCheckedChange = vm::updateResumeRewind)
-            }
-            divider()
-            SleepScheduleSetting(vm.sleepSchedule, vm::updateSleepSchedule)
-            divider()
-            // Phase 19 (B5): carry on from a playlist when the queue runs out.
-            val playlists by vm.playlists.collectAsStateWithLifecycle()
-            val live = playlists.filter { !it.deleted }
-            ChoiceRow(
-                "When the queue ends",
-                "Carry on with the next unplayed episode of a playlist (it joins the queue). Phone and car.",
-                vm.queueEndPlaylistId?.takeIf { id -> live.any { it.id == id } },
-                listOf<String?>(null) + live.map { it.id },
-                label = { id -> if (id == null) "Stop" else live.firstOrNull { it.id == id }?.name ?: "Stop" },
-                onPick = vm::updateQueueEndPlaylist,
-            )
-            divider()
-
-            val saved by vm.timeSaved.collectAsStateWithLifecycle()
-            SectionHeader("Time saved")
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                Text(formatSaved(saved.totalMs), style = MaterialTheme.typography.titleLarge)
+            if (shown.isEmpty()) {
                 Text(
-                    "${formatSaved(saved.bySpeedMs)} from speed · ${formatSaved(saved.bySmartSpeedMs)} from Smart Speed",
-                    style = MaterialTheme.typography.labelSmall,
+                    "No settings match \"$query\".",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
                 )
             }
-            divider()
-
-            val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
-            TidySettings(tidy, vm::updateTidyDefaults)
-            divider()
-
-            SectionHeader("Downloads")
-            ChoiceRow(
-                "Download over",
-                if (vm.downloadWifiOnly) {
-                    "Downloads wait for Wi-Fi. Streaming still works on any network."
-                } else {
-                    "Downloads use Wi-Fi or mobile data."
-                },
-                vm.downloadWifiOnly,
-                listOf(false, true),
-                { if (it) "Wi-Fi only" else "Any network" },
-            ) { vm.updateDownloadWifiOnly(it) }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            SettingRow(
-                title = "Download queued episodes",
-                subtitle = "Starts a download whenever an episode is added to the queue.",
-                onClick = { vm.updateAutoDownloadQueued(!vm.autoDownloadQueued) },
-            ) {
-                Switch(checked = vm.autoDownloadQueued, onCheckedChange = vm::updateAutoDownloadQueued)
+            if (show("Sync")) {
+                AccountSection(vm)
+                divider()
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            SettingRow(
-                title = "Delete downloads when finished",
-                subtitle = "Frees space as soon as an episode is played to the end or marked played.",
-                onClick = { vm.updateDeleteWhenFinished(!vm.deleteWhenFinished) },
-            ) {
-                Switch(checked = vm.deleteWhenFinished, onCheckedChange = vm::updateDeleteWhenFinished)
+
+            if (show("Appearance")) {
+                val theme by vm.appTheme.collectAsStateWithLifecycle()
+                SectionHeader("Appearance")
+                ChoiceRow(
+                    "Theme",
+                    "Glow: artwork colours and larger titles. Classic: the original look. This phone only.",
+                    theme,
+                    listOf(Settings.THEME_GLOW, Settings.THEME_CLASSIC),
+                    { if (it == Settings.THEME_GLOW) "Glow" else "Classic" },
+                ) { vm.setAppTheme(it) }
+                divider()
+                // Phase 22
+                val black by vm.trueBlack.collectAsStateWithLifecycle()
+                SettingRow(
+                    title = "True black",
+                    subtitle = "Pure black behind everything. Saves a little battery on this phone's screen.",
+                    onClick = { vm.setTrueBlack(!black) },
+                ) {
+                    Switch(checked = black, onCheckedChange = vm::setTrueBlack)
+                }
+                divider()
+                val textSize by vm.textSize.collectAsStateWithLifecycle()
+                ChoiceRow(
+                    "Text size",
+                    "Comfortable makes all text a little bigger, on top of the phone's own font size.",
+                    textSize,
+                    listOf(Settings.TEXT_COMPACT, Settings.TEXT_COMFORTABLE),
+                    { if (it == Settings.TEXT_COMFORTABLE) "Comfortable" else "Compact" },
+                ) { vm.setTextSize(it) }
+                divider()
+                val swipes by vm.inboxSwipes.collectAsStateWithLifecycle()
+                ChoiceRow(
+                    "New Episodes: swipe right",
+                    null,
+                    swipes.first,
+                    listOf(Settings.SWIPE_QUEUE_LAST, Settings.SWIPE_QUEUE_NEXT),
+                    { if (it == Settings.SWIPE_QUEUE_NEXT) "Play next" else "End of queue" },
+                ) { vm.setInboxSwipes(it, swipes.second) }
+                divider()
+                ChoiceRow(
+                    "New Episodes: swipe left",
+                    null,
+                    swipes.second,
+                    listOf(Settings.SWIPE_ARCHIVE, Settings.SWIPE_MARK_PLAYED),
+                    { if (it == Settings.SWIPE_MARK_PLAYED) "Mark played" else "Archive" },
+                ) { vm.setInboxSwipes(swipes.first, it) }
+                divider()
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            ExpirySetting(vm.expireDays, vm::updateExpireDays)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            StorageCapSetting(vm.storageCapGb, vm::updateStorageCapGb)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            DeleteAllDownloads(vm)
-            divider()
 
-            SectionHeader("Background")
-            KeepRunningRow()
-            divider()
+            if (show("Playback")) {
+                val d by vm.playbackDefaults.collectAsStateWithLifecycle()
+                SectionHeader("Playback")
+                Text(
+                    "Defaults for every podcast. A podcast can have its own (podcast page, sliders icon).",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ChoiceRow("Speed", null, d.speed, Settings.SPEED_CHOICES, ::formatSpeed) { s ->
+                    vm.updatePlaybackDefaults { it.copy(speed = s) }
+                }
+                divider()
+                SettingRow(
+                    title = "Smart Speed",
+                    subtitle = "Shortens silences in speech.",
+                    onClick = { vm.updatePlaybackDefaults { it.copy(smartSpeed = !it.smartSpeed) } },
+                ) {
+                    Switch(checked = d.smartSpeed, onCheckedChange = { b -> vm.updatePlaybackDefaults { it.copy(smartSpeed = b) } })
+                }
+                divider()
+                SettingRow(
+                    title = "Voice Boost",
+                    subtitle = "Evens out loudness and lifts quiet voices.",
+                    onClick = { vm.updatePlaybackDefaults { it.copy(voiceBoost = !it.voiceBoost) } },
+                ) {
+                    Switch(checked = d.voiceBoost, onCheckedChange = { b -> vm.updatePlaybackDefaults { it.copy(voiceBoost = b) } })
+                }
+                divider()
+                ChoiceRow("Skip back", "Also: long-press the button in the player.", d.skipBackMs, Settings.SKIP_CHOICES_MS, ::skipLengthName) { ms ->
+                    vm.updatePlaybackDefaults { it.copy(skipBackMs = ms) }
+                }
+                divider()
+                ChoiceRow("Skip forward", null, d.skipForwardMs, Settings.SKIP_CHOICES_MS, ::skipLengthName) { ms ->
+                    vm.updatePlaybackDefaults { it.copy(skipForwardMs = ms) }
+                }
+                divider()
+                OutputProfilesSetting() // phase 20 (C1)
+                divider()
+                // Phase 20 (C5)
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                var handoff by remember { mutableStateOf(com.earshot.app.data.Handoff.enabled(ctx)) }
+                SettingRow(
+                    title = "Continue between phone and web",
+                    subtitle = "Starting an episode here pauses it in the web player (and the other way round), and opening the app offers Continue here. Needs sign-in.",
+                    onClick = { handoff = !handoff; com.earshot.app.data.Handoff.setEnabled(ctx, handoff) },
+                ) {
+                    Switch(checked = handoff, onCheckedChange = { handoff = it; com.earshot.app.data.Handoff.setEnabled(ctx, it) })
+                }
+                divider()
+                val rewind by vm.resumeRewind.collectAsStateWithLifecycle()
+                SettingRow(
+                    title = "Rewind a little after a pause",
+                    subtitle = "On resuming, back up 2 s (10 s after an hour or more), and at least 3 s after a call or navigation prompt. Phone and car.",
+                    onClick = { vm.updateResumeRewind(!rewind) },
+                ) {
+                    Switch(checked = rewind, onCheckedChange = vm::updateResumeRewind)
+                }
+                divider()
+                SleepScheduleSetting(vm.sleepSchedule, vm::updateSleepSchedule)
+                divider()
+                // Phase 19 (B5): carry on from a playlist when the queue runs out.
+                val playlists by vm.playlists.collectAsStateWithLifecycle()
+                val live = playlists.filter { !it.deleted }
+                ChoiceRow(
+                    "When the queue ends",
+                    "Carry on with the next unplayed episode of a playlist (it joins the queue). Phone and car.",
+                    vm.queueEndPlaylistId?.takeIf { id -> live.any { it.id == id } },
+                    listOf<String?>(null) + live.map { it.id },
+                    label = { id -> if (id == null) "Stop" else live.firstOrNull { it.id == id }?.name ?: "Stop" },
+                    onPick = vm::updateQueueEndPlaylist,
+                )
+                divider()
+            }
 
-            SectionHeader("Notifications")
-            ChoiceRow(
-                "New episodes",
-                if (vm.pushConfigured) {
-                    "The server checks for new episodes every 15 minutes and notifies this phone, with a Play button."
-                } else {
-                    "Not set up yet: this build has no Firebase configuration (see the phase 10 notes)."
-                },
-                vm.newEpisodeNotify,
-                listOf(Settings.NOTIFY_ALL, Settings.NOTIFY_PINNED, Settings.NOTIFY_OFF),
-                { when (it) { Settings.NOTIFY_ALL -> "All podcasts"; Settings.NOTIFY_PINNED -> "Pinned only"; else -> "Off" } },
-            ) { vm.updateNewEpisodeNotify(it) }
-            divider()
+            if (show("Time saved")) {
+                val saved by vm.timeSaved.collectAsStateWithLifecycle()
+                SectionHeader("Time saved")
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    Text(formatSaved(saved.totalMs), style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "${formatSaved(saved.bySpeedMs)} from speed · ${formatSaved(saved.bySmartSpeedMs)} from Smart Speed",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                divider()
+            }
 
-            SectionHeader("AI from transcripts")
-            val adSkip by vm.adSkip.collectAsStateWithLifecycle()
-            ChoiceRow(
-                "Found ads",
-                "In the player, AI > Find ads lists an episode's ads. Then they're skipped, or a Skip ad button shows.",
-                adSkip,
-                listOf(com.earshot.app.data.ai.AdSkip.AUTO, com.earshot.app.data.ai.AdSkip.BUTTON, com.earshot.app.data.ai.AdSkip.OFF),
-                { com.earshot.app.data.ai.AdSkip.label(it) },
-            ) { vm.updateAdSkip(it) }
-            divider()
+            if (show("Automation")) {
+                val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
+                TidySettings(tidy, vm::updateTidyDefaults)
+                divider()
+            }
 
-            ShareSettings(vm, divider)
+            if (show("Downloads")) {
+                SectionHeader("Downloads")
+                ChoiceRow(
+                    "Download over",
+                    if (vm.downloadWifiOnly) {
+                        "Downloads wait for Wi-Fi. Streaming still works on any network."
+                    } else {
+                        "Downloads use Wi-Fi or mobile data."
+                    },
+                    vm.downloadWifiOnly,
+                    listOf(false, true),
+                    { if (it) "Wi-Fi only" else "Any network" },
+                ) { vm.updateDownloadWifiOnly(it) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                SettingRow(
+                    title = "Download queued episodes",
+                    subtitle = "Starts a download whenever an episode is added to the queue.",
+                    onClick = { vm.updateAutoDownloadQueued(!vm.autoDownloadQueued) },
+                ) {
+                    Switch(checked = vm.autoDownloadQueued, onCheckedChange = vm::updateAutoDownloadQueued)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                SettingRow(
+                    title = "Delete downloads when finished",
+                    subtitle = "Frees space as soon as an episode is played to the end or marked played.",
+                    onClick = { vm.updateDeleteWhenFinished(!vm.deleteWhenFinished) },
+                ) {
+                    Switch(checked = vm.deleteWhenFinished, onCheckedChange = vm::updateDeleteWhenFinished)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                ExpirySetting(vm.expireDays, vm::updateExpireDays)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                StorageCapSetting(vm.storageCapGb, vm::updateStorageCapGb)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                DeleteAllDownloads(vm)
+                divider()
+            }
 
-            SectionHeader("About")
-            Text(
-                "Earshot ${com.earshot.app.BuildConfig.VERSION_NAME} (${com.earshot.app.BuildConfig.VERSION_CODE}, " +
-                    "${com.earshot.app.BuildConfig.BUILD_TYPE})",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
-            androidx.compose.material3.TextButton(
-                onClick = { vm.showWhatsNew(manual = true) },
-                modifier = Modifier.padding(horizontal = 8.dp),
-            ) { Text("What's new in this version") }
-            // Phase 16: a note to Serena with a recent log, previewed before sending.
-            var reporting by remember { mutableStateOf(false) }
-            androidx.compose.material3.TextButton(
-                onClick = { reporting = true },
-                modifier = Modifier.padding(horizontal = 8.dp),
-            ) { Text("Report a problem") }
-            if (reporting) ReportProblemDialog(vm, onDismiss = { reporting = false })
+            if (show("Background")) {
+                SectionHeader("Background")
+                KeepRunningRow()
+                divider()
+            }
+
+            if (show("Notifications")) {
+                SectionHeader("Notifications")
+                ChoiceRow(
+                    "New episodes",
+                    if (vm.pushConfigured) {
+                        "The server checks for new episodes every 15 minutes and notifies this phone, with a Play button."
+                    } else {
+                        "Not set up yet: this build has no Firebase configuration (see the phase 10 notes)."
+                    },
+                    vm.newEpisodeNotify,
+                    listOf(Settings.NOTIFY_ALL, Settings.NOTIFY_PINNED, Settings.NOTIFY_OFF),
+                    { when (it) { Settings.NOTIFY_ALL -> "All podcasts"; Settings.NOTIFY_PINNED -> "Pinned only"; else -> "Off" } },
+                ) { vm.updateNewEpisodeNotify(it) }
+                divider()
+            }
+
+            if (show("AI from transcripts")) {
+                SectionHeader("AI from transcripts")
+                val adSkip by vm.adSkip.collectAsStateWithLifecycle()
+                ChoiceRow(
+                    "Found ads",
+                    "In the player, AI > Find ads lists an episode's ads. Then they're skipped, or a Skip ad button shows.",
+                    adSkip,
+                    listOf(com.earshot.app.data.ai.AdSkip.AUTO, com.earshot.app.data.ai.AdSkip.BUTTON, com.earshot.app.data.ai.AdSkip.OFF),
+                    { com.earshot.app.data.ai.AdSkip.label(it) },
+                ) { vm.updateAdSkip(it) }
+                divider()
+            }
+
+            if (show("Car, backup and updates")) {
+                ShareSettings(vm, divider)
+            }
+
+            if (show("About")) {
+                SectionHeader("About")
+                Text(
+                    "Earshot ${com.earshot.app.BuildConfig.VERSION_NAME} (${com.earshot.app.BuildConfig.VERSION_CODE}, " +
+                        "${com.earshot.app.BuildConfig.BUILD_TYPE})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                androidx.compose.material3.TextButton(
+                    onClick = { vm.showWhatsNew(manual = true) },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) { Text("What's new in this version") }
+                // Phase 16: a note to Serena with a recent log, previewed before sending.
+                var reporting by remember { mutableStateOf(false) }
+                androidx.compose.material3.TextButton(
+                    onClick = { reporting = true },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) { Text("Report a problem") }
+                if (reporting) ReportProblemDialog(vm, onDismiss = { reporting = false })
+            }
         }
     }
 }

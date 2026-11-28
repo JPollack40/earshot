@@ -45,12 +45,17 @@ object Handoff {
 
     private fun prefs(context: Context) = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    /** This phone's id for the handoff row: made once, kept across app updates. */
+    /**
+     * This phone's id for the handoff row: made once, kept across app updates. Phase 22: kept in its own
+     * file ("device"), which Android's backup leaves out, so a restored or transferred phone gets its own.
+     */
     fun deviceId(context: Context): String {
+        val d = context.getSharedPreferences("device", Context.MODE_PRIVATE)
+        d.getString("handoff_device", null)?.let { return it }
         val p = prefs(context)
-        p.getString("handoff_device", null)?.let { return it }
-        val id = "android:" + UUID.randomUUID().toString().take(8)
-        p.edit { putString("handoff_device", id) }
+        val id = p.getString("handoff_device", null) ?: ("android:" + UUID.randomUUID().toString().take(8))
+        d.edit { putString("handoff_device", id) }
+        p.edit { remove("handoff_device") }
         return id
     }
 
