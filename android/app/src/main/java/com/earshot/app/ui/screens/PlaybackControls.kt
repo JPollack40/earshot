@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -195,7 +196,7 @@ fun AudioDialog(
                     }
                 }
                 // Phase 17: slide to fine-tune (0.05× steps), applied when you let go.
-                var fine by remember(prefs.speed) { mutableStateOf(prefs.speed) }
+                var fine by remember(prefs.speed) { mutableFloatStateOf(prefs.speed) }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                     Text("Fine-tune", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(72.dp))
                     // The SliderState overload, as the scrubber (the value-based one is deprecated).
