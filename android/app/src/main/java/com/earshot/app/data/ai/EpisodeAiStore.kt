@@ -137,6 +137,26 @@ class EpisodeAiStore(private val app: EarshotApp) {
         return EpisodeSummary(data.optString("summary").trim(), points, res.optString("model"))
     }
 
+    /**
+     * Phase 18: "Describe a playlist in words": a name and smart-playlist filters from a sentence, for the
+     * playlist editor to show before saving. [podcasts] are (feed address, title) of the library.
+     */
+    suspend fun describePlaylist(description: String, podcasts: List<Pair<String, String>>): Pair<String, com.earshot.app.data.PlaylistFilters> {
+        com.earshot.app.data.RemoteConfig.require { it.aiOn }
+        if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to use AI features")
+        val list = JSONArray()
+        podcasts.forEach { (feed, title) -> list.put(JSONObject().put("feed", feed).put("title", title)) }
+        val res = app.sync.supabase.function(
+            "ai",
+            JSONObject().put("kind", "playlist").put("description", description).put("podcasts", list),
+            readTimeoutMs = 90_000,
+        )
+        val data = res.optJSONObject("data") ?: throw IllegalStateException(res.optString("error").ifBlank { "No playlist" })
+        val known = podcasts.map { it.first }.toSet()
+        val f = com.earshot.app.data.PlaylistJson.parse(data.optJSONObject("filters") ?: JSONObject())
+        return data.optString("name").ifBlank { "Playlist" } to f.copy(podcasts = f.podcasts.filter { it in known })
+    }
+
     /** A row from sync (public.episode_ai). Newer rows win. */
     suspend fun applyRemote(o: JSONObject) {
         val episodeId = o.getString("episode_id")

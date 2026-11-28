@@ -237,6 +237,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---- Phase 18: Describe a playlist in words ----
+    var describing by mutableStateOf(false)
+        private set
+    var describeError by mutableStateOf<String?>(null)
+        private set
+
+    fun describePlaylist(text: String, library: List<com.earshot.app.data.db.PodcastWithCount>, onResult: (String, com.earshot.app.data.PlaylistFilters) -> Unit) {
+        if (describing || text.isBlank()) return
+        describing = true
+        describeError = null
+        viewModelScope.launch {
+            try {
+                val (name, f) = app.ai.describePlaylist(text.trim(), library.map { it.podcast.feedUrl to it.podcast.title })
+                onResult(name, f)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                describeError = e.message ?: "That didn't work"
+            } finally {
+                describing = false
+            }
+        }
+    }
+
     // ---- Phase 19 (A2): Catch me up ----
     /** The recap, its episode and whether it's "last 5 minutes" (lastMinutes > 0). */
     var recap by mutableStateOf<Triple<String, Int, com.earshot.app.data.ai.EpisodeSummary>?>(null)

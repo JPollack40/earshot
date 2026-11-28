@@ -273,16 +273,19 @@ Deno.serve(async (req: Request) => {
   if (!who.ok) return json({ error: "Sign in first" }, 401);
   await who.body?.cancel();
 
-  let body: { episodeId?: string; kind?: string; title?: string; podcast?: string; question?: string; startMs?: number; endMs?: number; upToMs?: number; lastMinutes?: number };
+  let body: {
+    episodeId?: string; kind?: string; title?: string; podcast?: string; question?: string; startMs?: number; endMs?: number;
+    upToMs?: number; lastMinutes?: number; description?: string; podcasts?: { feed?: string; title?: string }[];
+  };
   try {
     body = await req.json();
   } catch (_) {
     return json({ error: "Expected JSON" }, 400);
   }
   const episodeId = String(body.episodeId ?? "");
-  const kind = body.kind as Kind | "ask" | "title" | "recap";
-  if (!episodeId || !(kind in PROMPTS || kind === "ask" || kind === "title" || kind === "recap")) {
-    return json({ error: "episodeId and kind (chapters, summary, ads, ask, title or recap) are required" }, 400);
+  const kind = body.kind as Kind | "ask" | "title" | "recap" | "playlist";
+  if (!(kind in PROMPTS || kind === "ask" || kind === "title" || kind === "recap" || kind === "playlist") || (!episodeId && kind !== "playlist")) {
+    return json({ error: "episodeId and kind (chapters, summary, ads, ask, title, recap or playlist) are required" }, 400);
   }
 
   const cfg = await readAppConfig(base, apikey);
@@ -292,6 +295,64 @@ Deno.serve(async (req: Request) => {
 
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return json({ error: "GEMINI_API_KEY secret is not set" }, 500);
+
+  // Phase 18: "Describe a playlist in words": turns a sentence into smart-playlist filters. Not saved here; the
+  // app shows the filters in its editor for the person to check and save. Needs no transcript.
+  if (kind === "playlist") {
+    const description = String(body.description ?? "").trim().slice(0, 500);
+    if (!description) return json({ error: "Describe the playlist first" }, 400);
+    const shows = (Array.isArray(body.podcasts) ? body.podcasts : [])
+      .map((p) => ({ feed: String(p?.feed ?? ""), title: String(p?.title ?? "").slice(0, 120) }))
+      .filter((p) => p.feed && p.title)
+      .slice(0, 400);
+    const list = shows.map((p, i) => `${i + 1}. ${p.title}`).join("\n");
+    const prompt =
+      "Turn the listener's description into filters for a smart playlist in their podcast app. Only use what the " +
+      "description asks for; leave everything else unset. Filters: podcasts (pick by number from the list below; " +
+      "leave empty for all their podcasts), status (unplayed, not_started, in_progress, played or any; default unplayed), " +
+      "downloaded (only downloaded episodes), minMinutes and maxMinutes (episode length), withinDays (released in the " +
+      "last N days), keywords (comma-separated words; the episode title must contain one), sort (newest, oldest, " +
+      "shortest or longest) and limit (at most this many episodes, default 100). Also give a short name for the playlist " +
+      `(under 30 characters).\n\nDescription: ${description}\n\nTheir podcasts:\n${list || "(none)"}`;
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        name: { type: "STRING" },
+        podcasts: { type: "ARRAY", items: { type: "INTEGER" } },
+        status: { type: "STRING", enum: ["unplayed", "not_started", "in_progress", "played", "any"] },
+        downloaded: { type: "BOOLEAN" },
+        minMinutes: { type: "INTEGER" },
+        maxMinutes: { type: "INTEGER" },
+        withinDays: { type: "INTEGER" },
+        keywords: { type: "STRING" },
+        sort: { type: "STRING", enum: ["newest", "oldest", "shortest", "longest"] },
+        limit: { type: "INTEGER" },
+      },
+      required: ["name"],
+    };
+    const g = await gemini(key, prompt, schema, 0.1, true);
+    if (g.error) return g.error;
+    // deno-lint-ignore no-explicit-any
+    const o = await answerOf(g.res, g.model) as any;
+    if (!o) return json({ error: "Gemini's answer wasn't readable. Try again." }, 502);
+    const pos = (v: unknown, max: number) => (typeof v === "number" && isFinite(v) && v > 0 ? Math.min(Math.round(v), max) : null);
+    const feeds = (Array.isArray(o.podcasts) ? o.podcasts : [])
+      .map((n: unknown) => (typeof n === "number" ? shows[Math.round(n) - 1]?.feed : undefined))
+      .filter((f: string | undefined): f is string => !!f);
+    const filters = {
+      podcasts: [...new Set(feeds)],
+      status: ["unplayed", "not_started", "in_progress", "played", "any"].includes(o.status) ? o.status : "unplayed",
+      downloaded: o.downloaded === true,
+      minMinutes: pos(o.minMinutes, 600),
+      maxMinutes: pos(o.maxMinutes, 600),
+      withinDays: pos(o.withinDays, 3650),
+      keywords: String(o.keywords ?? "").trim().slice(0, 200),
+      sort: ["newest", "oldest", "shortest", "longest"].includes(o.sort) ? o.sort : "newest",
+      limit: pos(o.limit, 500) ?? 100,
+    };
+    console.log(`Gemini ${g.model}: playlist OK`);
+    return json({ kind, data: { name: String(o.name ?? "").trim().slice(0, 40) || "Playlist", filters }, model: g.model });
+  }
 
   // The user's own transcript (row-level security keeps it to theirs).
   const tr = await fetch(`${base}/rest/v1/transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
