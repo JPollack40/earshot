@@ -117,6 +117,17 @@ fun SettingsScreen(vm: AppViewModel) {
             divider()
             OutputProfilesSetting() // phase 20 (C1)
             divider()
+            // Phase 20 (C5)
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var handoff by remember { mutableStateOf(com.earshot.app.data.Handoff.enabled(ctx)) }
+            SettingRow(
+                title = "Continue between phone and web",
+                subtitle = "Starting an episode here pauses it in the web player (and the other way round), and opening the app offers Continue here. Needs sign-in.",
+                onClick = { handoff = !handoff; com.earshot.app.data.Handoff.setEnabled(ctx, handoff) },
+            ) {
+                Switch(checked = handoff, onCheckedChange = { handoff = it; com.earshot.app.data.Handoff.setEnabled(ctx, it) })
+            }
+            divider()
             val rewind by vm.resumeRewind.collectAsStateWithLifecycle()
             SettingRow(
                 title = "Rewind a little after a pause",

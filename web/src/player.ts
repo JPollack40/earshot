@@ -74,6 +74,9 @@ export const hooks = {
   onDuration: (_id: string, _ms: number) => {},
   /** [stop]: the sleep timer was set to the end of this episode, so don't start the next one. */
   onEnded: (_e: EpisodeRow, _stop: boolean) => {},
+  /** Phase 20 (C5): a play or pause asked for here (handoff). */
+  onPlayStart: () => {},
+  onPause: () => {},
 };
 
 // ---- Web Audio chain (built on first play, once the user has interacted) ----
@@ -354,6 +357,7 @@ export function play() {
   }
   set({ buffering: true, error: null, errorDetails: null });
   void audio.play().catch(playFailed);
+  hooks.onPlayStart();
 }
 
 export function pause() {
@@ -361,6 +365,7 @@ export function pause() {
   audio.pause();
   pausedAt = Date.now();
   pausedId = state.episode?.id ?? null;
+  hooks.onPause();
 }
 
 export function toggle() {

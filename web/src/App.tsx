@@ -21,6 +21,8 @@ import type { BrowseCard } from "./browse";
 import { BrowseCategoriesPage, BrowseListPage, BrowsePage, BrowseSettingsPage } from "./screens/Browse";
 import { WhatsNew } from "./screens/WhatsNew";
 import { ConfigBanner } from "./screens/ConfigBanner";
+import { HandoffBanner } from "./screens/HandoffBanner";
+import { startHandoff } from "./handoff";
 
 // Phase 15: the Stats pages load only when opened (their charts and maths aren't needed at start).
 const StatsPage = lazy(() => import("./screens/Stats").then((m) => ({ default: m.StatsPage })));
@@ -61,9 +63,11 @@ export function App() {
     if (!userId) return;
     store.startPolling();
     const stopLog = startListenLog();
+    const stopHandoff = startHandoff(userId); // phase 20 (C5)
     return () => {
       store.stopPolling();
       stopLog();
+      stopHandoff();
     };
   }, [userId]);
 
@@ -128,6 +132,7 @@ export function App() {
   const page = (
     <>
       <ConfigBanner />
+      <HandoffBanner />
       {route.name === "library" && <Library nav={nav} tab={tab} />}
       {route.name === "podcast" && <PodcastPage key={route.feedUrl} feedUrl={route.feedUrl} nav={nav} />}
       {route.name === "add" && <AddPage nav={nav} />}

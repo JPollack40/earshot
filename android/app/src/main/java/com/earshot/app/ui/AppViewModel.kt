@@ -15,6 +15,7 @@ import com.earshot.app.EarshotApp
 import com.earshot.app.data.ImportStatus
 import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.PlaybackPrefs
+import com.earshot.app.data.Handoff
 import com.earshot.app.data.Settings
 import com.earshot.app.playback.OutputProfiles
 import com.earshot.app.data.SleepSchedule
@@ -1125,6 +1126,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Plays an episode from a moment, if it's still in the library. */
+    // ---- Phase 20 (C5): "Continue here" when the web player or another phone is playing ----
+
+    data class HandoffOffer(val holder: Handoff.Holder, val title: String, val podcastTitle: String)
+
+    var handoffOffer by mutableStateOf<HandoffOffer?>(null)
+        private set
+
+    /** On opening the app: is another device playing (or did it just pause)? */
+    fun checkHandoff() {
+        if (!app.sync.canSync) return
+        viewModelScope.launch {
+            val h = Handoff.fetch(app, app.sync.supabase)
+            val here = nowPlaying.value
+            if (h == null || !Handoff.offer(h, Handoff.deviceId(app), System.currentTimeMillis()) ||
+                (here.episodeId == h.episodeId && here.isPlaying)
+            ) {
+                handoffOffer = null
+                return@launch
+            }
+            val item = repo.episodes.getWithPodcast(h.episodeId)
+            handoffOffer = item?.let { HandoffOffer(h, it.episode.title, it.podcastTitle) }
+        }
+    }
+
+    fun continueHere() {
+        val o = handoffOffer ?: return
+        handoffOffer = null
+        playAt(o.holder.episodeId, o.holder.positionMs)
+    }
+
+    fun dismissHandoff() {
+        handoffOffer = null
+    }
+
     fun playAt(episodeId: String, positionMs: Long) {
         viewModelScope.launch {
             val item = repo.episodes.getWithPodcast(episodeId)

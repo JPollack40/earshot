@@ -126,6 +126,8 @@ class MainActivity : ComponentActivity() {
         (application as com.earshot.app.EarshotApp).sync.request("app resumed")
         // Phase 16: Serena's switches (at most hourly) and any waiting crash reports.
         (application as com.earshot.app.EarshotApp).refreshRemoteConfig()
+        // Phase 20 (C5): offer "Continue here" if the web player or another phone is playing.
+        vm.checkHandoff()
     }
     companion object {
         /** Phase 20 (C6): opens Earshot and carries on playing. */
@@ -232,6 +234,7 @@ fun EarshotRoot(vm: AppViewModel) {
                 }
             }
             ImportBanner(vm)
+            com.earshot.app.ui.screens.HandoffBanner(vm) // phase 20 (C5)
             com.earshot.app.ui.screens.UpdateBanner(vm)
             // Phase 16: Serena's warning and note sit at the bottom, clear of the status bar (her test).
             minVersion?.takeIf { updateRequired }?.let { com.earshot.app.ui.screens.UpdateNeededBanner(vm, it) }

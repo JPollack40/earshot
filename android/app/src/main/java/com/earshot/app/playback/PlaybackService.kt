@@ -44,6 +44,7 @@ import com.earshot.app.data.ai.EpisodeAiStore
 import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.feed.SkippedChapters
 import com.earshot.app.data.PlaylistJson
+import com.earshot.app.data.Handoff
 import com.earshot.app.data.Settings
 import com.earshot.app.data.SleepSchedule
 import com.earshot.app.data.VoiceMatch
@@ -321,6 +322,7 @@ class PlaybackService : MediaLibraryService() {
                 if (player.isPlaying) checkSkips()
                 checkSayAgain()
                 if (++ticks % (FinishByMath.CHECK_MS / 500).toInt() == 0 && player.isPlaying) checkFinishBy()
+                if (ticks % (Handoff.REPORT_MS / 500).toInt() == 0 && player.isPlaying) handoffReport(claim = false)
                 updateChapterArt()
                 updateAdButton()
             }
@@ -505,6 +507,28 @@ class PlaybackService : MediaLibraryService() {
     private var driveBookmarks = 0
     private val driveFinished = mutableListOf<String>()
     private var driveEndJob: Job? = null
+
+    // ---- Handoff between phone and web (phase 20, C5) ----
+
+    /** When the last claim was sent: a report sent before it may still name the old holder. */
+    private var lastClaimSentAt = 0L
+
+    private fun handoffReport(claim: Boolean) {
+        if (!app.sync.canSync) return
+        val id = player.currentMediaItem?.mediaId ?: return
+        val pos = player.currentPosition
+        val playing = player.playWhenReady
+        val sentAt = SystemClock.elapsedRealtime()
+        if (claim) lastClaimSentAt = sentAt
+        scope.launch {
+            val h = Handoff.report(app, app.sync.supabase, id, pos, playing, claim) ?: return@launch
+            if (sentAt < lastClaimSentAt) return@launch
+            if (h.device != Handoff.deviceId(app) && player.playWhenReady && player.currentMediaItem?.mediaId == id) {
+                Log.i(TAG, "Handoff: playing on ${Handoff.label(h)} now, pausing here")
+                player.pause()
+            }
+        }
+    }
 
     // ---- Per-output profiles (phase 20, C1) ----
 
@@ -845,6 +869,8 @@ class PlaybackService : MediaLibraryService() {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             // Phase 17: the automatic sleep timer, on a press of play (not buffering or focus coming back).
             if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) autoSleepTimer()
+            // Phase 20 (C5): starting to play here takes playback from the web or another phone.
+            if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) handoffReport(claim = playWhenReady)
             // Paused by setPauseAtEndOfMediaItems: the episode has played to the end.
             if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) return
             val id = player.currentMediaItem?.mediaId ?: return
