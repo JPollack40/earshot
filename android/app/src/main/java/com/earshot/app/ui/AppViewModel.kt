@@ -810,6 +810,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Phase 19 (B5): Settings > Playback > When the queue ends (a playlist id, or null to stop). */
+    var queueEndPlaylistId by mutableStateOf(Settings.queueEndPlaylistId(app))
+        private set
+
+    fun updateQueueEndPlaylist(id: String?) {
+        Settings.setQueueEndPlaylistId(app, id)
+        queueEndPlaylistId = id
+    }
+
     /** Phase 17: Settings > Playback > Automatic sleep timer. */
     var sleepSchedule by mutableStateOf(Settings.sleepSchedule(app))
         private set

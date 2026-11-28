@@ -612,6 +612,21 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         return ids.mapNotNull { byId[it] }
     }
 
+    /**
+     * Phase 19 (B5): when the queue has run out, the chosen playlist's first unplayed episode (other than
+     * [finishedId]) joins the queue and is returned, so playback carries on. Null when the setting is off,
+     * the playlist is gone or has nothing left.
+     */
+    suspend fun continueFromPlaylist(finishedId: String): EpisodeWithPodcast? {
+        val pid = Settings.queueEndPlaylistId(context) ?: return null
+        val p = playlists.get(pid)?.takeIf { !it.deleted } ?: return null
+        val next = playlistEpisodes(PlaylistJson.parse(p.filtersJson))
+            .firstOrNull { it.episode.id != finishedId && !it.episode.played } ?: return null
+        queueLast(next.episode.id)
+        Log.i(TAG, "Queue ended: carrying on from \"${p.name}\" with \"${next.episode.title}\"")
+        return episodes.getQueue().firstOrNull { it.episode.id == next.episode.id } ?: next
+    }
+
     /** The playlist's episodes now (Android Auto). */
     suspend fun playlistEpisodes(filters: PlaylistFilters): List<EpisodeWithPodcast> = withContext(Dispatchers.IO) {
         inOrder(select(filters, episodes.getPlaylistRows()))

@@ -788,7 +788,8 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             repo.setPlayed(id, true) // also leaves the queue
             if (player.currentMediaItem?.mediaId == id) {
-                val next = repo.queueHead()
+                // Phase 19 (B5): an empty queue can carry on from a chosen playlist.
+                val next = repo.queueHead() ?: repo.continueFromPlaylist(id)
                 if (next != null) {
                     Log.i(TAG, "Up next: ${next.episode.title}")
                     load(next, EpisodeMedia.startPosition(next), play = playNext && !stopHere)
