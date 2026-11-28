@@ -1,107 +1,96 @@
-# Earshot: personal podcast player
+# Earshot
 
-*(Earshot is a working name. Changing it later takes about two minutes.)*
+A personal podcast player for Android, with a web player and Android Auto, kept in sync through Supabase.
 
-One repo for the whole project:
-
-| Folder | What | Phase |
-|---|---|---|
-| `android/` | Native Android app (Kotlin, Jetpack Compose, Media3, Room) | 1 onward |
-| `web/` | Web player (React + TypeScript) | 5 |
-| `supabase/` | Sync database and edge functions (Podcast Index and transcription proxies) | 5 |
+- **Android app:** download the `.apk` from the [latest release](https://github.com/JPollack40/earshot/releases/latest)
+  (it isn't on the Play Store, so Android asks you to allow the install).
+- **Web player:** https://jpollack40.github.io/earshot/
+- Sign in under **Settings > Sync** to sync your library. Accounts are invite-only (new sign-ups are switched off).
 
 ---
 
-## What's in this build (phases 1 to 4)
+## Features
 
-- **Add podcasts** by searching, pasting a feed URL, or importing an OPML file from your current app.
-- **Latest tab** shows new episodes from all shows, newest first. **Podcasts tab** shows your shows with unplayed counts.
-- **Compact episode rows**: artwork, title, date, duration or time left, progress bar, download and play buttons.
-  Tap a row for show notes, download, and mark played or unplayed.
-- **Background playback** with lock-screen and notification controls and headset buttons.
-  Pauses when headphones are unplugged.
-- **Remembers your place** in every episode. Position is saved every 5 seconds and on pause.
-- **Player screen**: scrubber, skip back and forward (15 s / 30 s by default; long-press either button to pick 5 s to 15 min), speed from 0.8× to 3×, a sleep timer (minutes or end of episode),
-  and chapters from Podcasting 2.0 feeds (tap a chapter to jump to it).
-- **Downloads** run in the background with a progress notification. They retry automatically 3 times,
-  then show a red retry icon instead of failing silently. Downloaded episodes play from the file.
-- **Automatic feed refresh** every 2 hours, plus the refresh button.
-- **Download auto-delete and Settings** (phase 2): finished downloads are removed, unfinished ones expire after a chosen number of days.
-- **Inbox → Queue triage** (phase 3): new episodes land in the Inbox. Swipe right to queue, left to archive, or Archive all.
-  The Queue plays top to bottom: drag the handle to reorder, swipe left to remove. Playing an episode moves it to the top,
-  and when it finishes the next one starts. Queued episodes download automatically (Settings toggle).
-- **Unsubscribing keeps queued episodes** until you play or remove them.
-- **Android Auto** (phase 3): browse Queue, Inbox, Latest and Podcasts in the car, with skip buttons that use your chosen lengths.
-- **Smart Speed and Voice Boost** (phase 4): Smart Speed shortens silences; Voice Boost evens out loudness. Chips on the player, defaults in Settings.
-- **Per-podcast playback settings** (phase 4): sliders icon on a podcast page sets its own speed, Smart Speed, Voice Boost and skip lengths.
-- **Time saved** (phase 4): total in Settings (split into speed and Smart Speed), per episode under the player buttons.
+**Library**
+- Add podcasts by searching (Podcast Index, with Apple as the fallback), pasting a feed URL, or importing an OPML file.
+  Open a search result to look around and play episodes before subscribing.
+- **Browse** page with trending shows, categories and "You might like" suggestions on each podcast page.
+- Tabs for Podcasts (pin favourites to the top), New Episodes (swipe to queue or archive) and the Queue
+  (drag to reorder, Continue listening at the top), plus smart playlists with saved filters and sorting.
+- Per-podcast rules for new episodes (New Episodes, play next, end of queue or skip; title words; length) and tidy-up rules.
+- Search inside a podcast's titles and show notes; mark older or newer episodes played in one go.
+- Unfollowing a show keeps its queued and part-played episodes until you finish them.
 
-- **Podcast Index search** (phase 5a): search goes through Podcast Index via the Supabase function in `supabase/functions/podcast-search`, falling back to Apple's search. It needs `earshot.supabaseUrl` and `earshot.supabaseKey` in `android/local.properties` (not committed).
-- **Look before subscribing** (phase 5a): tap a search result to open its page, then play, queue or download episodes without subscribing. Queued ones stay until played.
-- **Search inside a podcast** (phase 5a): the magnifying glass on a podcast page searches its episode titles and show notes. Every word must match, and `"quoted phrases"` must match exactly.
+**Player**
+- Background playback with notification, lock-screen and headset controls; remembers your place in every episode.
+- Speed 0.8×–3×, Smart Speed (shortens silences), Voice Boost (evens out loudness), and adjustable skip lengths
+  (long-press a skip button), all with optional per-podcast settings. Time saved is shown in Settings.
+- Sleep timer, chapters (Podcasting 2.0 and embedded), skipped chapters, undo for accidental jumps, and ad trim
+  at the start and end of episodes.
+- Downloads in the background with retries, automatic clean-up, Wi-Fi-only option, and a 10-minute streaming
+  buffer with a stream cache.
+- Rewind a little after a pause or interruption.
 
-- **Sync and web player** (phase 5b): sign in under Settings > Sync; subscriptions, pins, queue, New Episodes, played state, positions and playback settings sync with the web player at https://jpollack40.github.io/earshot/.
-- **Pinned podcasts and "New Episodes"** (phase 5b): pin icon on the Podcasts tab; the Inbox is now called New Episodes.
+**Transcripts and AI**
+- Transcripts from the feed when it has one, otherwise on demand (Deepgram); the transcript follows playback.
+- Search across all saved transcripts; export a transcript as Markdown.
+- Bookmarks from the app, the notification or the car, saved with the last minute of transcript and titled automatically.
+- AI (Gemini, from the transcript): a summary with key moments, generated chapters, "Ask about this episode",
+  and ad detection with automatic skipping or a Skip ad button.
 
-Not in this build yet: transcripts (phase 6).
-
+**Sync, web and car**
+- Subscriptions, pins, the queue, New Episodes, played state, positions, playback settings, transcripts,
+  bookmarks, playlists and rules sync between the phone and the web player.
+- The server checks for new episodes every 15 minutes and can send a "New episode" notification.
+- **Android Auto:** browse your queue, New Episodes, playlists and podcasts, with your skip lengths, bookmarks
+  and Skip ad. Voice works too: "Hey Google, play <podcast> on Earshot".
+- Listening stats, full backup and restore (Settings > Backup), and an in-app update check.
 
 ---
 
-## One-time setup (Windows)
+## Repository layout
 
-### 1. Install Android Studio
-1. Download it from **developer.android.com/studio** and run the installer with the default options.
-2. On first launch, pick **Standard** setup. This downloads the Android SDK (about 3–5 GB).
-3. If it asks about a JDK, use the bundled one.
+| Folder | What |
+|---|---|
+| `android/` | The Android app (Kotlin, Jetpack Compose, Media3, Room, WorkManager) |
+| `web/` | The web player (React, TypeScript, Vite), deployed to GitHub Pages: see [web/README.md](web/README.md) |
+| `supabase/` | Database migrations, edge functions and SQL tests: see [supabase/README.md](supabase/README.md) |
+| `shared/test-vectors/` | Test cases that the Android and web tests both check, so the two apps behave the same |
+| `.github/workflows/` | Pull request checks, signed Android releases, web deploy, weekly encrypted database backup |
 
-### 2. Put the project somewhere permanent
-Unzip `earshot.zip` to, for example, `C:\dev\earshot`.
+Other docs: [RELEASES.md](RELEASES.md) (signing key, making a release, R8 test build, server backup),
+[PROJECT_BRIEF.md](PROJECT_BRIEF.md) (the original design decisions) and
+[docs/FRIENDS_INSTALL_MESSAGE.md](docs/FRIENDS_INSTALL_MESSAGE.md) (a draft install message for friends).
 
-### 3. Open the Android app
-1. Android Studio: **File → Open**, then select the **`android`** folder inside `earshot`, not the top `earshot` folder.
-2. Wait for the **Gradle sync** to finish (bottom status bar). The first sync downloads the build tools and libraries,
-   which takes 5–10 minutes.
-3. If Android Studio offers to **upgrade the Android Gradle Plugin**, click **Don't remind me** for now. The versions are pinned on purpose.
-4. If it asks you to install a missing SDK platform (Android 16 / API 36), accept.
+---
 
-### 4. Set up your phone
-1. **Settings → About phone →** tap **Build number** 7 times. This unlocks Developer options.
-2. **Settings → System → Developer options →** turn on **USB debugging**.
-3. Plug the phone into the PC and accept the "Allow USB debugging?" prompt on the phone. Tick "Always allow".
-4. Your phone's name appears in the device dropdown at the top of Android Studio.
+## Building the Android app
 
-Wireless alternative: in Developer options, turn on **Wireless debugging**, then use Android Studio's
-**Device Manager → Pair devices using Wi-Fi**.
-
-### 5. Run it
-Click the green **Run ▶** button. The app installs and opens on your phone. Allow notifications when it asks,
-since the player controls and download progress use them.
-
-### 6. Create the GitHub repo (no editor needed)
-1. On github.com, create a new **private** repo named `earshot`. Leave it empty: no README and no .gitignore.
-2. In a terminal (PowerShell or Git Bash) inside `C:\dev\earshot`:
+1. Install [Android Studio](https://developer.android.com/studio) with the standard setup (it brings the SDK and a JDK).
+2. **File > Open** the `android` folder (not the repository root) and let the Gradle sync finish.
+   Versions are pinned in `android/gradle/libs.versions.toml`; ignore offers to upgrade the Android Gradle Plugin.
+3. For Podcast Index search and sync, create `android/local.properties` (it's gitignored) with:
    ```
-   git init
-   git add .
-   git commit -m "Phase 1: core player"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/earshot.git
-   git push -u origin main
+   earshot.supabaseUrl=https\://<project-ref>.supabase.co
+   earshot.supabaseKey=<the project's publishable key>
    ```
+   Without them the app still works, with Apple's search and no sync.
+4. Turn on USB or wireless debugging on your phone and click **Run**. From a terminal:
+   `gradlew.bat assembleDebug` (debug APK) or `gradlew.bat testDebugUnitTest` (unit tests).
 
----
+Release builds are signed and published by GitHub Actions when a `v*` tag is pushed; see [RELEASES.md](RELEASES.md).
+To try a shrunk release build next to your installed app, use `gradlew.bat assembleR8test` ("Earshot R8 test", teal icon).
 
-## Things to try in phase 1
+For Android Auto testing, use the Desktop Head Unit: start the head unit server on the phone
+(Settings > Android Auto > ⋮ > Start head unit server), then
 
-1. **Add → Import OPML**: export your subscriptions from Pocket Casts, Podcast Addict or another app and import the file.
-2. Search for a show, subscribe, and play an episode. Lock the phone and check that the notification controls work.
-3. Play partway, switch to another episode, then come back. It should resume where you left off.
-4. Download an episode, turn on airplane mode, and play it.
-5. For chapters, try a Podcasting 2.0 show (for example *Podcasting 2.0* by Adam Curry and Dave Jones).
+```
+adb forward tcp:5277 tcp:5277
+```
 
-If something breaks, copy the red error text from **Build** (sync or compile problems) or **Logcat** (crashes on the phone)
-and paste it to Claude.
+```
+"%LOCALAPPDATA%\Android\Sdk\extras\google\auto\desktop-head-unit.exe"
+```
 
 ---
 
@@ -109,5 +98,3 @@ and paste it to Claude.
 
 AGP 9.5.3 · Gradle 9.6.0 · Kotlin 2.4.21 (built in through AGP 9) · KSP 2.3.14 · Compose BOM 2026.11.01 ·
 Media3 1.11.1 · Room 2.8.5 · WorkManager 2.12.0 · Coil 3.6.3
-
-All versions are in `android/gradle/libs.versions.toml`.
