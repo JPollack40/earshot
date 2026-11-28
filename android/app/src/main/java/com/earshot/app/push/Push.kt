@@ -102,6 +102,30 @@ object Push {
         }
     }
 
+    /** Phase 21 (D2): a warning for Serena from the server (e.g. Deepgram credit is low). */
+    fun onOwnerAlert(app: EarshotApp, data: Map<String, String>) {
+        val title = data["title"]?.ifBlank { null } ?: return
+        val body = data["body"].orEmpty()
+        val open = PendingIntent.getActivity(
+            app, title.hashCode(),
+            Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val n = NotificationCompat.Builder(app, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(app).notify("owner_alert".hashCode(), n)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Push: notifications not allowed", e)
+        }
+    }
+
     private fun show(context: Context, episodeId: String, title: String, podcast: String, queued: Boolean) {
         val open = PendingIntent.getActivity(
             context,

@@ -11,6 +11,9 @@ class EarshotMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["type"] == "new_episode") Push.onNewEpisode(application as EarshotApp, message.data)
+        when (message.data["type"]) {
+            "new_episode" -> Push.onNewEpisode(application as EarshotApp, message.data)
+            "owner_alert" -> Push.onOwnerAlert(application as EarshotApp, message.data) // phase 21: credit watch
+        }
     }
 }

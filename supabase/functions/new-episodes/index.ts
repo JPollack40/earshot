@@ -19,7 +19,11 @@
 // busy or the app was closed when their transcript arrived). Needs supabase/migrations/008_bookmark_titles.sql;
 // without it this step is skipped quietly.
 //
-// Returns { feeds, lookedUp, checked, found, added, notified, titled, errors }.
+// Phase 21 (D2): every 6 hours it also reads the Deepgram credit left (needs 014_owner_console.sql; skipped
+// quietly without it) into usage_watch, and below its warning level sends the owners' phones a warning
+// (at most every 3 days). Optional secret DEEPGRAM_ADMIN_KEY if the DEEPGRAM_API_KEY can't read billing.
+//
+// Returns { feeds, lookedUp, checked, found, added, notified, credit, titled, errors }.
 
 const API = "https://api.podcastindex.org/api/1.0";
 const BATCH = 200; // Podcast Index's limit of feed ids per byfeedid call
@@ -227,6 +231,89 @@ async function geminiTitle(todo: TitleTodo): Promise<string> {
   throw new Error(last || "No title");
 }
 
+// ---------------------------------------------------------------- phase 21 (D2): Deepgram credit watch
+
+const CREDIT_EVERY_MS = 6 * 3600 * 1000;
+const WARN_AGAIN_MS = 3 * 24 * 3600 * 1000;
+
+/** Deepgram credit left in USD, summed over the key's first project's balances. */
+async function deepgramBalance(): Promise<number> {
+  const key = Deno.env.get("DEEPGRAM_ADMIN_KEY") || Deno.env.get("DEEPGRAM_API_KEY");
+  if (!key) throw new Error("No DEEPGRAM_API_KEY secret");
+  const headers = { Authorization: `Token ${key}` };
+  const pr = await fetch("https://api.deepgram.com/v1/projects", { headers });
+  if (!pr.ok) throw new Error(`Deepgram projects: HTTP ${pr.status}${pr.status === 403 ? " (this key can't list projects: add a DEEPGRAM_ADMIN_KEY)" : ""}`);
+  const projects = ((await pr.json()) as { projects?: { project_id?: string }[] }).projects ?? [];
+  const id = projects[0]?.project_id;
+  if (!id) throw new Error("Deepgram: no project for this key");
+  const br = await fetch(`https://api.deepgram.com/v1/projects/${id}/balances`, { headers });
+  const text = await br.text();
+  if (!br.ok) throw new Error(`Deepgram balances: HTTP ${br.status}${br.status === 403 ? " (this key can't read billing: add a DEEPGRAM_ADMIN_KEY)" : ""}`);
+  const balances = (JSON.parse(text) as { balances?: { amount?: number | string; units?: string }[] }).balances;
+  if (!Array.isArray(balances)) throw new Error(`Deepgram balances: unexpected answer ${text.slice(0, 200)}`);
+  return balances
+    .filter((b) => !b.units || b.units.toLowerCase() === "usd")
+    .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+}
+
+type UsageRow = { deepgram_balance_usd: number | null; deepgram_checked_at: string | null; warn_below_usd: number; warned_at: string | null };
+
+/** Every 6 hours: reads the credit, saves it, and warns the owners when it's low. Returns the credit, or null. */
+async function creditWatch(errors: string[]): Promise<number | null> {
+  let rows: UsageRow[];
+  try {
+    rows = await db("usage_watch?id=eq.1&select=deepgram_balance_usd,deepgram_checked_at,warn_below_usd,warned_at") as UsageRow[];
+  } catch (_) {
+    return null; // 014 not run yet
+  }
+  const row = rows[0];
+  if (!row) return null;
+  if (row.deepgram_checked_at && Date.now() - Date.parse(row.deepgram_checked_at) < CREDIT_EVERY_MS) return row.deepgram_balance_usd;
+  const now = new Date().toISOString();
+  let usd: number;
+  try {
+    usd = Math.round((await deepgramBalance()) * 100) / 100;
+  } catch (e) {
+    const msg = String((e as Error).message ?? e).slice(0, 300);
+    await db("usage_watch?id=eq.1", { method: "PATCH", body: JSON.stringify({ deepgram_checked_at: now, deepgram_error: msg, updated_at: now }) });
+    errors.push(msg);
+    return null;
+  }
+  const patch: Record<string, unknown> = { deepgram_balance_usd: usd, deepgram_checked_at: now, deepgram_error: null, updated_at: now };
+  const low = usd < Number(row.warn_below_usd);
+  if (low && (!row.warned_at || Date.now() - Date.parse(row.warned_at) > WARN_AGAIN_MS)) {
+    const level = Number(row.warn_below_usd).toFixed(0);
+    const sent = await warnOwners("Deepgram credit is low: $" + usd.toFixed(2), "Below your warning level of $" + level + ". Transcripts stop when it runs out.", errors);
+    if (sent > 0) patch.warned_at = now;
+  }
+  if (!low) patch.warned_at = null; // topped up: warn again next time it gets low
+  await db("usage_watch?id=eq.1", { method: "PATCH", body: JSON.stringify(patch) });
+  return usd;
+}
+
+/** A plain notification on every owner's phone. Returns how many were sent. */
+async function warnOwners(title: string, body: string, errors: string[]): Promise<number> {
+  const raw = Deno.env.get("FCM_SERVICE_ACCOUNT");
+  if (!raw) return 0;
+  const owners = await db("app_owners?select=user_id") as { user_id: string }[];
+  if (!owners.length) return 0;
+  const devices = await db(`push_devices?select=token&user_id=in.(${owners.map((o) => o.user_id).join(",")})`) as { token: string }[];
+  if (!devices.length) return 0;
+  const sa = JSON.parse(raw) as ServiceAccount;
+  const token = await fcmAccessToken(sa);
+  let sent = 0;
+  for (const d of devices) {
+    const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { token: d.token, data: { type: "owner_alert", title, body }, android: { priority: "high", ttl: "86400s" } } }),
+    });
+    if (res.ok) sent++;
+    else errors.push(`FCM owner alert: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+  return sent;
+}
+
 /** Titles untitled bookmarks until [deadline] (ms since epoch). Returns how many got a title. */
 async function titleBookmarks(deadline: number, errors: string[]): Promise<number> {
   // Phase 16: Serena's kill switch (app_config.ai_on, 010_safe_updates.sql). A failed read changes nothing.
@@ -371,6 +458,13 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     errors.push(`Notifications: ${(e as Error).message}`);
   }
+  // Phase 21 (D2): the Deepgram credit watch.
+  let credit: number | null = null;
+  try {
+    credit = await creditWatch(errors);
+  } catch (e) {
+    errors.push(`Credit watch: ${(e as Error).message}`);
+  }
   // Phase 14: bookmark titles with the time left (edge functions stop at about 150 s).
   let titled = 0;
   try {
@@ -378,7 +472,7 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     errors.push(`Bookmark titles: ${(e as Error).message}`);
   }
-  const result = { feeds: feedCount, lookedUp, checked, found, added: added.length, notified, titled, errors: errors.slice(0, 20) };
+  const result = { feeds: feedCount, lookedUp, checked, found, added: added.length, notified, credit, titled, errors: errors.slice(0, 20) };
   console.log(JSON.stringify(result));
   return json(result, errors.length && !checked ? 500 : 200);
 });

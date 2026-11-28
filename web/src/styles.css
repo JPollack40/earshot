@@ -199,3 +199,18 @@ mark { background: none; color: var(--accent); font-weight: 700; }
 /* Phase 16: Serena's note from app_config.banner */
 .config-banner { display: flex; align-items: center; gap: 12px; margin: 8px 14px; padding: 8px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--line); font-size: 14px; }
 .config-banner span { flex: 1; }
+
+/* Phase 21: owner console */
+.owner .pad { padding: 0 16px; }
+.owner-card { margin: 12px 14px; padding: 12px 14px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--line); }
+.owner-card h2 { font-size: 16px; margin: 0 0 6px; }
+.owner-big { font-size: 28px; font-weight: 600; margin: 4px 0; }
+.owner-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.owner-table th, .owner-table td { text-align: left; vertical-align: top; padding: 6px 8px 6px 0; border-top: 1px solid var(--line); }
+.owner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.owner-field { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
+.owner-field input, .owner-row input { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: inherit; }
+.owner-num { width: 70px; }
+.owner-crash { margin: 6px 0; }
+.owner-crash pre { white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; }
+@media (max-width: 640px) { .owner-table thead { display: none; } .owner-table td { display: block; border: 0; padding: 2px 0; } .owner-table tr { display: block; border-top: 1px solid var(--line); padding: 6px 0; } }

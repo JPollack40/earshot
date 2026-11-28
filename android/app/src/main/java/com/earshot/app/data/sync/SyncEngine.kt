@@ -91,6 +91,7 @@ class SyncEngine(private val app: EarshotApp) {
                 prefs.edit { putLong("last_sync_at", now) }
                 _status.value = SyncStatus(running = false, lastSyncAt = now)
                 Log.i(TAG, "Sync ($reason): pushed $pushed, pulled $pulled")
+                com.earshot.app.data.AppDevices.report(app, supabase, now) // phase 21: for the owner console, hourly
                 true
             } catch (e: CancellationException) {
                 _status.value = _status.value.copy(running = false)

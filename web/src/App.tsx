@@ -22,6 +22,7 @@ import { BrowseCategoriesPage, BrowseListPage, BrowsePage, BrowseSettingsPage } 
 import { WhatsNew } from "./screens/WhatsNew";
 import { ConfigBanner } from "./screens/ConfigBanner";
 import { HandoffBanner } from "./screens/HandoffBanner";
+import { OwnerPage } from "./screens/Owner";
 import { startHandoff } from "./handoff";
 
 // Phase 15: the Stats pages load only when opened (their charts and maths aren't needed at start).
@@ -41,7 +42,8 @@ export type Route =
   | { name: "browse" }
   | { name: "browseList"; title: string; category?: string; items?: BrowseCard[] }
   | { name: "browseCategories" }
-  | { name: "browseSettings" };
+  | { name: "browseSettings" }
+  | { name: "owner" };
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -148,6 +150,7 @@ export function App() {
       {route.name === "browseList" && <BrowseListPage key={`${route.title}-${route.category ?? ""}`} nav={nav} title={route.title} category={route.category} items={route.items} />}
       {route.name === "browseCategories" && <BrowseCategoriesPage nav={nav} />}
       {route.name === "browseSettings" && <BrowseSettingsPage nav={nav} />}
+      {route.name === "owner" && <OwnerPage nav={nav} />}
       <WhatsNew />
     </>
   );

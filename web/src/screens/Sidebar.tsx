@@ -6,6 +6,7 @@ import * as store from "../store";
 import * as notes from "../notes";
 import { Art, type Nav } from "./common";
 import { Icon } from "./Icons";
+import { useIsOwner } from "./Owner";
 import type { Tab } from "./Library";
 
 export const TABS: { tab: Tab; label: string; short: string; icon: string }[] = [
@@ -44,6 +45,7 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
   const pinned = store.library(s).filter((p) => p.pinned);
   const counts = newCounts(s);
   const bookmarkCount = notes.bookmarks(notes.useNotes()).length;
+  const owner = useIsOwner(); // phase 21
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -82,6 +84,12 @@ export function Sidebar({ tab, nav, activeFeed, page }: { tab: Tab | null; nav: 
           <Icon name="stats" />
           <span>Stats</span>
         </button>
+        {owner && (
+          <button className={`nav-item ${page === "owner" ? "on" : ""}`} aria-current={page === "owner" ? "page" : undefined} onClick={() => nav.open({ name: "owner" })}>
+            <Icon name="stats" />
+            <span>Owner console</span>
+          </button>
+        )}
       </nav>
       {pinned.length > 0 && (
         <>

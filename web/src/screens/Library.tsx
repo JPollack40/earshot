@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useIsOwner } from "./Owner";
 import { setAppearance, useAppearance, useArtColor } from "../appearance";
 import * as player from "../player";
 import * as store from "../store";
@@ -14,6 +15,7 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
   const s = store.useStore();
   const a = useAppearance();
   const glow = a.theme === "glow";
+  const owner = useIsOwner(); // phase 21
   const p = player.usePlayer();
   const [dragId, setDragId] = useState<string | null>(null);
   const [tidyOpen, setTidyOpen] = useState(false);
@@ -111,6 +113,11 @@ export function Library({ nav, tab }: { nav: Nav; tab: Tab }) {
         <button className="text" title="Listening stats" onClick={() => nav.open({ name: "stats" })}>
           Stats
         </button>
+        {owner && (
+          <button className="text" title="Owner console" onClick={() => nav.open({ name: "owner" })}>
+            Owner
+          </button>
+        )}
         <button className="icon" title="Sync now" onClick={() => void store.pull()}>
           {s.syncing ? "…" : "⟳"}
         </button>
