@@ -372,6 +372,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val before = repo.snapshotEpisodes(ids)
             val n = action()
+            // A repeat of an action already done (a swipe can report twice) changes nothing: no second
+            // message, whose Undo would put back the already-changed state (PR D test B3).
+            if (repo.snapshotEpisodes(ids) == before) return@launch
             val text = message(n) ?: return@launch
             if (n > 0) sayWithUndo(text) {
                 repo.restoreEpisodes(before) { app.sync.sync("undo") }
@@ -739,13 +742,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun download(item: EpisodeWithPodcast) {
-        viewModelScope.launch { repo.download(item.episode.id) }
+        viewModelScope.launch { if (!repo.download(item.episode.id)) sayOverStorageCap() }
     }
+
+    /** Phase 17: a tapped Download over the storage limit. */
+    private fun sayOverStorageCap() =
+        say("Over your ${com.earshot.app.data.StorageCap.label(Settings.storageCapGb(app))} storage limit. Delete some downloads or raise the limit in Settings > Downloads.")
 
     fun deleteDownload(item: EpisodeWithPodcast) {
         viewModelScope.launch {
             repo.deleteDownload(item.episode.id)
-            sayWithUndo("Download deleted") { repo.download(item.episode.id) } // Undo downloads it again
+            sayWithUndo("Download deleted") { if (!repo.download(item.episode.id)) sayOverStorageCap() } // Undo downloads it again
         }
     }
 
