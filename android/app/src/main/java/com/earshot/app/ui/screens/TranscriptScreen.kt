@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.data.db.Bookmark
 import com.earshot.app.data.transcript.TranscribeState
+import com.earshot.app.data.transcript.SpeakerNames
 import com.earshot.app.data.transcript.TranscriptFormat
 import com.earshot.app.data.transcript.Transcripts
 import com.earshot.app.ui.AppViewModel
@@ -79,6 +80,15 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
     var menu by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Bookmark?>(null) }
     var loaded by remember { mutableStateOf(false) }
+    // Phase 18: speaker names (yours, else a guess from the episode's podcast:person list).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val namesVersion by SpeakerNames.version.collectAsStateWithLifecycle()
+    val speakerNames = remember(episodeId, namesVersion) { SpeakerNames.names(context, episodeId) }
+    val people = remember(item?.episode?.personsJson) { com.earshot.app.data.feed.Persons.parse(item?.episode?.personsJson) }
+    val guessedNames = remember(transcript, people) {
+        transcript?.let { SpeakerNames.guess(SpeakerNames.speakers(it.segments), people) }.orEmpty()
+    }
+    var renaming by remember { mutableStateOf<String?>(null) }
 
     val isLoaded = now.episodeId == episodeId
     val title = item?.episode?.title ?: bookmarks.firstOrNull()?.episodeTitle ?: "Transcript"
@@ -214,11 +224,13 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
                         }
                         Column(Modifier.weight(1f)) {
                             if (seg.speaker != null && seg.speaker != prevSpeaker) {
+                                // Phase 18: tap a speaker's name to rename them (in this episode).
                                 Text(
-                                    TranscriptFormat.speakerName(seg.speaker),
+                                    SpeakerNames.label(seg.speaker, speakerNames, guessedNames),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable(onClickLabel = "Rename speaker") { renaming = seg.speaker },
                                 )
                             }
                             Text(
@@ -253,6 +265,18 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
         }
     }
 
+    renaming?.let { sp ->
+        RenameSpeakerDialog(
+            current = speakerNames[sp] ?: guessedNames[sp].orEmpty(),
+            fallback = com.earshot.app.data.transcript.TranscriptFormat.speakerName(sp),
+            people = people.map { it.name },
+            onDismiss = { renaming = null },
+            onSave = { name ->
+                SpeakerNames.set(context, episodeId, sp, name)
+                renaming = null
+            },
+        )
+    }
     editing?.let { b ->
         BookmarkDialog(vm, b, transcript, onDismiss = { editing = null })
     }
@@ -342,4 +366,34 @@ private fun NoTranscript(
             }
         }
     }
+}
+
+/** Phase 18: name a transcript speaker; the episode's people are offered as one-tap choices. */
+@Composable
+private fun RenameSpeakerDialog(current: String, fallback: String, people: List<String>, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename $fallback") },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(60) },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (people.isNotEmpty()) {
+                    Text("In this episode", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
+                    people.forEach { p ->
+                        androidx.compose.material3.TextButton(onClick = { name = p }) { Text(p) }
+                    }
+                }
+                Text("Leave it empty to go back to \"$fallback\".", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { onSave(name) }) { Text("Save") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
