@@ -32,6 +32,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -44,22 +46,35 @@ import com.earshot.app.ui.AppViewModel
 import java.text.DateFormat
 import java.util.Date
 
-/** "Update available" banner (phase 9), shown above the bottom bar. */
+/** "Update available" banner (phase 9); phase 16 adds one-tap Update with a SHA-256 check. */
 @Composable
 fun UpdateBanner(vm: AppViewModel) {
     val u = vm.update ?: return
     val context = LocalContext.current
+    val install by com.earshot.app.data.SelfUpdate.state.collectAsStateWithLifecycle()
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
         Column(Modifier.padding(12.dp)) {
-            Text("Earshot ${u.version} is available", style = MaterialTheme.typography.titleSmall)
+            Text("Earshot ${u.version}${if (u.beta) " (beta)" else ""} is available", style = MaterialTheme.typography.titleSmall)
             Text(
-                "You have ${BuildConfig.VERSION_NAME}. Download it, open the file, and Android installs it over this one (your library stays).",
+                when (val st = install) {
+                    is com.earshot.app.data.SelfUpdateState.Downloading -> "Downloading… ${st.percent}%"
+                    com.earshot.app.data.SelfUpdateState.Installing -> "Installing. Android may ask you to confirm."
+                    com.earshot.app.data.SelfUpdateState.NeedsPermission ->
+                        "Allow \"Install unknown apps\" for Earshot on the screen that opened, come back, then tap Update again."
+                    is com.earshot.app.data.SelfUpdateState.Failed -> "${st.message}. You can still use Download."
+                    com.earshot.app.data.SelfUpdateState.Idle ->
+                        "You have ${BuildConfig.VERSION_NAME}. Update installs it over this one (your library stays)."
+                },
                 style = MaterialTheme.typography.bodySmall,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val busy = install is com.earshot.app.data.SelfUpdateState.Downloading || install == com.earshot.app.data.SelfUpdateState.Installing
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (u.apkUrl.isNotBlank() && u.shaUrl.isNotBlank()) {
+                    TextButton(enabled = !busy, onClick = vm::installUpdate) { Text("Update") }
+                }
                 TextButton(onClick = {
                     val url = u.apkUrl.ifBlank { u.pageUrl }
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
@@ -67,7 +82,7 @@ fun UpdateBanner(vm: AppViewModel) {
                 TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, u.pageUrl.toUri())) } }) {
                     Text("What's new")
                 }
-                TextButton(onClick = vm::dismissUpdate) { Text("Not now") }
+                if (!busy) TextButton(onClick = vm::dismissUpdate) { Text("Not now") }
             }
         }
     }
@@ -111,6 +126,14 @@ fun ShareSettings(vm: AppViewModel, divider: @Composable () -> Unit) {
         subtitle = if (Updates.automatic) "Release builds also check once a day." else "This is a test build; it doesn't check by itself.",
         onClick = { vm.checkForUpdate(manual = true) },
     ) {}
+    divider()
+    // Phase 16: the beta ring. Off by default; on, pre-releases are offered too.
+    SettingRow(
+        title = "Get beta updates",
+        subtitle = if (vm.betaUpdates) "On: you get test versions first (they may have rough edges). Turn off to wait for stable releases."
+        else "Off: only tested stable releases, about every 4 to 6 weeks.",
+        onClick = { vm.updateBetaUpdates(!vm.betaUpdates) },
+    ) { androidx.compose.material3.Switch(checked = vm.betaUpdates, onCheckedChange = vm::updateBetaUpdates) }
     divider()
 
     vm.restoreCandidate?.let { info ->

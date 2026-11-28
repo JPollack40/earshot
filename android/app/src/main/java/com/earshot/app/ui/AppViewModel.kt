@@ -364,6 +364,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         whatsNew = null
     }
 
+    /** Phase 16: Settings > Updates > Get beta updates. */
+    var betaUpdates by mutableStateOf(com.earshot.app.data.Updates.betaUpdates(app))
+        private set
+
+    fun updateBetaUpdates(on: Boolean) {
+        com.earshot.app.data.Updates.setBetaUpdates(app, on)
+        betaUpdates = on
+        update = null
+        if (on || com.earshot.app.data.Updates.automatic) checkForUpdate(manual = on)
+    }
+
+    /** Phase 16: one-tap update (download, SHA-256 check, install). */
+    fun installUpdate() {
+        val u = update ?: return
+        com.earshot.app.data.SelfUpdate.reset()
+        viewModelScope.launch { com.earshot.app.data.SelfUpdate.install(app, u) }
+    }
+
     fun dismissUpdate() {
         update?.let { com.earshot.app.data.Updates.dismiss(app, it.version) }
         update = null
