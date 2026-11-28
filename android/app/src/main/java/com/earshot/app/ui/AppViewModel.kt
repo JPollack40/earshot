@@ -249,7 +249,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Makes chapters, a summary or the ad list for an episode from its transcript (Gemini, on the server). */
+    /**
+     * Phase 16: why the last Summary / Chapters / Find ads failed, per "episodeId|kind", shown inside the
+     * AI dialog (a snackbar would be hidden behind it), e.g. Serena's "Paused" message.
+     */
+    var aiErrors by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
     fun generateAi(item: EpisodeWithPodcast, kind: String) {
+        val key = "${item.episode.id}|$kind"
+        aiErrors = aiErrors - key
         viewModelScope.launch {
             try {
                 app.ai.generate(item.episode, item.podcastTitle, kind)
@@ -265,6 +274,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 // Phase 14: logged too, so a failure can be traced afterwards.
                 android.util.Log.w("Earshot", "AI $kind failed for ${item.episode.title}: ${e.message}", e)
+                aiErrors = aiErrors + (key to (e.message ?: "That didn't work"))
                 say(e.message ?: "That didn't work")
             }
         }

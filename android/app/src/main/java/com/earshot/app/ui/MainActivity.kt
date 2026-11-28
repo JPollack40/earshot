@@ -178,8 +178,6 @@ fun EarshotRoot(vm: AppViewModel) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            if (updateRequired && minVersion != null) com.earshot.app.ui.screens.UpdateNeededBanner(vm, minVersion)
-            com.earshot.app.ui.screens.ConfigBanner()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (val screen = vm.backStack.last()) {
                     Screen.Library -> LibraryScreen(vm)
@@ -200,6 +198,9 @@ fun EarshotRoot(vm: AppViewModel) {
             }
             ImportBanner(vm)
             com.earshot.app.ui.screens.UpdateBanner(vm)
+            // Phase 16: Serena's warning and note sit at the bottom, clear of the status bar (her test).
+            minVersion?.takeIf { updateRequired }?.let { com.earshot.app.ui.screens.UpdateNeededBanner(vm, it) }
+            com.earshot.app.ui.screens.ConfigBanner()
         }
     }
 
