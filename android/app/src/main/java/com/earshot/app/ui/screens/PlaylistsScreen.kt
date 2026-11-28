@@ -155,6 +155,11 @@ fun PlaylistsList(vm: AppViewModel, modifier: Modifier = Modifier) {
                 vm.createPlaylist(name, f)
             },
             onDismiss = { creating = false },
+            describe = DescribeHooks(
+                busy = vm.describing,
+                error = vm.describeError,
+                run = { text, apply -> vm.describePlaylist(text, library, apply) },
+            ),
         )
     }
 }
@@ -269,6 +274,13 @@ private fun titleLookup(library: List<PodcastWithCount>): (String) -> String? {
     return { url -> byKey[Repository.feedKey(url)] }
 }
 
+/** Phase 18: what the editor needs for "Describe it": the request, and whether it's running or failed. */
+private class DescribeHooks(
+    val busy: Boolean,
+    val error: String?,
+    val run: (text: String, apply: (String, PlaylistFilters) -> Unit) -> Unit,
+)
+
 /** Making or changing a playlist: its name and filters. */
 @Composable
 private fun PlaylistEditor(
@@ -278,9 +290,11 @@ private fun PlaylistEditor(
     library: List<PodcastWithCount>,
     onSave: (String, PlaylistFilters) -> Unit,
     onDismiss: () -> Unit,
+    describe: DescribeHooks? = null,
 ) {
     var name by remember { mutableStateOf(initialName) }
     var f by remember { mutableStateOf(initial) }
+    var description by remember { mutableStateOf("") }
     var picking by remember { mutableStateOf(false) }
     val divider = @Composable { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp) }
     val titles = remember(library) { titleLookup(library) }
@@ -290,6 +304,27 @@ private fun PlaylistEditor(
         title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                // Phase 18: describe it in words and let Gemini fill in the filters below (check them, then Save).
+                if (describe != null) {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it.take(500) },
+                        label = { Text("Describe it (optional)") },
+                        placeholder = { Text("e.g. short science episodes from this month") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    )
+                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            enabled = description.isNotBlank() && !describe.busy,
+                            onClick = { describe.run(description) { n, nf -> name = n; f = nf } },
+                        ) { Text(if (describe.busy) "Working…" else "Fill in with AI") }
+                    }
+                    describe.error?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                    divider()
+                }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
