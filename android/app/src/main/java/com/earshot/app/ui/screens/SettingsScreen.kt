@@ -18,6 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,7 +86,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 actions = {
                     IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                         Icon(
-                            if (searching) androidx.compose.material.icons.Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                            if (searching) Icons.Filled.Close else Icons.Filled.Search,
                             contentDescription = if (searching) "Close search" else "Search settings",
                         )
                     }
