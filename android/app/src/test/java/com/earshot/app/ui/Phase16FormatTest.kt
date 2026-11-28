@@ -3,7 +3,6 @@ package com.earshot.app.ui
 import com.earshot.app.data.db.Episode
 import com.earshot.app.data.db.EpisodeWithPodcast
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Phase 16 polish: show-notes timestamps, mini player status, queue time left. */
@@ -12,7 +11,7 @@ class Phase16FormatTest {
         val text = "(00:00) Intro\n12:34 - Octopus minds; 1:02:03 wrap-up. Call 555-12:34? Not 3.12:30 or 10:75."
         val found = findTimestamps(text, durationMs = 2 * 3600_000L).map { it.second }
         assertEquals(listOf(0L, 754_000L, 3_723_000L), found.take(3))
-        assertTrue(found.none { it == 750_000L + 4 * 60_000 }) // "10:75" rejected
+        assertEquals(4, found.size) // "3.12:30" and "10:75" aren't times; "555-12:34" is read as 12:34
     }
 
     @Test fun dropsTimesPastTheEnd() {
