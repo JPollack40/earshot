@@ -95,6 +95,11 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     var showRules by remember { mutableStateOf(false) }
     var showAdTrim by remember { mutableStateOf(false) }
     var sortMode by rememberSaveable(podcastId) { mutableStateOf(EpisodeSort.NEWEST) }
+    // Phase 20 (B3): a serial show's page starts oldest first, until the sort is changed here.
+    var sortTouched by rememberSaveable(podcastId) { mutableStateOf(false) }
+    LaunchedEffect(podcast?.serial) {
+        if (podcast?.serial == true && !sortTouched) sortMode = EpisodeSort.OLDEST
+    }
     val defaults by vm.playbackDefaults.collectAsStateWithLifecycle()
     val tidy by vm.tidyDefaults.collectAsStateWithLifecycle()
     var descExpanded by remember { mutableStateOf(false) }
@@ -205,6 +210,7 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                 text = { Text(if (sortMode == EpisodeSort.NEWEST) "Sort: oldest first" else "Sort: newest first") },
                                 onClick = {
                                     menuOpen = false
+                                    sortTouched = true
                                     sortMode = if (sortMode == EpisodeSort.NEWEST) EpisodeSort.OLDEST else EpisodeSort.NEWEST
                                 },
                             )
@@ -213,6 +219,7 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                     text = { Text("Sort: by episode number") },
                                     onClick = {
                                         menuOpen = false
+                                        sortTouched = true
                                         sortMode = EpisodeSort.NUMBER
                                     },
                                 )
@@ -225,6 +232,15 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                         showAdTrim = true
                                     },
                                 )
+                                if (p.serial || p.drip) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (p.drip) "Catch-up drip: on" else "Catch-up drip: off") },
+                                        onClick = {
+                                            menuOpen = false
+                                            vm.setDrip(podcastId, !p.drip)
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Automation (new episodes, tidy-up)") },
                                     onClick = {
@@ -378,6 +394,15 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                     color = if (glow) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            if (p.serial && !previewing) {
+                                Text(
+                                    if (p.drip) "Serial show · catch-up drip on: when an episode finishes, the next one joins the front of your queue."
+                                    else "Serial show: meant to be heard in order. Turn on Catch-up drip in ⋮ to queue the next episode as each one finishes.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (glow) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.clickable { vm.setDrip(podcastId, !p.drip) },
+                                )
+                            }
                             if (p.adTrim != null) {
                                 Text(
                                     "Trimming inserted ads: ${AdTrim.label(p.adTrim).lowercase()}",
@@ -400,7 +425,10 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                     if (sortMode == EpisodeSort.NUMBER) "Sorted by episode number" else "Oldest first",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 6.dp).clickable { sortMode = EpisodeSort.NEWEST },
+                                    modifier = Modifier.padding(top = 6.dp).clickable {
+                                        sortTouched = true
+                                        sortMode = EpisodeSort.NEWEST
+                                    },
                                 )
                             }
                             if (p.description.isNotBlank()) {

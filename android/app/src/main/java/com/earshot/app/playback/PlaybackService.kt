@@ -12,6 +12,9 @@ import android.util.Log
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -102,6 +105,8 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Phase 20 (C1): follow where the sound goes, for per-output profiles.
+        audioManager.registerAudioDeviceCallback(deviceCallback, android.os.Handler(android.os.Looper.getMainLooper()))
         // Our own audio chain, for Smart Speed and Voice Boost.
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
@@ -161,7 +166,7 @@ class PlaybackService : MediaLibraryService() {
                 .map { it?.episode?.podcastId }
                 .distinctUntilChanged()
                 .flatMapLatest { pid -> if (pid == null) flowOf(null) else repo.podcasts.observe(pid) }
-                .combine(Settings.playbackDefaults(this@PlaybackService)) { podcast, defaults ->
+                .combine(OutputProfiles.effectiveDefaults(this@PlaybackService)) { podcast, defaults -> // phase 20: per output
                     PlaybackPrefs.resolve(defaults, podcast)
                 }
                 .distinctUntilChanged()
@@ -307,11 +312,15 @@ class PlaybackService : MediaLibraryService() {
                     sentenceStarts = starts
                 }
         }
+        // Phase 20 (C4): Finish by, checked when it's set and every 15 s while playing.
+        scope.launch { app.player.finishBy.collect { checkFinishBy() } }
         scope.launch {
+            var ticks = 0
             while (isActive) {
                 delay(500)
                 if (player.isPlaying) checkSkips()
                 checkSayAgain()
+                if (++ticks % (FinishByMath.CHECK_MS / 500).toInt() == 0 && player.isPlaying) checkFinishBy()
                 updateChapterArt()
                 updateAdButton()
             }
@@ -343,6 +352,7 @@ class PlaybackService : MediaLibraryService() {
         Log.i(TAG, "Playback settings: $p")
         sayAgainFor = null // phase 19: a speed change ends "Say that again"
         if (player.playbackParameters.speed != p.speed) player.setPlaybackSpeed(p.speed)
+        checkFinishBy() // phase 20: Finish by works from the new speed
         if (player.skipSilenceEnabled != p.smartSpeed) player.skipSilenceEnabled = p.smartSpeed
         audio.voiceBoost.enabled = p.voiceBoost
         skipPlayer.backMs = p.skipBackMs
@@ -496,6 +506,24 @@ class PlaybackService : MediaLibraryService() {
     private val driveFinished = mutableListOf<String>()
     private var driveEndJob: Job? = null
 
+    // ---- Per-output profiles (phase 20, C1) ----
+
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = updateOutput()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = updateOutput()
+    }
+
+    private fun updateOutput(car: Boolean = inCar()) {
+        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .map { OutputProfiles.Device(it.type, it.productName?.toString().orEmpty()) }
+        val before = OutputProfiles.current.value
+        OutputProfiles.setCurrent(this, devices, car)
+        val now = OutputProfiles.current.value
+        if (now != before) Log.i(TAG, "Output: ${before.label} -> ${now.label}")
+    }
+
     private fun carConnected() {
         driveEndJob?.cancel()
         if (driveSince == 0L) {
@@ -561,6 +589,37 @@ class PlaybackService : MediaLibraryService() {
         sayAgainFor = null
         Log.i(TAG, "Say that again: back to ${prefs.speed}x")
         player.setPlaybackSpeed(prefs.speed)
+        checkFinishBy()
+    }
+
+    // ---- Finish by (phase 20, C4) ----
+
+    /** True while Finish by has the speed above the listener's own. */
+    private var finishBoosting = false
+
+    private fun checkFinishBy() {
+        val f = app.player.finishBy.value
+        if (f == null) {
+            if (finishBoosting) {
+                finishBoosting = false
+                if (sayAgainFor == null) player.setPlaybackSpeed(prefs.speed)
+                Log.i(TAG, "Finish by: off, back to ${prefs.speed}x")
+            }
+            return
+        }
+        if (sayAgainFor != null) return // the slow replay finishes first
+        val now = System.currentTimeMillis()
+        if (player.currentMediaItem?.mediaId != f.episodeId || now >= f.deadlineMs) {
+            app.player.setFinishBy(null) // collected: puts the speed back
+            return
+        }
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
+        val target = FinishByMath.speedFor(duration - player.currentPosition, now, f.deadlineMs, prefs.speed, f.maxSpeed)
+        finishBoosting = true
+        if (abs(player.playbackParameters.speed - target) >= 0.01f) {
+            Log.i(TAG, "Finish by: ${target}x (own speed ${prefs.speed}x, up to ${f.maxSpeed}x)")
+            player.setPlaybackSpeed(target)
+        }
     }
 
     private fun rewindAfterPause() {
@@ -676,7 +735,7 @@ class PlaybackService : MediaLibraryService() {
             if (podcast != null && (podcast.speed != null || podcast.smartSpeed != null || podcast.voiceBoost != null)) {
                 repo.updatePodcastPlayback(podcast.id) { it.copy(speed = speed) }
             } else {
-                Settings.updatePlaybackDefaults(this@PlaybackService) { it.copy(speed = speed) }
+                OutputProfiles.update(this@PlaybackService) { it.copy(speed = speed) } // phase 20: per output when on
             }
         }
     }
@@ -823,6 +882,7 @@ class PlaybackService : MediaLibraryService() {
         if (stopHere) app.player.setSleepTimer(null)
         scope.launch {
             repo.setPlayed(id, true) // also leaves the queue
+            repo.dripNext(id) // phase 20 (B3): a serial's next episode joins the front of the queue
             if (driveSince > 0) player.currentMediaItem?.takeIf { it.mediaId == id }?.mediaMetadata?.title?.toString()?.let { driveFinished += it }
             if (player.currentMediaItem?.mediaId == id) {
                 // Phase 19 (B5): an empty queue can carry on from a chosen playlist.
@@ -987,14 +1047,20 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
-            if (controller.packageName == ANDROID_AUTO_PACKAGE) carMaybeGone() // phase 20: after-drive card
+            if (controller.packageName == ANDROID_AUTO_PACKAGE) {
+                carMaybeGone() // phase 20: after-drive card
+                updateOutput(car = false)
+            }
         }
 
         override fun onConnectAsync(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.ConnectionResult> {
-            if (controller.packageName == ANDROID_AUTO_PACKAGE) carConnected() // phase 20
+            if (controller.packageName == ANDROID_AUTO_PACKAGE) {
+                carConnected() // phase 20
+                updateOutput(car = true)
+            }
             // Start from Media3's defaults for this controller (full control when trusted, read-only
             // otherwise) and add the Mark played and Bookmark buttons. Android Auto shows the
             // buttons the media notification's controller has, and taps are checked against its
@@ -1351,6 +1417,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        audioManager.unregisterAudioDeviceCallback(deviceCallback)
         // Final position save, then download cleanup (nothing is loaded any more). Uses the app scope
         // because this service's scope is about to be cancelled.
         val saveId = player.currentMediaItem?.mediaId?.takeIf { player.playbackState != Player.STATE_ENDED }

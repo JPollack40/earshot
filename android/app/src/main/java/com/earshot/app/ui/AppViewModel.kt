@@ -16,6 +16,7 @@ import com.earshot.app.data.ImportStatus
 import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.Settings
+import com.earshot.app.playback.OutputProfiles
 import com.earshot.app.data.SleepSchedule
 import com.earshot.app.data.TimeSaved
 import com.earshot.app.data.TidyDefaults
@@ -335,6 +336,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Phase 10: trim ads stitched onto this podcast's episodes ("start", "end" or null = off). Synced. */
+    /** Phase 20 (B3): catch-up drip for a serial show (this phone only). */
+    fun setDrip(podcastId: Long, on: Boolean) {
+        viewModelScope.launch { repo.setDrip(podcastId, on) }
+    }
+
     fun setAdTrim(podcastId: Long, mode: String?) {
         viewModelScope.launch { repo.podcasts.setAdTrim(podcastId, mode) }
     }
@@ -916,8 +922,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Settings that apply to the loaded episode right now. */
-    val currentPrefs: StateFlow<PlaybackPrefs> = combine(currentPodcast, playbackDefaults) { p, d -> PlaybackPrefs.resolve(d, p) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackPrefs.resolve(playbackDefaults.value, null))
+    // Phase 20 (C1): with per-output profiles on, the current output's settings sit on top of the defaults.
+    val currentPrefs: StateFlow<PlaybackPrefs> = combine(currentPodcast, OutputProfiles.effectiveDefaults(app)) { p, d -> PlaybackPrefs.resolve(d, p) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaybackPrefs.resolve(OutputProfiles.effectiveNow(app), null))
 
     fun updatePlaybackDefaults(change: (PlaybackDefaults) -> PlaybackDefaults) = Settings.updatePlaybackDefaults(app, change)
 
@@ -938,7 +945,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (p != null && p.hasOwnAudio()) {
             updatePodcastPlayback(p.id) { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
         } else {
-            updatePlaybackDefaults { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
+            OutputProfiles.update(app) { it.copy(speed = n.speed, smartSpeed = n.smartSpeed, voiceBoost = n.voiceBoost) }
         }
     }
 

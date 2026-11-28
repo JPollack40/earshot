@@ -104,6 +104,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                 fundingText = feed.fundingText,
                 personsJson = Persons.toJson(feed.persons),
                 complete = feed.complete,
+                serial = feed.serial,
             ),
         )
         saveEpisodes(id, url, feed, if (inboxNewest) InboxMode.NEWEST else InboxMode.NONE, upload = true)
@@ -177,6 +178,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                         fundingText = feed.fundingText,
                         personsJson = Persons.toJson(feed.persons),
                         complete = feed.complete,
+                        serial = feed.serial,
                         subscribed = false,
                         dirty = false, // uploaded only once one of its episodes is (see SyncEngine)
                     ),
@@ -427,6 +429,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             fundingText = feed.fundingText,
             personsJson = Persons.toJson(feed.persons),
             complete = feed.complete,
+            serial = feed.serial,
         )
         // Rules use the podcast as it is now (they may have changed since [podcast] was read).
         val rules = podcasts.get(podcast.id) ?: podcast
@@ -617,6 +620,21 @@ class Repository(private val context: Context, private val db: AppDatabase) {
      * [finishedId]) joins the queue and is returned, so playback carries on. Null when the setting is off,
      * the playlist is gone or has nothing left.
      */
+    /**
+     * Phase 20 (B3): when [finishedId] belongs to a show with the catch-up drip on, the next
+     * unplayed episode in the show's order goes to the front of the queue. Returns its title.
+     */
+    suspend fun dripNext(finishedId: String): String? {
+        val done = episodes.get(finishedId) ?: return null
+        val podcast = podcasts.get(done.podcastId)?.takeIf { it.drip && it.subscribed } ?: return null
+        val next = CatchUpDrip.next(episodes.allForPodcast(podcast.id), finishedId) ?: return null
+        queueAt(next.id) { 0 }
+        Log.i(TAG, "Catch-up drip: \"${next.title}\" joins the queue after \"${done.title}\"")
+        return next.title
+    }
+
+    suspend fun setDrip(podcastId: Long, on: Boolean) = podcasts.setDrip(podcastId, on)
+
     suspend fun continueFromPlaylist(finishedId: String): EpisodeWithPodcast? {
         val pid = Settings.queueEndPlaylistId(context) ?: return null
         val p = playlists.get(pid)?.takeIf { !it.deleted } ?: return null
