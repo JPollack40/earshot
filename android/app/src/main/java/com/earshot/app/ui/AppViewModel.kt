@@ -1151,7 +1151,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun skipBack() = player.skipBy(-currentPrefs.value.skipBackMs)
+    /** Phase 19: through the service, so a timed transcript lets it land on a sentence start. */
+    fun skipBack() = player.skipBackSnapped()
     /** Phase 14: during a found ad (Found ads = Show a Skip ad button), forward skips the ad, as in the car. */
     fun skipForward() {
         if (currentAd.value != null) skipAd() else player.skipBy(currentPrefs.value.skipForwardMs)

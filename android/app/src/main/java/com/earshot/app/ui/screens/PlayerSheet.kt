@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.outlined.Notes
@@ -268,6 +269,12 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     onClick = { audioDialog = true },
                     label = { Text(formatSpeed(prefs.speed)) },
                     leadingIcon = { Icon(Icons.Filled.Speed, null, Modifier.size(18.dp)) },
+                )
+                // Phase 19: "Say that again, slower".
+                AssistChip(
+                    onClick = { vm.player.sayAgain() },
+                    label = { Text("Say again") },
+                    leadingIcon = { Icon(Icons.Filled.Replay, null, Modifier.size(18.dp)) },
                 )
                 FilterChip(
                     selected = prefs.smartSpeed,
