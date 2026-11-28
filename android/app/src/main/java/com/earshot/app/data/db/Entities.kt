@@ -60,6 +60,10 @@ data class Podcast(
      * The extra length is the real file's length minus the length the feed states.
      */
     val adTrim: String? = null,
+    /** Phase 20 (v12), from the feed: itunes:type "serial" (heard in order; the page lists oldest first). */
+    @ColumnInfo(defaultValue = "0") val serial: Boolean = false,
+    /** Phase 20 (v12), this phone only: when one of its episodes finishes, the next one in order joins the queue. */
+    @ColumnInfo(defaultValue = "0") val drip: Boolean = false,
 )
 
 @Entity(

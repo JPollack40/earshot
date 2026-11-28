@@ -335,6 +335,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Phase 10: trim ads stitched onto this podcast's episodes ("start", "end" or null = off). Synced. */
+    /** Phase 20 (B3): catch-up drip for a serial show (this phone only). */
+    fun setDrip(podcastId: Long, on: Boolean) {
+        viewModelScope.launch { repo.setDrip(podcastId, on) }
+    }
+
     fun setAdTrim(podcastId: Long, mode: String?) {
         viewModelScope.launch { repo.podcasts.setAdTrim(podcastId, mode) }
     }

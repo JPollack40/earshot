@@ -823,6 +823,7 @@ class PlaybackService : MediaLibraryService() {
         if (stopHere) app.player.setSleepTimer(null)
         scope.launch {
             repo.setPlayed(id, true) // also leaves the queue
+            repo.dripNext(id) // phase 20 (B3): a serial's next episode joins the front of the queue
             if (driveSince > 0) player.currentMediaItem?.takeIf { it.mediaId == id }?.mediaMetadata?.title?.toString()?.let { driveFinished += it }
             if (player.currentMediaItem?.mediaId == id) {
                 // Phase 19 (B5): an empty queue can carry on from a chosen playlist.

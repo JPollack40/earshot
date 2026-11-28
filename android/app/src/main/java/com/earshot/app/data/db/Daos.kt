@@ -62,7 +62,7 @@ interface PodcastDao {
     @Query(
         "UPDATE podcasts SET title = :title, author = :author, description = :description, " +
             "imageUrl = :imageUrl, lastRefreshedAt = :refreshedAt, fundingUrl = :fundingUrl, fundingText = :fundingText, " +
-            "personsJson = :personsJson, complete = :complete WHERE id = :id",
+            "personsJson = :personsJson, complete = :complete, serial = :serial WHERE id = :id",
     )
     suspend fun updateMeta(
         id: Long,
@@ -75,7 +75,12 @@ interface PodcastDao {
         fundingText: String?,
         personsJson: String?,
         complete: Boolean,
+        serial: Boolean,
     )
+
+    /** Phase 20 (B3): this phone only, so not marked for sync. */
+    @Query("UPDATE podcasts SET drip = :drip WHERE id = :id")
+    suspend fun setDrip(id: Long, drip: Boolean)
 
     @Query("UPDATE podcasts SET adTrim = :adTrim, $TOUCH WHERE id = :id")
     suspend fun setAdTrim(id: Long, adTrim: String?)
@@ -199,6 +204,10 @@ interface EpisodeDao {
 
     @Query("$EPISODE_JOIN WHERE p.subscribed = 1 ORDER BY e.pubDate DESC LIMIT :limit")
     fun observeLatest(limit: Int): Flow<List<EpisodeWithPodcast>>
+
+    /** Phase 20 (B3): all of a podcast's episodes, for the catch-up drip. */
+    @Query("SELECT * FROM episodes WHERE podcastId = :podcastId")
+    suspend fun allForPodcast(podcastId: Long): List<Episode>
 
     @Query("$EPISODE_JOIN WHERE e.podcastId = :podcastId ORDER BY e.pubDate DESC LIMIT :limit")
     suspend fun getForPodcast(podcastId: Long, limit: Int): List<EpisodeWithPodcast>

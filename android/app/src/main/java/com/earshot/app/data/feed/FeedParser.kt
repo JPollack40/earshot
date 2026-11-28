@@ -18,6 +18,8 @@ data class ParsedFeed(
     val persons: List<Person> = emptyList(),
     /** podcast:updateFrequency complete="true" or itunes:complete "Yes": no new episodes will come. */
     val complete: Boolean = false,
+    /** Phase 20 (B3): itunes:type "serial", a show meant to be heard in order. */
+    val serial: Boolean = false,
 )
 
 /** A podcast:person: host, guest and so on. [role] is lower-case ("host" when the feed doesn't say). */
@@ -117,6 +119,7 @@ object FeedParser {
         var fundingText: String? = null
         val persons = mutableListOf<Person>()
         var complete = false
+        var serial = false
         var item: ItemBuilder? = null
         val episodes = mutableListOf<ParsedEpisode>()
 
@@ -178,6 +181,7 @@ object FeedParser {
                             "image" -> itunesImage = p.getAttributeValue(null, "href")
                             "summary" -> summary = readText(p)
                             "complete" -> if (readText(p).equals("yes", ignoreCase = true)) complete = true
+                            "type" -> serial = readText(p).equals("serial", ignoreCase = true)
                         }
                         NS_PODCAST -> when (name) {
                             "funding" -> if (fundingUrl == null) {
@@ -211,6 +215,7 @@ object FeedParser {
             fundingText = fundingText,
             persons = persons,
             complete = complete,
+            serial = serial,
         )
     }
 
