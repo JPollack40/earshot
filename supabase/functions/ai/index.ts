@@ -10,12 +10,16 @@
 // public.episode_ai (006_ai.sql) as the user, and returns { kind, data, model }.
 //
 // Secrets: GEMINI_API_KEY (already set). Optional GEMINI_MODEL (default below) and
-// GEMINI_FALLBACK_MODEL (used when the main model is overloaded or not offered).
-// Verify JWT: on (the default). The function also checks the sign-in itself.
+// GEMINI_FALLBACK_MODEL (used when the main model is overloaded or not offered; default gemini-3.5-flash-lite).
+// Phase 16: app_config.gemini_model / gemini_fallback_model, when filled in, win over both secrets.
+// Verify JWT: OFF (phase 16; the built-in check only understands the legacy keys). The function checks the
+// sign-in itself (auth/v1/user) before doing anything.
 // Errors: 503 { paused: true } switched off in app_config (phase 16), 400 no usable transcript, 401 not signed in, 429 Gemini's limit reached (try later), 502 Gemini failed.
 
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-3.8-flash";
+/** Phase 16: used when no fallback is set anywhere (gemini-3.1-flash-lite shuts down from 2027-05-07). */
+const DEFAULT_FALLBACK_MODEL = "gemini-3.5-flash-lite";
 /** Very long transcripts are cut to keep within free-tier token limits (about 4 hours of speech). */
 const MAX_CHARS = 240_000;
 
@@ -139,10 +143,10 @@ function normalise(kind: Kind, o: any, lastMs: number): unknown {
  * Returns the OK response and the model that gave it, or a ready error response.
  */
 async function gemini(key: string, prompt: string, schema: unknown, temperature: number, light = false): Promise<{ res: Response; model: string; error?: undefined } | { error: Response; res?: undefined; model?: undefined }> {
-  let model = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+  let model = mainModel();
   // Small jobs (bookmark titles) go to the lighter fallback model first: it answers in seconds,
   // while the main model is often overloaded and its retry can take over a minute.
-  const lightModel = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const lightModel = fallbackModel();
   if (light && lightModel) model = lightModel;
   const request = JSON.stringify({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -170,7 +174,7 @@ async function gemini(key: string, prompt: string, schema: unknown, temperature:
   };
   const started = Date.now();
   const elapsed = () => Date.now() - started;
-  const fallback = light && lightModel ? (Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL) : Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const fallback = light && lightModel ? mainModel() : fallbackModel();
   const busy = (r: Response) => r.status === 503 || r.status === 500;
   // With a fallback, the first model gets 70 s; without one, it may use most of the time.
   let res = await ask(model, fallback && fallback !== model ? 70_000 : 120_000);
@@ -223,10 +227,10 @@ async function answerOf(res: Response, model: string): Promise<any | null> {
 }
 
 /**
- * Phase 16: the kill switch (public.app_config, 010_safe_updates.sql). Returns the "paused" message when
- * Serena has switched [flag] off, else null. A failed or missing read never pauses anything.
+ * Phase 16: Serena's switches (public.app_config, 010_safe_updates.sql), read once per request.
+ * Null when it can't be read: then nothing is paused and the secrets' models are used.
  */
-async function pausedMessage(base: string, apikey: string, flag: string): Promise<string | null> {
+async function readAppConfig(base: string, apikey: string): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${base}/rest/v1/app_config?id=eq.1&select=*`, { headers: { apikey }, signal: AbortSignal.timeout(5_000) });
     if (!res.ok) {
@@ -234,13 +238,27 @@ async function pausedMessage(base: string, apikey: string, flag: string): Promis
       return null;
     }
     const rows = await res.json() as Record<string, unknown>[];
-    const c = rows?.[0];
-    if (c && c[flag] === false) return String(c.paused_message || "Paused for now.");
+    return rows?.[0] ?? null;
   } catch (_) {
-    // offline or table missing: carry on
+    return null; // offline or table missing: carry on
   }
-  return null;
 }
+
+/** The paused message when [flag] is switched off in [cfg], else null. */
+function pausedBy(cfg: Record<string, unknown> | null, flag: string): string | null {
+  return cfg && cfg[flag] === false ? String(cfg.paused_message || "Paused for now.") : null;
+}
+
+// Phase 16 (PR C): model IDs from app_config win over the GEMINI_MODEL / GEMINI_FALLBACK_MODEL secrets,
+// so a model shutdown can be fixed from Table Editor without a deploy.
+let cfgMain = "";
+let cfgFallback = "";
+function useConfigModels(cfg: Record<string, unknown> | null) {
+  cfgMain = typeof cfg?.gemini_model === "string" ? cfg.gemini_model.trim() : "";
+  cfgFallback = typeof cfg?.gemini_fallback_model === "string" ? cfg.gemini_fallback_model.trim() : "";
+}
+const mainModel = () => cfgMain || Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+const fallbackModel = () => cfgFallback || Deno.env.get("GEMINI_FALLBACK_MODEL") || DEFAULT_FALLBACK_MODEL;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -267,7 +285,9 @@ Deno.serve(async (req: Request) => {
     return json({ error: "episodeId and kind (chapters, summary, ads, ask or title) are required" }, 400);
   }
 
-  const paused = await pausedMessage(base, apikey, kind === "ads" ? "ad_finding_on" : "ai_on");
+  const cfg = await readAppConfig(base, apikey);
+  useConfigModels(cfg);
+  const paused = pausedBy(cfg, kind === "ads" ? "ad_finding_on" : "ai_on");
   if (paused) return json({ error: paused, paused: true }, 503);
 
   const key = Deno.env.get("GEMINI_API_KEY");

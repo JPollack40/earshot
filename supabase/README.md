@@ -9,7 +9,9 @@ app and the web player.
 the dashboard's SQL Editor (paste the whole file, Run) and is safe to run again. `005_schedule_new_episodes.sql`
 has two placeholders to fill in first (`<PROJECT_URL>` and `<CRON_SECRET>`).
 
-Every table has row-level security (only the owner, `to authenticated`). Sync is "last change wins" per row:
+Every table has row-level security (only the owner, `to authenticated`). Since 2026-10-30 Supabase no longer
+exposes new tables to the Data API by itself, so **every new SQL file grants explicitly** (`grant select, insert,
+… on table … to authenticated`) next to its policies, as `010_safe_updates.sql` does. Sync is "last change wins" per row:
 each row carries `changed_at` and a `rev`, and a trigger rejects writes older than the stored row
 (with a few exceptions in 009, such as a played episode never going back to unplayed).
 
@@ -26,6 +28,18 @@ Edge Functions > the function > Code, paste the file, Deploy updates. Secrets li
 | `ai` | Gemini from the transcript: summary, chapters, ads, Ask about this episode, bookmark titles | `GEMINI_API_KEY`, optional `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` |
 | `browse` | The Browse page, categories and "You might like" | Podcast Index and Gemini keys |
 | `new-episodes` | Runs every 15 minutes (pg_cron): new episodes for every subscribed feed, push notifications, leftover bookmark titles | Podcast Index and Gemini keys, `FCM_SERVICE_ACCOUNT`, `NEW_EPISODES_SECRET` |
+
+### Phase 16: switches and keys
+
+- `app_config` (010): Serena's switches, read by `ai`, `transcribe`, `browse` and `new-episodes` on every call.
+  `gemini_model` / `gemini_fallback_model` there win over the secrets. With nothing set, the fallback model is
+  `gemini-3.5-flash-lite` (`gemini-3.1-flash-lite` shuts down from 2027-05-07).
+- **Verify JWT is off** for `ai`, `transcribe`, `browse`, `feed-proxy`, `podcast-search` and `new-episodes`.
+  The built-in check only understands the legacy JWT keys; each function checks the sign-in (or its secret)
+  itself.
+- No function accepts the legacy `anon` / `service_role` keys from callers any more. The service-role key is
+  still read from the function's own environment where `SUPABASE_SECRET_KEYS` isn't set, so set up a secret
+  key (Project Settings > API Keys) before deactivating the legacy keys.
 
 ## Tests
 

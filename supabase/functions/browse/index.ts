@@ -17,11 +17,12 @@
 //
 // Secrets: PODCASTINDEX_KEY, PODCASTINDEX_SECRET (already set), GEMINI_API_KEY, optional GEMINI_MODEL and
 // GEMINI_FALLBACK_MODEL (as for "ai"). Provided by Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// (or SUPABASE_SECRET_KEYS). Verify JWT: on (the default). The function also checks the sign-in itself.
+// (or SUPABASE_SECRET_KEYS). Verify JWT: OFF (phase 16). The function checks the sign-in itself.
 
 const PI = "https://api.podcastindex.org/api/1.0";
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-3.8-flash";
+const DEFAULT_FALLBACK_MODEL = "gemini-3.5-flash-lite"; // phase 16
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const ROW = 30; // cards per row
@@ -321,9 +322,9 @@ async function geminiSimilar(shows: string[]): Promise<{ title: string; similarT
   });
   const ask = (m: string) =>
     fetch(`${GEMINI}/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body, signal: AbortSignal.timeout(40_000) });
-  let model = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+  let model = mainModel();
   let res = await ask(model);
-  const fallback = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const fallback = fallbackModel();
   if (!res.ok && [429, 500, 503, 404].includes(res.status) && fallback && fallback !== model) {
     console.error(`Gemini ${model} HTTP ${res.status}, using ${fallback}`);
     await res.body?.cancel();
@@ -379,10 +380,10 @@ async function topCategories(shows: TopShow[]): Promise<{ name: string; weight: 
 // ---------------------------------------------------------------- the request
 
 /**
- * Phase 16: the kill switch (public.app_config, 010_safe_updates.sql). Returns the "paused" message when
- * Serena has switched [flag] off, else null. A failed or missing read never pauses anything.
+ * Phase 16: Serena's switches (public.app_config, 010_safe_updates.sql), read once per request.
+ * Null when it can't be read: then nothing is paused and the secrets' models are used.
  */
-async function pausedMessage(base: string, apikey: string, flag: string): Promise<string | null> {
+async function readAppConfig(base: string, apikey: string): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${base}/rest/v1/app_config?id=eq.1&select=*`, { headers: { apikey }, signal: AbortSignal.timeout(5_000) });
     if (!res.ok) {
@@ -390,13 +391,27 @@ async function pausedMessage(base: string, apikey: string, flag: string): Promis
       return null;
     }
     const rows = await res.json() as Record<string, unknown>[];
-    const c = rows?.[0];
-    if (c && c[flag] === false) return String(c.paused_message || "Paused for now.");
+    return rows?.[0] ?? null;
   } catch (_) {
-    // offline or table missing: carry on
+    return null; // offline or table missing: carry on
   }
-  return null;
 }
+
+/** The paused message when [flag] is switched off in [cfg], else null. */
+function pausedBy(cfg: Record<string, unknown> | null, flag: string): string | null {
+  return cfg && cfg[flag] === false ? String(cfg.paused_message || "Paused for now.") : null;
+}
+
+// Phase 16 (PR C): model IDs from app_config win over the GEMINI_MODEL / GEMINI_FALLBACK_MODEL secrets,
+// so a model shutdown can be fixed from Table Editor without a deploy.
+let cfgMain = "";
+let cfgFallback = "";
+function useConfigModels(cfg: Record<string, unknown> | null) {
+  cfgMain = typeof cfg?.gemini_model === "string" ? cfg.gemini_model.trim() : "";
+  cfgFallback = typeof cfg?.gemini_fallback_model === "string" ? cfg.gemini_fallback_model.trim() : "";
+}
+const mainModel = () => cfgMain || Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+const fallbackModel = () => cfgFallback || Deno.env.get("GEMINI_FALLBACK_MODEL") || DEFAULT_FALLBACK_MODEL;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -503,7 +518,7 @@ Deno.serve(async (req: Request) => {
         const list = await trending(c.name, 100);
         for (const f of list.slice(0, 8)) row.add(f, `Popular in ${c.name}`);
       }
-      if (row.items.length < 8 && top.length && !(await pausedMessage(base(), apikey, "browse_ai_on"))) {
+      if (row.items.length < 8 && top.length && !pausedBy(await readAppConfig(base(), apikey).then((c) => (useConfigModels(c), c)), "browse_ai_on")) {
         const names = top.slice(0, 5).map((t) => t.title).filter(Boolean);
         const picks = await cached(`gemini:similar:${names.map(looseTitle).sort().join("|")}`, 3 * DAY, () => geminiSimilar(names));
         const found = await pool(picks.slice(0, 12), 6, (p) => byTitle(p.title));
