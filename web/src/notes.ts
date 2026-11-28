@@ -320,6 +320,14 @@ export async function loadTranscript(episodeId: string): Promise<LoadedTranscrip
   }
   if (!data) return null;
   const t = data as LoadedTranscript;
+  // Phase 18-pre: after 012 the text lives in the shared copy; this row is only the pointer.
+  if (!Array.isArray(t.segments) || t.segments.length === 0) {
+    const shared = await supabase.from("episode_transcripts").select("segments, timed").eq("episode_id", episodeId).maybeSingle();
+    if (!shared.error && shared.data && Array.isArray(shared.data.segments)) {
+      t.segments = shared.data.segments as Segment[];
+      t.timed = shared.data.timed as boolean;
+    }
+  }
   loaded.set(episodeId, t);
   if (!state.transcripts.has(episodeId)) {
     state.transcripts.set(episodeId, { episode_id: t.episode_id, source: t.source, timed: t.timed, changed_at: t.changed_at });

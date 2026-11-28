@@ -372,13 +372,31 @@ class SyncEngine(private val app: EarshotApp) {
         // Tidy-up rules changed elsewhere (e.g. in the web player): apply them here now.
         if (rulesChanged) runCatching { repo.tidyInbox() }
         n += phase6 { pullTable("transcripts", "rev_transcripts", pageSize = 10) { o ->
-            app.transcripts.applyRemote(
-                episodeId = o.getString("episode_id"),
-                source = o.optString("source", "feed"),
-                timed = o.optBoolean("timed", true),
-                segments = o.optJSONArray("segments") ?: JSONArray(),
-                changedAt = o.optLong("changed_at"),
-            )
+            val episodeId = o.getString("episode_id")
+            var segments = o.optJSONArray("segments") ?: JSONArray()
+            var timed = o.optBoolean("timed", true)
+            // Phase 18-pre: after 012 the text lives in the shared copy (episode_transcripts) and this row is
+            // only a pointer. Never save an empty transcript over one this phone has.
+            if (segments.length() == 0) {
+                val shared = try {
+                    supabase.select("episode_transcripts?select=segments,timed&episode_id=eq.${java.net.URLEncoder.encode(episodeId, "UTF-8")}").optJSONObject(0)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null // 011 not run yet
+                }
+                segments = shared?.optJSONArray("segments") ?: JSONArray()
+                if (shared != null) timed = shared.optBoolean("timed", timed)
+            }
+            if (segments.length() > 0) {
+                app.transcripts.applyRemote(
+                    episodeId = episodeId,
+                    source = o.optString("source", "feed"),
+                    timed = timed,
+                    segments = segments,
+                    changedAt = o.optLong("changed_at"),
+                )
+            }
         } }
         n += phase6 { pullTable("bookmarks", "rev_bookmarks") { applyBookmark(it) } }
         n += phase11 { pullTable("episode_ai", "rev_episode_ai", pageSize = 50) { app.ai.applyRemote(it) } }

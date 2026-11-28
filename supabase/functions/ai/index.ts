@@ -298,6 +298,19 @@ Deno.serve(async (req: Request) => {
   if (!tr.ok) return json({ error: `Couldn't read the transcript (HTTP ${tr.status})` }, 502);
   const rows = await tr.json() as { segments: Segment[]; timed: boolean }[];
   const t = rows[0];
+  // Phase 18-pre: after 012 the text lives in the shared copy (episode_transcripts); the person's row is a pointer.
+  if (t && (!Array.isArray(t.segments) || t.segments.length === 0)) {
+    const sh = await fetch(`${base}/rest/v1/episode_transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
+    if (sh.ok) {
+      const s0 = (await sh.json() as { segments: Segment[]; timed: boolean }[])[0];
+      if (s0 && Array.isArray(s0.segments)) {
+        t.segments = s0.segments;
+        t.timed = s0.timed;
+      }
+    } else {
+      await sh.body?.cancel(); // 011 not run yet: nothing shared to read
+    }
+  }
   if (!t || !Array.isArray(t.segments) || t.segments.length === 0) return json({ error: "This episode has no transcript yet. Get one first (Transcript)." }, 400);
   if (!t.timed) return json({ error: "This episode's transcript has no timings, so moments can't be placed. Transcribe it instead." }, 400);
   const lastMs = Math.max(...t.segments.map((s) => s.e || s.s || 0));
