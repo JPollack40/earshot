@@ -8,7 +8,7 @@ object SettingsSearch {
     val GROUPS: Map<String, List<String>> = linkedMapOf(
         "Sync" to listOf("account", "sign in", "sign out", "password", "email", "sync now"),
         "Appearance" to listOf("theme", "glow", "classic", "true black", "dark", "text size", "font", "bigger", "compact", "comfortable", "swipe", "new episodes"),
-        "Playback" to listOf("speed", "smart speed", "silence", "voice boost", "loudness", "skip back", "skip forward", "per output", "earbuds", "headphones", "speaker", "car", "continue between phone and web", "handoff", "rewind", "pause", "sleep timer", "automatic sleep", "when the queue ends", "playlist"),
+        "Playback" to listOf("speed", "smart speed", "silence", "voice boost", "loudness", "skip back", "skip forward", "per output", "earbuds", "headphones", "speaker", "car", "continue between phone and web", "handoff", "rewind", "pause", "sleep timer", "automatic sleep", "when the queue ends", "playlist", "per-speaker", "speaker levels", "lab", "guest", "host"),
         "Time saved" to listOf("time saved", "saved", "smart speed"),
         "Automation" to listOf("archive", "keep per podcast", "tidy", "new episodes"),
         "Downloads" to listOf("download", "wi-fi", "wifi", "mobile data", "queued", "delete", "storage", "space", "limit", "expire"),

@@ -313,6 +313,24 @@ class PlaybackService : MediaLibraryService() {
                     sentenceStarts = starts
                 }
         }
+        // Phase 24 (lab): the loaded episode's speaker-labelled segments, for per-speaker controls.
+        scope.launch {
+            loadedEpisodeId
+                .flatMapLatest<String?, Pair<String?, List<com.earshot.app.data.transcript.Segment>>> { id ->
+                    if (id == null) flowOf(null to emptyList())
+                    else app.transcripts.observe(id).map { t -> id to (if (t != null && t.timed) t.segments.filter { it.speaker != null } else emptyList()) }
+                }
+                .collect { (id, segs) ->
+                    labFor = id
+                    labSegments = segs
+                }
+        }
+        scope.launch {
+            while (isActive) {
+                delay(200)
+                applySpeakerLab()
+            }
+        }
         // Phase 20 (C4): Finish by, checked when it's set and every 15 s while playing.
         scope.launch { app.player.finishBy.collect { checkFinishBy() } }
         scope.launch {
@@ -614,6 +632,48 @@ class PlaybackService : MediaLibraryService() {
         Log.i(TAG, "Say that again: back to ${prefs.speed}x")
         player.setPlaybackSpeed(prefs.speed)
         checkFinishBy()
+    }
+
+    // ---- Per-speaker controls (phase 24, lab) ----
+
+    private var labFor: String? = null
+    private var labSegments: List<com.earshot.app.data.transcript.Segment> = emptyList()
+    private var labAdjustFor: String? = null
+    private var labAdjustVersion = -1
+    private var labAdjust: Map<String, SpeakerLab.Adjust> = emptyMap()
+    /** The speed factor the lab has applied on top of the speed playing, and the speed it set. */
+    private var labFactor = 1f
+    private var labSetSpeed = 0f
+
+    /** Every 200 ms: gives whoever is speaking their level and speed (see SpeakerLab). */
+    private fun applySpeakerLab() {
+        val id = player.currentMediaItem?.mediaId
+        val version = SpeakerLab.version.value
+        if (id != labAdjustFor || version != labAdjustVersion) {
+            labAdjustFor = id
+            labAdjustVersion = version
+            labAdjust = if (id != null && SpeakerLab.enabled(app)) SpeakerLab.adjustments(app, id) else emptyMap()
+        }
+        val active = labAdjust.isNotEmpty() && id == labFor && labSegments.isNotEmpty()
+        if (active && !player.isPlaying) return // keep the current speaker's settings while paused
+        val speaker = if (active) SpeakerLab.speakerAt(labSegments, player.currentPosition) else null
+
+        val volume = if (!active) 1f else {
+            val (byVoice, others) = SpeakerLab.volumes(labAdjust)
+            speaker?.let { byVoice[it] } ?: others
+        }
+        if (abs(player.volume - volume) > 0.01f) player.volume = volume
+
+        val cur = player.playbackParameters.speed
+        // Someone else set the speed since (a speed change, Finish by): that's the new base.
+        if (labFactor != 1f && abs(cur - labSetSpeed) > 0.001f) labFactor = 1f
+        val factor = if (!active || sayAgainFor != null) 1f else speaker?.let { labAdjust[it]?.speed } ?: 1f
+        if (abs(factor - labFactor) > 0.001f) {
+            val target = (cur / labFactor * factor).coerceIn(0.5f, 4f)
+            labFactor = factor
+            labSetSpeed = target
+            player.setPlaybackSpeed(target)
+        }
     }
 
     // ---- Finish by (phase 20, C4) ----

@@ -217,6 +217,18 @@ fun SettingsScreen(vm: AppViewModel) {
                     Switch(checked = rewind, onCheckedChange = vm::updateResumeRewind)
                 }
                 divider()
+                // Phase 24 (lab)
+                val labCtx = androidx.compose.ui.platform.LocalContext.current
+                val labVersion by com.earshot.app.playback.SpeakerLab.version.collectAsStateWithLifecycle()
+                val labOn = remember(labVersion) { com.earshot.app.playback.SpeakerLab.enabled(labCtx) }
+                SettingRow(
+                    title = "Per-speaker controls (lab)",
+                    subtitle = "Adds Speaker levels to a transcript's menu: make a quiet guest louder or a slow speaker faster in that episode. Needs a transcript with speakers (Transcribe).",
+                    onClick = { com.earshot.app.playback.SpeakerLab.setEnabled(labCtx, !labOn) },
+                ) {
+                    Switch(checked = labOn, onCheckedChange = { com.earshot.app.playback.SpeakerLab.setEnabled(labCtx, it) })
+                }
+                divider()
                 SleepScheduleSetting(vm.sleepSchedule, vm::updateSleepSchedule)
                 divider()
                 // Phase 19 (B5): carry on from a playlist when the queue runs out.

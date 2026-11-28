@@ -78,6 +78,7 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
     val transcribing by vm.transcribing.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf(false) }
+    var speakerLab by remember { mutableStateOf(false) } // phase 24
     var editing by remember { mutableStateOf<Bookmark?>(null) }
     var loaded by remember { mutableStateOf(false) }
     // Phase 18: speaker names (yours, else a guess from the episode's podcast:person list).
@@ -101,6 +102,10 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
         loaded = true
     }
 
+    if (speakerLab && transcript != null) {
+        val speakers = remember(transcript) { SpeakerNames.speakers(transcript.segments) }
+        SpeakerLabDialog(episodeId, speakers, { SpeakerNames.label(it, speakerNames, guessedNames) }) { speakerLab = false }
+    }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -142,6 +147,10 @@ fun TranscriptScreen(vm: AppViewModel, episodeId: String, focusMs: Long?) {
                             }
                             if (transcript == null && item != null && state == null) {
                                 DropdownMenuItem(text = { Text("Transcribe") }, onClick = { menu = false; vm.transcribeWithGemini(episodeId) })
+                            }
+                            // Phase 24 (lab): only when switched on in Settings.
+                            if (transcript != null && com.earshot.app.playback.SpeakerLab.enabled(context)) {
+                                DropdownMenuItem(text = { Text("Speaker levels (lab)") }, onClick = { menu = false; speakerLab = true })
                             }
                         }
                     }
