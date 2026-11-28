@@ -5,8 +5,11 @@
 # 90 days. Restore steps: RELEASES.md, "Server backup".
 #
 # Repository secrets (Settings > Secrets and variables > Actions):
-#   SUPABASE_DB_URL     Supabase > Connect > Session pooler connection string, with the database
-#                       password filled in (the direct connection is IPv6 only; GitHub's runners aren't).
+#   SUPABASE_DB_URL       Supabase > Connect > Session pooler connection string WITHOUT the password:
+#                         delete ":[YOUR-PASSWORD]", leaving postgresql://postgres.<ref>@<host>:5432/postgres
+#                         (the direct connection is IPv6 only; GitHub's runners aren't).
+#   SUPABASE_DB_PASSWORD  the database password. Kept apart from the URL so special characters need no
+#                         escaping and an error message can never print it.
 #   BACKUP_PASSPHRASE   a long passphrase only you keep (a password manager). Without it the backup
 #                       can't be opened.
 name: Server backup
@@ -27,22 +30,28 @@ jobs:
       - name: Check the secrets are set
         env:
           DB: ${{ secrets.SUPABASE_DB_URL }}
+          DBPASS: ${{ secrets.SUPABASE_DB_PASSWORD }}
           PASS: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
-          if [ -z "$DB" ] || [ -z "$PASS" ]; then
-            echo "::error::Set the SUPABASE_DB_URL and BACKUP_PASSPHRASE repository secrets first."; exit 1
+          if [ -z "$DB" ] || [ -z "$DBPASS" ] || [ -z "$PASS" ]; then
+            echo "::error::Set the SUPABASE_DB_URL, SUPABASE_DB_PASSWORD and BACKUP_PASSPHRASE repository secrets first."; exit 1
+          fi
+          # A password inside the URL would need percent-escaping, and pg_dump can echo the URL in errors.
+          if printf '%s' "$DB" | grep -Eq '^[a-z]+://[^/@]*:[^/]*@'; then
+            echo "::error::SUPABASE_DB_URL still contains a password. Remove ':<password>' from it and put the password in SUPABASE_DB_PASSWORD."; exit 1
           fi
 
       # pg_dump from the official Postgres image; a newer pg_dump can dump an older server.
       - name: Dump the database
         env:
           DB: ${{ secrets.SUPABASE_DB_URL }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           set -o pipefail
           stamp=$(date -u +%Y%m%d-%H%M%S)
           echo "STAMP=$stamp" >> "$GITHUB_ENV"
           # Earshot's tables (schema and data), plus the user accounts their rows belong to.
-          docker run --rm -e DB postgres:18 sh -c '
+          docker run --rm -e DB -e PGPASSWORD postgres:18 sh -c '
             pg_dump "$DB" --schema=public --no-owner --no-privileges &&
             pg_dump "$DB" --data-only --table=auth.users --no-owner --no-privileges
           ' | gzip -9 > "earshot-db-$stamp.sql.gz"
