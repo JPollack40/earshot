@@ -94,11 +94,14 @@ Actions > Server backup > Run workflow), encrypts it with your passphrase and ke
 a workflow artifact (Actions > the run > Artifacts). The repository is public, so the file is only
 useful with the passphrase.
 
-One-time setup, two repository secrets (Settings > Secrets and variables > Actions > New repository secret):
+One-time setup, three repository secrets (Settings > Secrets and variables > Actions > New repository secret):
 
-- `SUPABASE_DB_URL`: Supabase > your project > **Connect** > **Session pooler** connection string,
-  with `[YOUR-PASSWORD]` replaced by the database password (Project Settings > Database > Reset
-  database password if you don't have it; the apps don't use it, so resetting is harmless).
+- `SUPABASE_DB_URL`: Supabase > your project > **Connect** > **Session pooler** connection string
+  **without the password**: delete `:[YOUR-PASSWORD]`, leaving
+  `postgresql://postgres.<project ref>@<host>:5432/postgres`.
+- `SUPABASE_DB_PASSWORD`: the database password (Project Settings > Database > Reset database
+  password if you don't have it; the apps don't use it, so resetting is harmless). It's kept out of
+  the URL so special characters need no escaping and an error can't print it into the public log.
 - `BACKUP_PASSPHRASE`: a long passphrase that only you keep, in your password manager.
 
 To open a backup (on the VM, Git Bash has gpg): download the artifact zip, unzip it, then
