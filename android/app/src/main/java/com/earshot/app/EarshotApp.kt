@@ -46,6 +46,10 @@ class EarshotApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Phase 16: crash reports first, so a crash anywhere below is caught; then Serena's switches
+        // (last good copy) before anything reads them.
+        com.earshot.app.data.CrashReports.install(this)
+        com.earshot.app.data.RemoteConfig.load(this)
         db = AppDatabase.build(this)
         repository = Repository(this, db)
         // Generated chapters (phase 11) are used when the feed and the audio file have none.
@@ -61,6 +65,32 @@ class EarshotApp : Application() {
         cleanupDownloads("app start")
         transcripts.fetchMissingInBackground("app start")
         com.earshot.app.push.Push.init(this)
+        refreshRemoteConfig(force = true)
+        appScope.launch {
+            try {
+                com.earshot.app.data.CrashReports.collectExitReasons(this@EarshotApp)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("Earshot", "Exit reasons failed", e)
+            }
+            sendCrashReports()
+        }
+    }
+
+    /** Phase 16: reads Serena's app_config (at most hourly unless [force]); a failure keeps the last copy. */
+    fun refreshRemoteConfig(force: Boolean = false) {
+        appScope.launch { com.earshot.app.data.RemoteConfig.refresh(this@EarshotApp, sync.supabase, force) }
+    }
+
+    /** Phase 16: sends waiting crash reports if signed in (otherwise they wait). */
+    suspend fun sendCrashReports(): Int = try {
+        com.earshot.app.data.CrashReports.sendPending(this, sync.supabase, sync.canSync)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w("Earshot", "Sending crash reports failed", e)
+        0
     }
 
     /** Applies the download-retention rules now, never touching the episode loaded in the player. */

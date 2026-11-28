@@ -102,11 +102,18 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Pick up changes made in the web player while the app was in the background.
         (application as com.earshot.app.EarshotApp).sync.request("app resumed")
+        // Phase 16: Serena's switches (at most hourly) and any waiting crash reports.
+        (application as com.earshot.app.EarshotApp).refreshRemoteConfig()
     }
 }
 
 @Composable
 fun EarshotRoot(vm: AppViewModel) {
+    // Phase 16: Serena's minimum version: a warning that can't be dismissed (the app keeps working).
+    val config by com.earshot.app.data.RemoteConfig.config.collectAsStateWithLifecycle()
+    val minVersion = config.minSupportedVersion
+    val updateRequired = config.updateRequired && minVersion != null
+    LaunchedEffect(updateRequired) { if (updateRequired) vm.checkForUpdate(manual = false) }
     val snackbar = remember { SnackbarHostState() }
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
     val current by vm.currentEpisode.collectAsStateWithLifecycle()
@@ -171,6 +178,8 @@ fun EarshotRoot(vm: AppViewModel) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            if (updateRequired && minVersion != null) com.earshot.app.ui.screens.UpdateNeededBanner(vm, minVersion)
+            com.earshot.app.ui.screens.ConfigBanner()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (val screen = vm.backStack.last()) {
                     Screen.Library -> LibraryScreen(vm)

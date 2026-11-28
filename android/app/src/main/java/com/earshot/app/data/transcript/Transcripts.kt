@@ -208,6 +208,7 @@ class Transcripts(private val app: EarshotApp) {
      * function answers in parts (one, with Deepgram); parts already done are kept in a file for a retry.
      */
     suspend fun transcribeWithGemini(episode: Episode, onPart: suspend (done: Int, parts: Int) -> Unit) {
+        com.earshot.app.data.RemoteConfig.require { it.transcribeOn } // phase 16 kill switch
         val supabase = app.sync.supabase
         if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to transcribe episodes")
         val file = partsFile(episode.id)
@@ -347,6 +348,10 @@ class Transcripts(private val app: EarshotApp) {
      */
     suspend fun autoTitle(b: Bookmark, force: Boolean): String? {
         if (!force && !b.title.isNullOrBlank()) return b.title
+        if (!com.earshot.app.data.RemoteConfig.current.aiOn) { // phase 16 kill switch
+            if (force) throw com.earshot.app.data.FeaturePausedException(com.earshot.app.data.RemoteConfig.current.pausedMessage)
+            return null
+        }
         if (!app.sync.canSync) {
             if (force) throw IllegalStateException("Sign in (Settings > Sync) to make titles")
             return null

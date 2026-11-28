@@ -224,6 +224,13 @@ async function geminiTitle(todo: TitleTodo): Promise<string> {
 
 /** Titles untitled bookmarks until [deadline] (ms since epoch). Returns how many got a title. */
 async function titleBookmarks(deadline: number, errors: string[]): Promise<number> {
+  // Phase 16: Serena's kill switch (app_config.ai_on, 010_safe_updates.sql). A failed read changes nothing.
+  try {
+    const cfg = await db("app_config?id=eq.1&select=ai_on") as { ai_on?: boolean }[];
+    if (cfg?.[0]?.ai_on === false) return 0;
+  } catch (_) {
+    // 010 not run yet: carry on
+  }
   let todo: TitleTodo[];
   try {
     todo = await db("rpc/bookmark_titles_todo", { method: "POST", body: JSON.stringify({ max_rows: TITLES_PER_RUN }) }) as TitleTodo[];

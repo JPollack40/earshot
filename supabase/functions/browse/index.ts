@@ -378,6 +378,26 @@ async function topCategories(shows: TopShow[]): Promise<{ name: string; weight: 
 
 // ---------------------------------------------------------------- the request
 
+/**
+ * Phase 16: the kill switch (public.app_config, 010_safe_updates.sql). Returns the "paused" message when
+ * Serena has switched [flag] off, else null. A failed or missing read never pauses anything.
+ */
+async function pausedMessage(base: string, apikey: string, flag: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${base}/rest/v1/app_config?id=eq.1&select=*`, { headers: { apikey }, signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) {
+      await res.body?.cancel();
+      return null;
+    }
+    const rows = await res.json() as Record<string, unknown>[];
+    const c = rows?.[0];
+    if (c && c[flag] === false) return String(c.paused_message || "Paused for now.");
+  } catch (_) {
+    // offline or table missing: carry on
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
@@ -483,7 +503,7 @@ Deno.serve(async (req: Request) => {
         const list = await trending(c.name, 100);
         for (const f of list.slice(0, 8)) row.add(f, `Popular in ${c.name}`);
       }
-      if (row.items.length < 8 && top.length) {
+      if (row.items.length < 8 && top.length && !(await pausedMessage(base(), apikey, "browse_ai_on"))) {
         const names = top.slice(0, 5).map((t) => t.title).filter(Boolean);
         const picks = await cached(`gemini:similar:${names.map(looseTitle).sort().join("|")}`, 3 * DAY, () => geminiSimilar(names));
         const found = await pool(picks.slice(0, 12), 6, (p) => byTitle(p.title));

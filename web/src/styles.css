@@ -195,3 +195,7 @@ mark { background: none; color: var(--accent); font-weight: 700; }
 .ai-time .time { color: var(--accent, #7aa2ff); margin-right: 6px; font-variant-numeric: tabular-nums; }
 .bm-title { font-size: 14px; font-weight: 600; margin-top: 1px; }
 .bm-toggle { font-size: 14px; align-self: flex-start; }
+
+/* Phase 16: Serena's note from app_config.banner */
+.config-banner { display: flex; align-items: center; gap: 12px; margin: 8px 14px; padding: 8px 12px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--line); font-size: 14px; }
+.config-banner span { flex: 1; }

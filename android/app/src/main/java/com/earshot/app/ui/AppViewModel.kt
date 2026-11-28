@@ -359,6 +359,56 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         update = null
     }
 
+    // ---- Phase 16: Report a problem ----
+
+    var reportSending by mutableStateOf(false)
+        private set
+
+    private suspend fun problemRow(note: String, includeLog: Boolean): org.json.JSONObject =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.earshot.app.data.CrashReports.report(
+                app, "report", note.lineSequence().firstOrNull().orEmpty().take(200), "",
+                if (includeLog) com.earshot.app.data.CrashReports.recentLog() else "", note, System.currentTimeMillis(),
+            )
+        }
+
+    /** The report as it would be sent (note, versions, device and log), for the preview. */
+    fun previewProblemReport(includeLog: Boolean, show: (String) -> Unit) {
+        viewModelScope.launch {
+            val r = problemRow("(your note)", includeLog)
+            show(
+                "App: ${r.optString("app_version")} (${r.optString("version_code")}, ${r.optString("build_type")})\n" +
+                    "Phone: ${r.optString("device")}, Android ${r.optString("android")}\n" +
+                    "Account: ${app.sync.supabase.session.value?.email ?: "not signed in"}\n" +
+                    if (includeLog) "\nLog:\n${r.optString("log")}" else "\n(no log)",
+            )
+        }
+    }
+
+    fun sendProblemReport(note: String, includeLog: Boolean, onDone: () -> Unit) {
+        if (reportSending) return
+        if (!app.sync.canSync) {
+            say("Sign in first (Settings > Sync), so the report can be sent")
+            return
+        }
+        reportSending = true
+        viewModelScope.launch {
+            try {
+                com.earshot.app.data.CrashReports.saveProblemReport(app, problemRow(note.trim(), includeLog))
+                app.sendCrashReports()
+                val left = com.earshot.app.data.CrashReports.pendingCount(app)
+                say(if (left == 0) "Report sent. Thank you!" else "Saved. It will be sent when Earshot can reach the server.")
+                onDone()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                say("Couldn't send the report: ${e.message}")
+            } finally {
+                reportSending = false
+            }
+        }
+    }
+
     /** A backup chosen for restoring, checked and waiting for confirmation. */
     var restoreCandidate by mutableStateOf<com.earshot.app.data.Backup.Info?>(null)
         private set
