@@ -78,6 +78,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import com.earshot.app.data.LibraryCheckup.Kind as K
 
 /*
  * Stats page and week / month / year in review. Built from the listening history (phase 7) with the
@@ -144,7 +145,6 @@ private fun LibraryCheckupSection(vm: AppViewModel) {
                 Text(f.title, style = MaterialTheme.typography.bodyMedium)
                 Text(f.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row {
-                    val K = com.earshot.app.data.LibraryCheckup.Kind
                     TextButton(onClick = { vm.fixFinding(f) }) {
                         Text(
                             when (f.kind) {

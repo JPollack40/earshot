@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.earshot.app.data.LibraryCheckup.Kind as K
 
 sealed interface Screen {
     data object Library : Screen
@@ -358,7 +359,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The one-tap fix for a finding (suggestions only until this is tapped). */
     fun fixFinding(f: com.earshot.app.data.LibraryCheckup.Finding) {
-        val K = com.earshot.app.data.LibraryCheckup.Kind
         when (f.kind) {
             K.PASSED_OVER -> f.podcastId?.let { id -> updateRules(id) { it.copy(newEpisodeAction = com.earshot.app.data.Automation.NewEpisodeAction.SKIP.key) } }
             K.ALWAYS_FIRST -> f.podcastId?.let { id -> updateRules(id) { it.copy(newEpisodeAction = com.earshot.app.data.Automation.NewEpisodeAction.QUEUE_NEXT.key) } }
