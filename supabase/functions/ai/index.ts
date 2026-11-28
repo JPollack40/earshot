@@ -12,7 +12,7 @@
 // Secrets: GEMINI_API_KEY (already set). Optional GEMINI_MODEL (default below) and
 // GEMINI_FALLBACK_MODEL (used when the main model is overloaded or not offered).
 // Verify JWT: on (the default). The function also checks the sign-in itself.
-// Errors: 400 no usable transcript, 401 not signed in, 429 Gemini's limit reached (try later), 502 Gemini failed.
+// Errors: 503 { paused: true } switched off in app_config (phase 16), 400 no usable transcript, 401 not signed in, 429 Gemini's limit reached (try later), 502 Gemini failed.
 
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-3.8-flash";
@@ -222,6 +222,26 @@ async function answerOf(res: Response, model: string): Promise<any | null> {
   }
 }
 
+/**
+ * Phase 16: the kill switch (public.app_config, 010_safe_updates.sql). Returns the "paused" message when
+ * Serena has switched [flag] off, else null. A failed or missing read never pauses anything.
+ */
+async function pausedMessage(base: string, apikey: string, flag: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${base}/rest/v1/app_config?id=eq.1&select=*`, { headers: { apikey }, signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) {
+      await res.body?.cancel();
+      return null;
+    }
+    const rows = await res.json() as Record<string, unknown>[];
+    const c = rows?.[0];
+    if (c && c[flag] === false) return String(c.paused_message || "Paused for now.");
+  } catch (_) {
+    // offline or table missing: carry on
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
@@ -246,6 +266,9 @@ Deno.serve(async (req: Request) => {
   if (!episodeId || !(kind in PROMPTS || kind === "ask" || kind === "title")) {
     return json({ error: "episodeId and kind (chapters, summary, ads, ask or title) are required" }, 400);
   }
+
+  const paused = await pausedMessage(base, apikey, kind === "ads" ? "ad_finding_on" : "ai_on");
+  if (paused) return json({ error: paused, paused: true }, 503);
 
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return json({ error: "GEMINI_API_KEY secret is not set" }, 500);

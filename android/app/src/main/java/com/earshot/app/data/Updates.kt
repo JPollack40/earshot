@@ -43,8 +43,16 @@ object Updates {
     suspend fun check(context: Context): UpdateInfo? {
         val text = Http.getText(API, mapOf("Accept" to "application/vnd.github+json"))
         prefs(context).edit { putLong("checked_at", System.currentTimeMillis()) }
-        val o = JSONObject(text)
-        val tag = o.optString("tag_name").removePrefix("v")
+        var o = JSONObject(text)
+        var tag = o.optString("tag_name").removePrefix("v")
+        // Phase 16: Serena's hold (app_config.hold_version) pulls a bad release: nothing newer is offered,
+        // but the held version itself still is, to anyone older than it.
+        val hold = RemoteConfig.current.holdVersion?.removePrefix("v")
+        if (hold != null && tag.isNotBlank() && isNewer(tag, hold)) {
+            if (!isNewer(hold, BuildConfig.VERSION_NAME)) return null
+            o = JSONObject(Http.getText("https://api.github.com/repos/$REPO/releases/tags/v$hold", mapOf("Accept" to "application/vnd.github+json")))
+            tag = o.optString("tag_name").removePrefix("v")
+        }
         if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) return null
         val assets = o.optJSONArray("assets")
         var apk = ""

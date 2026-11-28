@@ -116,6 +116,7 @@ fun AiDialog(vm: AppViewModel, item: EpisodeWithPodcast, onDismiss: () -> Unit) 
                     label = if (summary == null) "Summarise this episode" else "Summarise again",
                     busy = busy(AiKinds.SUMMARY),
                 ) { vm.generateAi(item, AiKinds.SUMMARY) }
+                vm.aiErrors["$id|${AiKinds.SUMMARY}"]?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
 
                 // ---- Chapters ----
                 Section("Chapters")
@@ -134,6 +135,7 @@ fun AiDialog(vm: AppViewModel, item: EpisodeWithPodcast, onDismiss: () -> Unit) 
                         label = if (generated == null) "Make chapters" else "Make chapters again",
                         busy = busy(AiKinds.CHAPTERS),
                     ) { vm.generateAi(item, AiKinds.CHAPTERS) }
+                    vm.aiErrors["$id|${AiKinds.CHAPTERS}"]?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 }
 
                 // ---- Ads ----
@@ -148,6 +150,7 @@ fun AiDialog(vm: AppViewModel, item: EpisodeWithPodcast, onDismiss: () -> Unit) 
                     label = if (ads == null) "Find ads" else "Find ads again",
                     busy = busy(AiKinds.ADS),
                 ) { vm.generateAi(item, AiKinds.ADS) }
+                vm.aiErrors["$id|${AiKinds.ADS}"]?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(8.dp))
                 Text("Found ads (all episodes)", style = MaterialTheme.typography.labelMedium)
                 listOf(AdSkip.AUTO, AdSkip.BUTTON, AdSkip.OFF).forEach { mode ->

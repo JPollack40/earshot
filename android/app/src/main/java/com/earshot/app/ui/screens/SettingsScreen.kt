@@ -216,6 +216,13 @@ fun SettingsScreen(vm: AppViewModel) {
                 onClick = { vm.showWhatsNew(manual = true) },
                 modifier = Modifier.padding(horizontal = 8.dp),
             ) { Text("What's new in this version") }
+            // Phase 16: a note to Serena with a recent log, previewed before sending.
+            var reporting by remember { mutableStateOf(false) }
+            androidx.compose.material3.TextButton(
+                onClick = { reporting = true },
+                modifier = Modifier.padding(horizontal = 8.dp),
+            ) { Text("Report a problem") }
+            if (reporting) ReportProblemDialog(vm, onDismiss = { reporting = false })
         }
     }
 }

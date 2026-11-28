@@ -97,6 +97,20 @@ class Supabase(context: Context) {
         JSONArray(authed("GET", "/rest/v1/$path", null, null))
     }
 
+    /**
+     * Phase 16: GET /rest/v1/[path] with only the publishable key (no sign-in needed), for tables that
+     * anyone may read, such as app_config.
+     */
+    suspend fun selectPublic(path: String): JSONArray = withContext(Dispatchers.IO) {
+        JSONArray(request("GET", "/rest/v1/$path", null, auth = false, readTimeoutMs = 15_000))
+    }
+
+    /** Phase 16: adds [rows] to [table], skipping any that already exist (matched on [onConflict]). */
+    suspend fun insertNew(table: String, onConflict: String, rows: JSONArray) = withContext(Dispatchers.IO) {
+        if (rows.length() == 0) return@withContext
+        authed("POST", "/rest/v1/$table?on_conflict=$onConflict", rows.toString(), "resolution=ignore-duplicates,return=minimal")
+    }
+
     /** Inserts or updates [rows] in [table], matching on [onConflict] columns. */
     suspend fun upsert(table: String, onConflict: String, rows: JSONArray) = withContext(Dispatchers.IO) {
         if (rows.length() == 0) return@withContext

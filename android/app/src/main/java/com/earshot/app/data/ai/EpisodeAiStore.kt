@@ -47,6 +47,8 @@ class EpisodeAiStore(private val app: EarshotApp) {
      * first, because the function reads the copy on the server. Throws with a readable message.
      */
     suspend fun generate(episode: Episode, podcastTitle: String, kind: String) {
+        // Phase 16: Serena's kill switch says so instead of the feature vanishing.
+        com.earshot.app.data.RemoteConfig.require { if (kind == AiKinds.ADS) it.adFindingOn else it.aiOn }
         if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to use AI features")
         val t = app.db.transcripts().get(episode.id)
             ?: throw IllegalStateException("Get a transcript first (Transcript, then Transcribe)")
@@ -79,6 +81,7 @@ class EpisodeAiStore(private val app: EarshotApp) {
      * first if needed) and isn't saved. Throws with a readable message.
      */
     suspend fun ask(episode: Episode, podcastTitle: String, question: String): EpisodeAnswer {
+        com.earshot.app.data.RemoteConfig.require { it.aiOn }
         if (!app.sync.canSync) throw IllegalStateException("Sign in (Settings > Sync) to use AI features")
         val t = app.db.transcripts().get(episode.id)
             ?: throw IllegalStateException("Get a transcript first (Transcript, then Transcribe)")
