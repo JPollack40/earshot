@@ -73,6 +73,20 @@ class MainActivity : ComponentActivity() {
             }
         }
         handlePlayIntent(intent)
+        addResumeShortcut()
+    }
+
+    /** Phase 20 (C6): a "Resume" shortcut on the app icon's long-press menu (and for Samsung Modes and Routines). */
+    private fun addResumeShortcut() {
+        runCatching {
+            val shortcut = androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "resume")
+                .setShortLabel("Resume")
+                .setLongLabel("Resume listening")
+                .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, com.earshot.app.R.drawable.ic_tab_queue))
+                .setIntent(Intent(this, MainActivity::class.java).setAction(ACTION_RESUME))
+                .build()
+            androidx.core.content.pm.ShortcutManagerCompat.pushDynamicShortcut(this, shortcut)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -92,6 +106,13 @@ class MainActivity : ComponentActivity() {
             (application as com.earshot.app.EarshotApp).player.playFromSearch(query)
             return
         }
+        // Phase 20 (C6): the "Resume" app shortcut (long-press the icon), also usable from Samsung Modes and Routines.
+        if (intent?.action == ACTION_RESUME) {
+            intent.action = null // not again on rotation
+            val player = (application as com.earshot.app.EarshotApp).player
+            if (!player.state.value.isPlaying) player.togglePlay()
+            return
+        }
         if (intent?.action != com.earshot.app.push.Push.ACTION_PLAY) return
         val id = intent.getStringExtra(com.earshot.app.push.Push.EXTRA_EPISODE) ?: return
         intent.action = null // not again on rotation
@@ -105,6 +126,10 @@ class MainActivity : ComponentActivity() {
         (application as com.earshot.app.EarshotApp).sync.request("app resumed")
         // Phase 16: Serena's switches (at most hourly) and any waiting crash reports.
         (application as com.earshot.app.EarshotApp).refreshRemoteConfig()
+    }
+    companion object {
+        /** Phase 20 (C6): opens Earshot and carries on playing. */
+        const val ACTION_RESUME = "com.earshot.app.RESUME"
     }
 }
 

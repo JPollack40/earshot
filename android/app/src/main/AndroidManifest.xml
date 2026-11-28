@@ -42,6 +42,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Phase 20 (C6): the Earshot tile in Quick Settings (play / pause). -->
+        <service
+            android:name=".playback.PlayTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="Earshot"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Playback lives in this service so audio keeps going with the screen off.
              It is a MediaLibraryService so Android Auto can browse the queue, inbox and podcasts. -->
         <service
