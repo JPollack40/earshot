@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.earshot.app.data.Settings
+import com.earshot.app.data.StorageCap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.earshot.app.playback.skipLengthName
 import com.earshot.app.ui.AppViewModel
@@ -123,6 +124,8 @@ fun SettingsScreen(vm: AppViewModel) {
                 Switch(checked = rewind, onCheckedChange = vm::updateResumeRewind)
             }
             divider()
+            SleepScheduleSetting(vm.sleepSchedule, vm::updateSleepSchedule)
+            divider()
 
             val saved by vm.timeSaved.collectAsStateWithLifecycle()
             SectionHeader("Time saved")
@@ -170,6 +173,8 @@ fun SettingsScreen(vm: AppViewModel) {
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             ExpirySetting(vm.expireDays, vm::updateExpireDays)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            StorageCapSetting(vm.storageCapGb, vm::updateStorageCapGb)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             DeleteAllDownloads(vm)
             divider()
@@ -350,6 +355,36 @@ private fun ExpirySetting(days: Int, onChange: (Int) -> Unit) {
                         text = { Text(expiryLabel(d), fontWeight = if (d == days) FontWeight.Bold else null) },
                         onClick = {
                             onChange(d)
+                            open = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Phase 17: the most space downloads may take. */
+@Composable
+private fun StorageCapSetting(gb: Int, onChange: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    SettingRow(
+        title = "Storage limit for downloads",
+        subtitle = "Over it, downloads not in your queue go first (oldest first). Queued episodes are kept, " +
+            "but new ones aren't downloaded automatically until there's room.",
+        onClick = { open = true },
+    ) {
+        Box {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(StorageCap.label(gb), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                StorageCap.CHOICES_GB.forEach { g ->
+                    DropdownMenuItem(
+                        text = { Text(StorageCap.label(g), fontWeight = if (g == gb) FontWeight.Bold else null) },
+                        onClick = {
+                            onChange(g)
                             open = false
                         },
                     )

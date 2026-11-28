@@ -15,7 +15,8 @@ import com.google.common.collect.ImmutableList
  * here: the app, the notification, the lock screen, headset buttons and Android Auto.
  *
  * The player holds the whole queue (so Android Auto can show it), but "next" and "previous" from
- * steering-wheel and headset buttons still skip by time and never change episode. Picking another
+ * steering-wheel and headset buttons still skip by time and never change episode (phase 17: during a
+ * found ad, Next jumps to just before the ad ends). Picking another
  * episode in the queue goes to [onJump], so the service can save the current position and start
  * the chosen one where it was left off.
  */
@@ -27,8 +28,16 @@ class SkipLengthPlayer(player: Player) : ForwardingPlayer(player) {
     /** Called (instead of seeking) when a controller asks for another item in the playlist. */
     var onJump: ((index: Int) -> Unit)? = null
 
-    override fun seekToNext() = seekForward()
-    override fun seekToNextMediaItem() = seekForward()
+    /**
+     * Phase 17: steering-wheel and earbud Next. Returns true when the service handled the press (a found
+     * ad is playing: it jumps to just before the ad ends); otherwise Next skips forward by time as before.
+     */
+    var onNext: (() -> Boolean)? = null
+
+    override fun seekToNext() {
+        if (onNext?.invoke() != true) seekForward()
+    }
+    override fun seekToNextMediaItem() = seekToNext()
     override fun seekToPrevious() = seekBack()
     override fun seekToPreviousMediaItem() = seekBack()
 

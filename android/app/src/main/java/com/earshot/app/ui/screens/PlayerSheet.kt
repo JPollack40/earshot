@@ -42,6 +42,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -63,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -179,16 +183,63 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                // Glow: a tick on the track at each chapter start.
-                if (glow && chapters.size > 1 && now.durationMs > 0) {
+                // A tick on the track at each chapter start (phase 17: in both themes).
+                if (chapters.size > 1 && now.durationMs > 0) {
                     val marks = chapters.map { it.startMs.toFloat() / duration }.filter { it > 0f && it < 1f }
+                    val tickColor = if (glow) Color.White.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     Canvas(Modifier.matchParentSize()) {
                         val inset = 10.dp.toPx()
                         val tick = Size(2.dp.toPx(), 10.dp.toPx())
                         marks.forEach { f ->
                             val x = inset + f * (size.width - 2 * inset)
-                            drawRect(Color.White.copy(alpha = 0.55f), topLeft = Offset(x - tick.width / 2, size.height / 2 - tick.height / 2), size = tick)
+                            drawRect(tickColor, topLeft = Offset(x - tick.width / 2, size.height / 2 - tick.height / 2), size = tick)
                         }
+                    }
+                }
+                // Phase 17: a small moon on the track where the sleep timer will stop playback
+                // (minutes left x the speed playing; Smart Speed can make it land a little later in the episode).
+                val sleepAt: Float? = when (val t = sleep) {
+                    is SleepTimer.At -> {
+                        val left = (t.endsAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
+                        ((now.positionMs + left * prefs.speed) / duration).takeIf { now.durationMs > 0 && it < 1f }
+                    }
+                    SleepTimer.EndOfEpisode -> if (now.durationMs > 0) 1f else null
+                    SleepTimer.Off -> null
+                }
+                if (sleepAt != null) {
+                    val moon = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.Bedtime)
+                    val moonColor = if (glow) Color.White else MaterialTheme.colorScheme.primary
+                    Canvas(Modifier.matchParentSize()) {
+                        val inset = 10.dp.toPx()
+                        val x = inset + sleepAt.coerceIn(0f, 1f) * (size.width - 2 * inset)
+                        val tick = Size(2.dp.toPx(), 14.dp.toPx())
+                        drawRect(moonColor, topLeft = Offset(x - tick.width / 2, size.height / 2 - tick.height / 2), size = tick)
+                        val m = 12.dp.toPx()
+                        translate(left = x - m / 2, top = size.height / 2 - tick.height / 2 - m) {
+                            with(moon) { draw(Size(m, m), colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(moonColor)) }
+                        }
+                    }
+                }
+                // Phase 17: while dragging, a bubble over the thumb with the time and chapter you'd land on.
+                dragPosition?.let { d ->
+                    val f = (d / duration).coerceIn(0f, 1f)
+                    val landing = chapters.lastOrNull { it.startMs <= d.toLong() }?.title
+                    val label = formatClock(d.toLong()) + (landing?.let { " · " + it.take(40) } ?: "")
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.inverseSurface,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .layout { measurable, constraints ->
+                                val p = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                                val w = constraints.maxWidth
+                                val inset = 10.dp.roundToPx()
+                                val x = (inset + f * (w - 2 * inset) - p.width / 2f).toInt().coerceIn(0, (w - p.width).coerceAtLeast(0))
+                                layout(p.width, p.height) { p.place(x, -p.height - 2.dp.roundToPx()) }
+                            },
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                     }
                 }
             }
@@ -426,9 +477,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
 
 private fun sleepLabel(sleep: SleepTimer): String = when (sleep) {
     SleepTimer.Off -> "Sleep"
-    SleepTimer.EndOfEpisode -> "End of episode"
+    SleepTimer.EndOfEpisode -> "Sleep: end of episode"
     is SleepTimer.At -> {
         val minsLeft = ((sleep.endsAtMs - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1
-        "${minsLeft}m"
+        "Sleep ${minsLeft}m"
     }
 }

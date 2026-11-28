@@ -42,6 +42,7 @@ import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.feed.SkippedChapters
 import com.earshot.app.data.PlaylistJson
 import com.earshot.app.data.Settings
+import com.earshot.app.data.SleepSchedule
 import com.earshot.app.data.VoiceMatch
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.ui.MainActivity
@@ -133,6 +134,7 @@ class PlaybackService : MediaLibraryService() {
         listening.finishOrphans()
         skipPlayer = SkipLengthPlayer(player)
         skipPlayer.onJump = ::jumpTo
+        skipPlayer.onNext = ::smartNext
         prefs = PlaybackPrefs.resolve(Settings.playbackDefaults(this).value, null)
         player.setPlaybackSpeed(prefs.speed)
 
@@ -524,6 +526,32 @@ class PlaybackService : MediaLibraryService() {
         updateAdButton()
     }
 
+    /**
+     * Phase 17: steering-wheel / earbud Next during a found ad (any ad mode but Off): to just before the
+     * ad ends, or the end of the episode when the ad runs to the end. False when no ad is playing, so
+     * Next skips by time as before.
+     */
+    private fun smartNext(): Boolean {
+        val id = player.currentMediaItem?.mediaId ?: return false
+        if (adsFor != id || ads.isEmpty() || Settings.adSkip(app).value == AdSkip.OFF) return false
+        val pos = player.currentPosition
+        val to = AdSkip.nextTarget(ads, pos) ?: return false
+        val duration = player.duration
+        Log.i(TAG, "Smart Next: in an ad at $pos ms, jumping to ${if (to >= AdSkip.TO_END) "the end" else "$to ms"}")
+        if (to >= AdSkip.TO_END || (duration > 0 && to >= duration - 500)) finishCurrent(id, playNext = true, atEnd = false) else player.seekTo(to)
+        updateAdButton()
+        return true
+    }
+
+    /** Phase 17: sets the scheduled sleep timer when play is pressed in its window and no timer is running. */
+    private fun autoSleepTimer() {
+        val schedule = Settings.sleepSchedule(app)
+        if (!schedule.inWindow(java.time.LocalDateTime.now())) return
+        if (app.player.sleepTimer.value != SleepTimer.Off) return
+        Log.i(TAG, "Automatic sleep timer: ${SleepSchedule.minutesLabel(schedule.minutes)}")
+        if (schedule.minutes == 0) app.player.sleepAtEndOfEpisode() else app.player.setSleepTimer(schedule.minutes)
+    }
+
     /** Bookmarks the playing moment (Bookmark button in Android Auto or the notification). */
     private fun bookmarkNow() {
         val id = player.currentMediaItem?.mediaId ?: return
@@ -663,6 +691,8 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Phase 17: the automatic sleep timer, on a press of play (not buffering or focus coming back).
+            if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) autoSleepTimer()
             // Paused by setPauseAtEndOfMediaItems: the episode has played to the end.
             if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) return
             val id = player.currentMediaItem?.mediaId ?: return

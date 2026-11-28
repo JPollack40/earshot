@@ -67,4 +67,28 @@ class AdSkipTest {
         assertEquals(true, AdSkip.isAdChapter("Ad break"))
         assertEquals(true, AdSkip.isAdChapter("Sponsor: Lowe's"))
     }
+
+    // Phase 17: Smart Next
+    @Test fun smartNextGoesJustBeforeTheAdsEnd() {
+        assertEquals(149_000L, AdSkip.nextTarget(ads, 61_000)) // back-to-back ads together, 1 s left
+        assertEquals(1_859_000L, AdSkip.nextTarget(ads, 1_800_500))
+    }
+
+    @Test fun smartNextOutsideAnAdSkipsByTime() {
+        assertNull(AdSkip.nextTarget(ads, 30_000))
+        assertNull(AdSkip.nextTarget(emptyList(), 61_000))
+    }
+
+    @Test fun smartNextNeverGoesBackwards() {
+        // 1.2 s before the end the ad still counts as playing (until 1.5 s before); Next must still move on.
+        val short = listOf(AdSpan(10_000, 12_000, "Short"))
+        val to = AdSkip.nextTarget(short, 10_400)!!
+        assertEquals(11_000L, to)
+        assertEquals(true, to > 10_400)
+    }
+
+    @Test fun smartNextOnAnAdToTheEnd() {
+        val toEnd = listOf(AdSpan(3_000_000, AdSkip.TO_END, "Ad break"))
+        assertEquals(AdSkip.TO_END, AdSkip.nextTarget(toEnd, 3_100_000))
+    }
 }
