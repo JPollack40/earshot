@@ -13,6 +13,14 @@ private const val NOW_MS = "CAST((julianday('now') - 2440587.5) * 86400000 AS IN
 /** Marks a row as changed by the user, so the next sync uploads it. */
 private const val TOUCH = "dirty = 1, changedAt = $NOW_MS"
 
+/**
+ * Phase 15: an episode of an unfollowed (hidden) podcast is kept while it's queued or partly played
+ * (the Continue listening rule: unplayed, more than 30 s in). Without the second part, a half-heard
+ * episode from a preview or from the web was deleted at the next app start.
+ */
+private const val KEPT = "(queuePosition IS NOT NULL OR (played = 0 AND positionMs > 30000))"
+private const val KEPT_Q = "(q.queuePosition IS NOT NULL OR (q.played = 0 AND q.positionMs > 30000))"
+
 private const val EPISODE_JOIN =
     "SELECT e.*, p.title AS podcastTitle, p.imageUrl AS podcastImageUrl, p.adTrim AS podcastAdTrim " +
         "FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId"
@@ -157,10 +165,10 @@ interface PodcastDao {
         changedAt: Long,
     )
 
-    /** Unsubscribed podcasts are kept only while one of their episodes is queued. */
+    /** Unsubscribed podcasts are kept only while one of their episodes is queued or partly played. */
     @Query(
         "DELETE FROM podcasts WHERE subscribed = 0 AND NOT EXISTS " +
-            "(SELECT 1 FROM episodes e WHERE e.podcastId = podcasts.id AND e.queuePosition IS NOT NULL)",
+            "(SELECT 1 FROM episodes q WHERE q.podcastId = podcasts.id AND $KEPT_Q)",
     )
     suspend fun deleteUnusedUnsubscribed(): Int
 
@@ -168,7 +176,7 @@ interface PodcastDao {
     @Query(
         "SELECT e.* FROM episodes e INNER JOIN podcasts p ON p.id = e.podcastId " +
             "WHERE p.subscribed = 0 AND e.downloadState != 0 AND NOT EXISTS " +
-            "(SELECT 1 FROM episodes q WHERE q.podcastId = p.id AND q.queuePosition IS NOT NULL)",
+            "(SELECT 1 FROM episodes q WHERE q.podcastId = p.id AND $KEPT_Q)",
     )
     suspend fun downloadsOfUnusedUnsubscribed(): List<Episode>
 
@@ -269,11 +277,11 @@ interface EpisodeDao {
             "changedAt = CASE WHEN queuePosition IS NOT :position THEN $NOW_MS ELSE changedAt END, queuePosition = :position WHERE id = :id")
     suspend fun setQueuePosition(id: String, position: Long?)
 
-    /** Episodes of a podcast that are neither queued nor [keepId]; used when unsubscribing. */
-    @Query("SELECT * FROM episodes WHERE podcastId = :podcastId AND queuePosition IS NULL AND id != :keepId")
+    /** Episodes of a podcast that are neither queued, partly played, nor [keepId]; used when unsubscribing. */
+    @Query("SELECT * FROM episodes WHERE podcastId = :podcastId AND NOT $KEPT AND id != :keepId")
     suspend fun unqueuedForPodcast(podcastId: Long, keepId: String): List<Episode>
 
-    @Query("DELETE FROM episodes WHERE podcastId = :podcastId AND queuePosition IS NULL AND id != :keepId")
+    @Query("DELETE FROM episodes WHERE podcastId = :podcastId AND NOT $KEPT AND id != :keepId")
     suspend fun deleteUnqueuedForPodcast(podcastId: Long, keepId: String)
 
     @Query("$EPISODE_JOIN WHERE e.id = :id")
