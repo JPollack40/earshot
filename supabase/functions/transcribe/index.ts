@@ -156,10 +156,10 @@ async function handle(req: Request): Promise<Response> {
 }
 
 /**
- * Phase 16: the kill switch (public.app_config, 010_safe_updates.sql). Returns the "paused" message when
- * Serena has switched [flag] off, else null. A failed or missing read never pauses anything.
+ * Phase 16: Serena's switches (public.app_config, 010_safe_updates.sql), read once per request.
+ * Null when it can't be read: then nothing is paused and the secrets' models are used.
  */
-async function pausedMessage(base: string, apikey: string, flag: string): Promise<string | null> {
+async function readAppConfig(base: string, apikey: string): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(`${base}/rest/v1/app_config?id=eq.1&select=*`, { headers: { apikey }, signal: AbortSignal.timeout(5_000) });
     if (!res.ok) {
@@ -167,20 +167,24 @@ async function pausedMessage(base: string, apikey: string, flag: string): Promis
       return null;
     }
     const rows = await res.json() as Record<string, unknown>[];
-    const c = rows?.[0];
-    if (c && c[flag] === false) return String(c.paused_message || "Paused for now.");
+    return rows?.[0] ?? null;
   } catch (_) {
-    // offline or table missing: carry on
+    return null; // offline or table missing: carry on
   }
-  return null;
 }
+
+/** The paused message when [flag] is switched off in [cfg], else null. */
+function pausedBy(cfg: Record<string, unknown> | null, flag: string): string | null {
+  return cfg && cfg[flag] === false ? String(cfg.paused_message || "Paused for now.") : null;
+}
+
 
 if (typeof Deno !== "undefined") {
   Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
     if (req.method !== "POST") return json({ error: "Use POST" }, 405);
     if (!(await signedIn(req))) return json({ error: "Sign in first" }, 401);
-    const paused = await pausedMessage(Deno.env.get("SUPABASE_URL") ?? "", req.headers.get("apikey") ?? "", "transcribe_on");
+    const paused = pausedBy(await readAppConfig(Deno.env.get("SUPABASE_URL") ?? "", req.headers.get("apikey") ?? ""), "transcribe_on");
     if (paused) return json({ error: paused, paused: true }, 503);
     try {
       return await handle(req);

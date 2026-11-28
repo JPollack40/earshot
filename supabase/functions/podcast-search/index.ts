@@ -39,10 +39,8 @@ function hasProjectKey(req: Request): boolean {
       // not set or not JSON: ignore
     }
   }
-  for (const name of ["SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
-    const v = Deno.env.get(name);
-    if (v) known.push(v);
-  }
+  // Phase 16: the legacy anon / service_role keys are no longer accepted (Supabase retires them in 2027;
+  // every Earshot build since 0.9 sends the publishable key).
   return known.includes(sent);
 }
 

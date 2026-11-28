@@ -30,15 +30,16 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
 }
 
+/** Phase 16: the new secret key first; the legacy service_role key only while no secret key exists. */
 function serviceKey(): string {
-  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (legacy) return legacy;
   try {
     const keys = Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>);
     if (keys.length) return keys[0];
   } catch (_) {
     // not set
   }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
   throw new Error("No service role / secret key in the function's environment");
 }
 
@@ -181,6 +182,10 @@ async function notify(added: Added[], errors: string[]): Promise<number> {
 
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-3.8-flash"; // same default as the "ai" function
+const DEFAULT_FALLBACK_MODEL = "gemini-3.5-flash-lite"; // phase 16
+// Phase 16: app_config.gemini_model / gemini_fallback_model win over the secrets (read in titleBookmarks).
+let cfgMain = "";
+let cfgFallback = "";
 const TITLES_PER_RUN = 10;
 
 interface TitleTodo { user_id: string; id: string; episode_id: string; episode_title: string; podcast_title: string; passage: string }
@@ -189,8 +194,8 @@ interface TitleTodo { user_id: string; id: string; episode_id: string; episode_t
 async function geminiTitle(todo: TitleTodo): Promise<string> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY secret is not set");
-  const main = Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
-  const light = Deno.env.get("GEMINI_FALLBACK_MODEL");
+  const main = cfgMain || Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
+  const light = cfgFallback || Deno.env.get("GEMINI_FALLBACK_MODEL") || DEFAULT_FALLBACK_MODEL;
   const models = light && light !== main ? [light, main] : [main];
   const context = [todo.podcast_title ? `Podcast: ${todo.podcast_title}` : "", todo.episode_title ? `Episode: ${todo.episode_title}` : ""].filter(Boolean).join("\n");
   const prompt =
@@ -226,8 +231,10 @@ async function geminiTitle(todo: TitleTodo): Promise<string> {
 async function titleBookmarks(deadline: number, errors: string[]): Promise<number> {
   // Phase 16: Serena's kill switch (app_config.ai_on, 010_safe_updates.sql). A failed read changes nothing.
   try {
-    const cfg = await db("app_config?id=eq.1&select=ai_on") as { ai_on?: boolean }[];
+    const cfg = await db("app_config?id=eq.1&select=ai_on,gemini_model,gemini_fallback_model") as { ai_on?: boolean; gemini_model?: string | null; gemini_fallback_model?: string | null }[];
     if (cfg?.[0]?.ai_on === false) return 0;
+    cfgMain = cfg?.[0]?.gemini_model?.trim() ?? "";
+    cfgFallback = cfg?.[0]?.gemini_fallback_model?.trim() ?? "";
   } catch (_) {
     // 010 not run yet: carry on
   }
