@@ -58,6 +58,7 @@ class EarshotApp : Application() {
         getSystemService(NotificationManager::class.java)?.run {
             createNotificationChannel(NotificationChannel(CHANNEL_DOWNLOADS, "Downloads", NotificationManager.IMPORTANCE_LOW))
             createNotificationChannel(NotificationChannel(CHANNEL_TRANSCRIPTS, "Transcribing", NotificationManager.IMPORTANCE_LOW))
+            createNotificationChannel(NotificationChannel(CHANNEL_DRIVE, "After a drive", NotificationManager.IMPORTANCE_LOW)) // phase 20
         }
         RefreshWorker.schedule(this)
         CleanupWorker.schedule(this)
@@ -110,5 +111,6 @@ class EarshotApp : Application() {
     companion object {
         const val CHANNEL_DOWNLOADS = "downloads"
         const val CHANNEL_TRANSCRIPTS = "transcripts"
+        const val CHANNEL_DRIVE = "drive"
     }
 }
