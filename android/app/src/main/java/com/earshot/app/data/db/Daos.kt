@@ -361,6 +361,13 @@ interface EpisodeDao {
     )
     suspend fun setPlayed(id: String, played: Boolean)
 
+    /** Phase 16 Undo: puts an episode's played / position / New Episodes state back. */
+    @Query("UPDATE episodes SET played = :played, positionMs = :positionMs, inInbox = :inInbox, $TOUCH WHERE id = :id")
+    suspend fun restoreState(id: String, played: Boolean, positionMs: Long, inInbox: Boolean)
+
+    @Query("UPDATE episodes SET positionMs = :positionMs, $TOUCH WHERE id = :id")
+    suspend fun restorePosition(id: String, positionMs: Long)
+
     /**
      * Marks many episodes played at once (phase 7b, "mark older/newer played"). Callers leave queued
      * episodes out, so the queue isn't touched. Keep [ids] to 500 or fewer (SQLite's variable limit).

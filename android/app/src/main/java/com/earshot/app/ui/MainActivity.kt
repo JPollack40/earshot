@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.collectLatest
 import com.earshot.app.ui.screens.AddScreen
 import com.earshot.app.ui.screens.BookmarksScreen
 import com.earshot.app.ui.screens.TranscriptScreen
@@ -120,7 +121,16 @@ fun EarshotRoot(vm: AppViewModel) {
     val openPlayingPodcast: () -> Unit = { current?.episode?.podcastId?.let(vm::openPodcastPage) }
 
     LaunchedEffect(Unit) {
-        vm.messages.collect { snackbar.showSnackbar(it) }
+        // Phase 16: collectLatest, so a new message replaces the one showing (quick triage doesn't queue Undos).
+        vm.messages.collectLatest { m ->
+            // Undo stays up a little longer.
+            val r = snackbar.showSnackbar(
+                m.text,
+                actionLabel = m.actionLabel,
+                duration = if (m.actionLabel != null) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
+            )
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) m.onAction?.invoke()
+        }
     }
     val context = LocalContext.current
     LaunchedEffect(Unit) {

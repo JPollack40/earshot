@@ -302,10 +302,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // A channel (not a SharedFlow) so messages sent while the UI is away, e.g. behind the file
     // picker, are queued and shown on return instead of being dropped.
-    private val _messages = Channel<String>(Channel.BUFFERED)
-    val messages: Flow<String> = _messages.receiveAsFlow()
+    private val _messages = Channel<UiMessage>(Channel.BUFFERED)
+    val messages: Flow<UiMessage> = _messages.receiveAsFlow()
     private fun say(msg: String) {
-        _messages.trySend(msg)
+        _messages.trySend(UiMessage(msg))
+    }
+
+    /** Phase 16: a message with an Undo button (shown a little longer). */
+    private fun sayWithUndo(msg: String, undo: suspend () -> Unit) {
+        _messages.trySend(UiMessage(msg, "Undo") { viewModelScope.launch { undo() } })
+    }
+
+    /** Runs a triage action on [ids] and offers Undo, which puts their played/queue/New state back. */
+    private fun undoable(ids: List<String>, message: (Int) -> String?, action: suspend () -> Int) {
+        viewModelScope.launch {
+            val before = repo.snapshotEpisodes(ids)
+            val n = action()
+            val text = message(n) ?: return@launch
+            if (n > 0) sayWithUndo(text) {
+                repo.restoreEpisodes(before) { app.sync.sync("undo") }
+                app.sync.request("undo")
+            } else say(text)
+        }
     }
 
     // ---- Phase 9: updates and backup ----
@@ -671,23 +689,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDownload(item: EpisodeWithPodcast) {
-        viewModelScope.launch { repo.deleteDownload(item.episode.id) }
+        viewModelScope.launch {
+            repo.deleteDownload(item.episode.id)
+            sayWithUndo("Download deleted") { repo.download(item.episode.id) } // Undo downloads it again
+        }
     }
 
     fun setPlayed(item: EpisodeWithPodcast, played: Boolean) {
-        viewModelScope.launch {
+        undoable(listOf(item.episode.id), { if (played) "Marked played" else "Marked unplayed" }) {
             repo.setPlayed(item.episode.id, played)
             if (played) app.cleanupDownloads("marked played")
+            1
         }
     }
 
     /** "Mark older/newer played" (phase 7b): one batch, then one sync and one download cleanup. */
     fun markPlayed(ids: List<String>) {
         if (ids.isEmpty()) return
-        viewModelScope.launch {
+        undoable(ids, { n -> "Marked $n episode${if (n == 1) "" else "s"} played" }) {
             val n = repo.markPlayed(ids)
-            say("Marked $n episode${if (n == 1) "" else "s"} played")
             if (n > 0) app.cleanupDownloads("marked played")
+            n
         }
     }
 
@@ -712,7 +734,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun moveToBottom(item: EpisodeWithPodcast) = queueLast(item)
 
     fun removeFromQueue(item: EpisodeWithPodcast) {
-        viewModelScope.launch { repo.removeFromQueue(item.episode.id) }
+        undoable(listOf(item.episode.id), { "Removed from the queue" }) {
+            repo.removeFromQueue(item.episode.id)
+            1
+        }
     }
 
     fun reorderQueue(ids: List<String>) {
@@ -720,13 +745,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun archive(item: EpisodeWithPodcast) {
-        viewModelScope.launch { repo.archive(item.episode.id) }
+        undoable(listOf(item.episode.id), { "Archived" }) {
+            repo.archive(item.episode.id)
+            1
+        }
     }
 
     fun archiveInbox() {
         viewModelScope.launch {
-            val n = repo.archiveInbox()
-            say("Archived $n episode${if (n == 1) "" else "s"}")
+            val ids = repo.episodes.getInbox().map { it.episode.id }
+            undoable(ids, { n -> "Archived $n episode${if (n == 1) "" else "s"}" }) { repo.archiveInbox() }
         }
     }
 
@@ -898,7 +926,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repo.deletePlaylist(id)
             if (backStack.lastOrNull() == Screen.PlaylistDetail(id)) back()
-            say("Playlist deleted")
+            sayWithUndo("Playlist deleted") { repo.restorePlaylist(id) }
         }
     }
 
@@ -1003,7 +1031,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteBookmark(b: Bookmark) {
         viewModelScope.launch {
             transcripts.deleteBookmark(b)
-            say("Bookmark deleted")
+            sayWithUndo("Bookmark deleted") { transcripts.updateBookmark(b.copy(deleted = false)) }
         }
     }
 
@@ -1109,3 +1137,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (currentAd.value != null) skipAd() else player.skipBy(currentPrefs.value.skipForwardMs)
     }
 }
+
+/** Phase 16: a snackbar message, optionally with one action (Undo). */
+class UiMessage(val text: String, val actionLabel: String? = null, val onAction: (() -> Unit)? = null)
