@@ -229,6 +229,23 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
 
             JumpBackChip(vm)
             SkipAdChip(vm)
+            // Phase 19 (A2): back after 3 days or more, partway in: offer a recap of what was heard.
+            val away = remember(episode?.episode?.id) {
+                episode?.episode?.let { e -> e.lastPlayedAt > 0 && e.positionMs > 5 * 60_000 && System.currentTimeMillis() - e.lastPlayedAt > 3 * 24 * 3600_000L } == true
+            }
+            val awayEpisode = episode
+            if (away && awayEpisode != null) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    AssistChip(
+                        onClick = {
+                            vm.catchMeUp(awayEpisode)
+                            aiDialog = true
+                        },
+                        label = { Text("Catch me up on what I've heard") },
+                        leadingIcon = { Icon(Icons.Filled.Replay, null, Modifier.size(18.dp)) },
+                    )
+                }
+            }
             val adNow by vm.currentAd.collectAsStateWithLifecycle()
 
             // ---- Transport ----

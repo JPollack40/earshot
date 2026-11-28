@@ -237,6 +237,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---- Phase 19 (A2): Catch me up ----
+    /** The recap, its episode and whether it's "last 5 minutes" (lastMinutes > 0). */
+    var recap by mutableStateOf<Triple<String, Int, com.earshot.app.data.ai.EpisodeSummary>?>(null)
+        private set
+    var recapping by mutableStateOf(false)
+        private set
+    var recapError by mutableStateOf<String?>(null)
+        private set
+
+    fun catchMeUp(item: EpisodeWithPodcast, lastMinutes: Int = 0) {
+        if (recapping) return
+        val upTo = nowPlaying.value.takeIf { it.episodeId == item.episode.id }?.positionMs ?: item.episode.positionMs
+        recapping = true
+        recapError = null
+        viewModelScope.launch {
+            try {
+                recap = Triple(item.episode.id, lastMinutes, app.ai.recap(item.episode, item.podcastTitle, upTo, lastMinutes))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                recapError = e.message ?: "That didn't work"
+            } finally {
+                recapping = false
+            }
+        }
+    }
+
+    fun recapFor(episodeId: String) = recap?.takeIf { it.first == episodeId }
+
     /** The answer, only if it's for [episodeId] (a new episode starts a fresh question). */
     fun answerFor(episodeId: String) = askAnswer?.takeIf { askFor == episodeId }
 

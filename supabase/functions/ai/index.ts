@@ -273,16 +273,16 @@ Deno.serve(async (req: Request) => {
   if (!who.ok) return json({ error: "Sign in first" }, 401);
   await who.body?.cancel();
 
-  let body: { episodeId?: string; kind?: string; title?: string; podcast?: string; question?: string; startMs?: number; endMs?: number };
+  let body: { episodeId?: string; kind?: string; title?: string; podcast?: string; question?: string; startMs?: number; endMs?: number; upToMs?: number; lastMinutes?: number };
   try {
     body = await req.json();
   } catch (_) {
     return json({ error: "Expected JSON" }, 400);
   }
   const episodeId = String(body.episodeId ?? "");
-  const kind = body.kind as Kind | "ask" | "title";
-  if (!episodeId || !(kind in PROMPTS || kind === "ask" || kind === "title")) {
-    return json({ error: "episodeId and kind (chapters, summary, ads, ask or title) are required" }, 400);
+  const kind = body.kind as Kind | "ask" | "title" | "recap";
+  if (!episodeId || !(kind in PROMPTS || kind === "ask" || kind === "title" || kind === "recap")) {
+    return json({ error: "episodeId and kind (chapters, summary, ads, ask, title or recap) are required" }, 400);
   }
 
   const cfg = await readAppConfig(base, apikey);
@@ -349,6 +349,34 @@ Deno.serve(async (req: Request) => {
     if (!title) return json({ error: "Gemini didn't give a title. Try again." }, 502);
     console.log(`Gemini ${g.model}: title for ${episodeId} OK`);
     return json({ kind, data: { title }, model: g.model });
+  }
+
+  // Phase 19 (A2): "Catch me up": a recap of only the part already heard (no spoilers), or of the last few
+  // minutes before [upToMs] (lastMinutes). Not saved: it depends on where the listener is.
+  if (kind === "recap") {
+    const upTo = Math.max(0, Number(body.upToMs ?? 0));
+    if (upTo < 30_000) return json({ error: "Nothing to recap yet: listen a little first." }, 400);
+    const lastMinutes = Math.min(30, Math.max(0, Number(body.lastMinutes ?? 0)));
+    const from = lastMinutes > 0 ? Math.max(0, upTo - lastMinutes * 60_000) : 0;
+    const heard = t.segments.filter((x) => x.s >= from && x.s <= upTo);
+    if (!heard.length) return json({ error: "No transcript for the part you've heard" }, 400);
+    const prompt =
+      (lastMinutes > 0
+        ? `Recap the last ${lastMinutes} minutes of this podcast episode for a listener who drifted off. `
+        : "Recap this podcast episode up to where the listener stopped, for someone coming back to it after a few days. ") +
+      "Use only the transcript below, which ends where they are now: never mention or guess anything after it. " +
+      "Write 1 to 3 short paragraphs in plain language (no headings, no bullet characters, no Markdown), ending with what was " +
+      "being discussed just now. Then list up to 5 key moments, each with the transcript timestamp where it starts and one " +
+      "sentence describing it. Leave out ads.\n" +
+      `Timestamps are h:mm:ss or m:ss, exactly as written at the start of the transcript lines.\n\n${context}\n\nTranscript so far:\n${transcriptText(heard)}`;
+    const g = await gemini(key, prompt, SCHEMAS.summary, 0.2);
+    if (g.error) return g.error;
+    const o = await answerOf(g.res, g.model);
+    if (!o) return json({ error: "Gemini's answer wasn't readable. Try again." }, 502);
+    const data = normalise("summary", o, upTo) as { summary: string; points: { at: number }[] };
+    data.points = data.points.filter((p) => p.at >= from && p.at <= upTo);
+    console.log(`Gemini ${g.model}: recap for ${episodeId} OK`);
+    return json({ kind, data, model: g.model });
   }
 
   const prompt = `${PROMPTS[kind]}\nTimestamps are h:mm:ss or m:ss, exactly as written at the start of the transcript lines.\n\n${context}\n\nTranscript:\n${transcriptText(t.segments)}`;
