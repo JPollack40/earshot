@@ -71,6 +71,13 @@ import kotlin.math.abs
 
 private const val TAG = "Earshot"
 
+/** Apps that send voice requests: the Google app (Assistant and Gemini), Android Auto and the car assistant. */
+private val VOICE_CONTROLLERS = setOf(
+    "com.google.android.googlequicksearchbox",
+    "com.google.android.projection.gearhead",
+    "com.google.android.carassistant",
+)
+
 /**
  * Owns the ExoPlayer and the media session. The app, the notification, lock screen, headset buttons
  * and Android Auto all talk to this session.
@@ -851,7 +858,32 @@ class PlaybackService : MediaLibraryService() {
                         .add(PlayerButtons.aiSweepCommand)
                         .build(),
                 )
-            return Futures.immediateFuture(builder.build())
+            // Voice "play X on Earshot" in Android Auto comes from the Google app as a play-from-search.
+            // Media3 drops it without a word if that controller can't set media items, so give the
+            // Google voice and car apps full player control.
+            if (controller.packageName in VOICE_CONTROLLERS) {
+                builder.setAvailablePlayerCommands(
+                    defaults.availablePlayerCommands.buildUpon().addAllCommands().build(),
+                )
+            }
+            val result = builder.build()
+            Log.i(
+                TAG,
+                "Controller ${controller.packageName} v${controller.controllerVersion} trusted=${controller.isTrusted} " +
+                    "setItem=${result.availablePlayerCommands.contains(Player.COMMAND_SET_MEDIA_ITEM)}",
+            )
+            return Futures.immediateFuture(result)
+        }
+
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int {
+            if (controller.packageName in VOICE_CONTROLLERS) {
+                Log.i(TAG, "Voice: command $playerCommand from ${controller.packageName}")
+            }
+            return SessionResult.RESULT_SUCCESS
         }
 
         override fun onCustomCommand(
