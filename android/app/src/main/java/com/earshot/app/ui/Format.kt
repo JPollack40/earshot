@@ -37,6 +37,13 @@ fun formatDate(epochMs: Long): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(epochMs))
 }
 
+/** Phase 17: the speed dialog's fine-tune slider: 0.5× to 3.0× in 0.05× steps. */
+const val FINE_SPEED_MIN = 0.5f
+const val FINE_SPEED_MAX = 3.0f
+const val FINE_SPEED_STEPS = 49 // (3.0 - 0.5) / 0.05 - 1 positions between the ends
+
+fun fineSpeed(raw: Float): Float = (kotlin.math.round(raw * 20f) / 20f).coerceIn(FINE_SPEED_MIN, FINE_SPEED_MAX)
+
 fun formatSpeed(speed: Float): String {
     val s = if (speed % 1f == 0f) "%.1f".format(speed) else "%.2f".format(speed).trimEnd('0')
     return "$s×"

@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -57,6 +59,10 @@ import com.earshot.app.data.Settings
 import com.earshot.app.data.db.Podcast
 import com.earshot.app.playback.skipLengthName
 import com.earshot.app.playback.skipLengthShort
+import com.earshot.app.ui.FINE_SPEED_MAX
+import com.earshot.app.ui.FINE_SPEED_MIN
+import com.earshot.app.ui.FINE_SPEED_STEPS
+import com.earshot.app.ui.fineSpeed
 import com.earshot.app.ui.formatSpeed
 
 /** Player skip button: tap to skip, long-press to choose the length. */
@@ -187,6 +193,21 @@ fun AudioDialog(
                             label = { Text(formatSpeed(s)) },
                         )
                     }
+                }
+                // Phase 17: slide to fine-tune (0.05× steps), applied when you let go.
+                var fine by remember(prefs.speed) { mutableStateOf(prefs.speed) }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                    Text("Fine-tune", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(72.dp))
+                    // The SliderState overload, as the scrubber (the value-based one is deprecated).
+                    val fineState = remember { SliderState(prefs.speed.coerceIn(FINE_SPEED_MIN, FINE_SPEED_MAX), FINE_SPEED_STEPS, FINE_SPEED_MIN..FINE_SPEED_MAX) }
+                    fineState.value = fine.coerceIn(FINE_SPEED_MIN, FINE_SPEED_MAX)
+                    Slider(
+                        state = fineState,
+                        onValueChange = { fine = fineSpeed(it) },
+                        onValueChangeFinished = { if (fine != prefs.speed) onSpeed(fine) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(formatSpeed(fine), style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(52.dp).padding(start = 8.dp))
                 }
                 SwitchLine("Smart Speed", "Shortens silences in speech.", prefs.smartSpeed, onSmartSpeed)
                 SwitchLine("Voice Boost", "Evens out loudness and lifts quiet voices.", prefs.voiceBoost, onVoiceBoost)
