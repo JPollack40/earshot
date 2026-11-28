@@ -30,15 +30,16 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
 }
 
+/** Phase 16: the new secret key first; the legacy service_role key only while no secret key exists. */
 function serviceKey(): string {
-  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (legacy) return legacy;
   try {
     const keys = Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>);
     if (keys.length) return keys[0];
   } catch (_) {
     // not set
   }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
   throw new Error("No service role / secret key in the function's environment");
 }
 

@@ -37,9 +37,10 @@ Edge Functions > the function > Code, paste the file, Deploy updates. Secrets li
 - **Verify JWT is off** for `ai`, `transcribe`, `browse`, `feed-proxy`, `podcast-search` and `new-episodes`.
   The built-in check only understands the legacy JWT keys; each function checks the sign-in (or its secret)
   itself.
-- No function accepts the legacy `anon` / `service_role` keys from callers any more. The service-role key is
-  still read from the function's own environment where `SUPABASE_SECRET_KEYS` isn't set, so set up a secret
-  key (Project Settings > API Keys) before deactivating the legacy keys.
+- No function accepts the legacy `anon` / `service_role` keys from callers any more. `browse` and `new-episodes`
+  use the new secret key (`SUPABASE_SECRET_KEYS`, provided by Supabase once a secret key exists under Project
+  Settings > API Keys) and fall back to the legacy service_role key only when there is none, so check a secret
+  key exists before deactivating the legacy keys.
 
 ## Tests
 
