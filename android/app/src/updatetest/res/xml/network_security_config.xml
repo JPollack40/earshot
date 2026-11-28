@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 16, update test build only: plain http to the phone's own 127.0.0.1, which "adb reverse"
+     forwards to the test server on the VM. Everything else stays https-only. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

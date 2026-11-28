@@ -35,19 +35,49 @@ Secrets are encrypted and never shown in logs, even though the repo is public.
 
 ## Making a release
 
-Versions come from the tag: `v0.8.0` becomes version name `0.8.0` and version code `800`
-(major × 10000 + minor × 100 + patch). Each release needs a higher number than the last.
+Versions come from the tag (phase 16): `v1.2.0` is a **stable** release, `v1.2.0-beta.1` a **beta**.
+The version code is MAJOR × 1,000,000 + MINOR × 10,000 + PATCH × 100 + n, where n is the beta number
+(1 to 98) or 99 for stable: `v1.2.0-beta.1` is 1020001, `v1.2.0` is 1020099. So each beta sorts below its
+stable, and every new code is above the old scheme's (v1.0.0 was 10000). Minor and patch go up to 99.
 
 ```
 cd C:\repos\earshot
 git checkout main
 git pull
-git tag v0.8.0
-git push origin v0.8.0
+git tag v1.2.0-beta.1
+git push origin v1.2.0-beta.1
 ```
 
 GitHub Actions then runs the unit tests, builds and signs the APK, checks the signature, and publishes a
-Release at github.com/JPollack40/earshot/releases with `earshot-0.8.0.apk` and its SHA-256.
+Release at github.com/JPollack40/earshot/releases with `earshot-<version>.apk` and its SHA-256. A beta is
+published as a **pre-release** (never "latest"), so only people with Settings > Updates > **Get beta
+updates** on are offered it. A stable release is marked "latest" explicitly, and everyone is offered it.
+
+### The rhythm (phase 16)
+
+- Ring 0 is Serena, on every build. Ring 1 is 2 or 3 willing friends with Get beta updates on. Ring 2 is
+  everyone else, on stable releases.
+- Merge fixes to main whenever; publish them as betas (`-beta.1`, `-beta.2`, …).
+- Promote to stable every 4 to 6 weeks: tag the same commit `vX.Y.Z`, after at least 7 days in beta with
+  no new crash reports (Supabase > Table Editor > `crash_reports`).
+- Break the rhythm only for a crash, data-loss or security fix.
+- What's new: 3 to 6 plain bullets grouped New / Fixed / Changed (edit the release on GitHub).
+- Turn on **immutable releases** once (repo Settings > General > Releases > "Enable release immutability"),
+  so a published APK can't be swapped afterwards.
+
+### Pulling a bad release
+
+Android refuses downgrades, so a release is never "undone": in Supabase > Table Editor > `app_config`, set
+`hold_version` to the last good version (the update check then offers nothing newer), fix it, and ship a
+higher version. `min_supported_version` makes older release builds show a "Please update" warning.
+
+### One-tap update
+
+The app's Update button downloads the APK, checks it against the release's `.sha256` file, and installs it
+with Android's PackageInstaller. The first time, Android asks to allow "Install unknown apps" for Earshot and
+to confirm; on Android 14+ Earshot then owns its updates, so later ones may install with no prompt. To test
+it without a release, see `android/tools/update-test-server.mjs` and the phase 16 test steps (a side-by-side
+"Earshot update test" app that updates from the VM).
 
 **Test run without a release:** Actions tab > **Android release** > **Run workflow** (on any branch). The APK is
 kept as a downloadable artifact on that run's page for 90 days. Without the secrets it is unsigned

@@ -1,6 +1,7 @@
 # Builds a release-signed Android APK (phase 8).
 #
-# - Push a tag like v0.8.0  -> runs the unit tests, builds a signed APK and publishes it as a GitHub Release.
+# - Push a tag like v1.2.0  -> runs the unit tests, builds a signed APK and publishes it as a GitHub Release.
+# - Push a tag like v1.2.0-beta.1 -> the same, published as a pre-release (beta ring, phase 16).
 # - Actions tab > "Android release" > Run workflow -> same build, kept only as a downloadable artifact (no Release).
 #
 # Needs four repository secrets (Settings > Secrets and variables > Actions), see RELEASES.md:
@@ -38,23 +39,37 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Phase 16: v1.2.0 is a stable release; v1.2.0-beta.3 a beta (a GitHub pre-release, offered only to
+      # people with Settings > About > Get beta updates on). Version code MAJOR*1,000,000 + MINOR*10,000 +
+      # PATCH*100 + n, with n = the beta number (1-98) or 99 for stable, so each beta orders below its stable
+      # and every new code is above the old scheme's (1.0.0 was 10000). Same rule as Updates.order() in the app.
       - name: Version from tag
         id: version
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             name="${GITHUB_REF_NAME#v}"
-            if [[ ! "$name" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-              echo "::error::Tag must look like v1.2.3 (got $GITHUB_REF_NAME)"; exit 1
+            if [[ ! "$name" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-beta\.([0-9]+))?$ ]]; then
+              echo "::error::Tag must look like v1.2.3 or v1.2.3-beta.4 (got $GITHUB_REF_NAME)"; exit 1
             fi
-            code=$(( BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3] ))
+            major=${BASH_REMATCH[1]}; minor=${BASH_REMATCH[2]}; patch=${BASH_REMATCH[3]}; beta=${BASH_REMATCH[5]}
+            if (( 10#$minor > 99 || 10#$patch > 99 )); then echo "::error::Minor and patch must be 0-99"; exit 1; fi
+            if [[ -n "$beta" ]]; then
+              if (( 10#$beta < 1 || 10#$beta > 98 )); then echo "::error::Beta number must be 1-98"; exit 1; fi
+              n=$(( 10#$beta )); prerelease=true
+            else
+              n=99; prerelease=false
+            fi
+            code=$(( 10#$major * 1000000 + 10#$minor * 10000 + 10#$patch * 100 + n ))
           else
             name="0.0.0-ci.${GITHUB_RUN_NUMBER}"
             code=1
+            prerelease=false
           fi
           echo "EARSHOT_VERSION_NAME=$name" >> "$GITHUB_ENV"
           echo "EARSHOT_VERSION_CODE=$code" >> "$GITHUB_ENV"
           echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "Version $name (code $code)"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "Version $name (code $code, prerelease $prerelease)"
 
       # The publishable Supabase key is public by design and already committed for the web player,
       # so the app build reads the same two values from web/src/config.ts.
@@ -123,7 +138,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         working-directory: .
         run: |
+          # Phase 16: betas are pre-releases and never "latest"; a stable release is always made "latest"
+          # explicitly (GitHub otherwise guesses by date and version).
+          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
+            channel=(--prerelease --latest=false)
+            notes="Beta of the Android app (for people with Settings > About > Get beta updates on). Release-signed."
+          else
+            channel=(--latest)
+            notes="Android app, release-signed. Install: download the .apk on your phone and open it (allow installs from this source when asked)."
+          fi
           gh release create "$GITHUB_REF_NAME" \
             "${{ steps.apk.outputs.path }}" "${{ steps.apk.outputs.path }}.sha256" \
             --title "Earshot ${{ steps.version.outputs.name }}" \
-            --notes "Android app, release-signed. Install: download the .apk on your phone and open it (allow installs from this source when asked)."
+            "${channel[@]}" \
+            --notes "$notes"

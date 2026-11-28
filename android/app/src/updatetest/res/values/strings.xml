@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 16: the side-by-side one-tap update test build gets its own name. -->
+<resources>
+    <string name="app_name">Earshot update test</string>
+</resources>

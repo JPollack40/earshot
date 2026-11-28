@@ -51,6 +51,8 @@ android {
         buildConfigField("String", "FIREBASE_APP_ID", quoted(firebase["appId"].orEmpty()))
         buildConfigField("String", "FIREBASE_API_KEY", quoted(firebase["apiKey"].orEmpty()))
         buildConfigField("String", "FIREBASE_SENDER_ID", quoted(firebase["senderId"].orEmpty()))
+        // Phase 16: where the update check reads releases; empty = GitHub (all real builds).
+        buildConfigField("String", "UPDATE_SOURCE", "\"\"")
     }
 
     // Release signing (phase 8). The key never goes in git (*.jks and keystore.properties are gitignored).
@@ -87,6 +89,16 @@ android {
         // Phase 15: the release build (R8 and all) installed BESIDE the normal app, to test shrinking
         // without touching the installed app, its library or its signature. Signed with the debug key,
         // app id com.jpollack.earshot.r8test, shows as "Earshot R8 test". Build: gradlew assembleR8test.
+        // Phase 16: a debug build installed BESIDE the normal app, to test one-tap update on Serena's phone
+        // without public test releases. It reads its updates from http://127.0.0.1:8000/ (the VM's test
+        // server, reached through "adb reverse"), not GitHub. App id com.jpollack.earshot.updatetest,
+        // shows as "Earshot update test". Build: see docs/UPDATE_TEST.md.
+        create("updatetest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".updatetest"
+            matchingFallbacks += "debug"
+            buildConfigField("String", "UPDATE_SOURCE", "\"http://127.0.0.1:8000/\"")
+        }
         create("r8test") {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
