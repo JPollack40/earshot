@@ -86,3 +86,28 @@ bring the library, test, then uninstall it.
 
 Each release run also keeps R8's `mapping.txt` as a workflow artifact (`earshot-<version>-mapping`,
 not on the release page), which turns a shrunk crash report back into readable class names.
+
+## Server backup (phase 15)
+
+`.github/workflows/server-backup.yml` dumps the Supabase database every Monday (and on demand:
+Actions > Server backup > Run workflow), encrypts it with your passphrase and keeps it for 90 days as
+a workflow artifact (Actions > the run > Artifacts). The repository is public, so the file is only
+useful with the passphrase.
+
+One-time setup, two repository secrets (Settings > Secrets and variables > Actions > New repository secret):
+
+- `SUPABASE_DB_URL`: Supabase > your project > **Connect** > **Session pooler** connection string,
+  with `[YOUR-PASSWORD]` replaced by the database password (Project Settings > Database > Reset
+  database password if you don't have it; the apps don't use it, so resetting is harmless).
+- `BACKUP_PASSPHRASE`: a long passphrase that only you keep, in your password manager.
+
+To open a backup (on the VM, Git Bash has gpg): download the artifact zip, unzip it, then
+
+```
+gpg -o earshot-db.sql.gz -d earshot-db-<date>.sql.gz.gpg
+```
+
+It holds Earshot's tables (schema and data) and the user accounts. To restore into a new Supabase
+project: create the users first (or restore `auth.users` from the dump's second part), then run
+the dump with `psql "<new project's connection string>" -f earshot-db.sql` and deploy the edge
+functions and secrets again.

@@ -1,0 +1,66 @@
+# Phase 15: weekly backup of the Supabase database (the Free plan keeps no backups).
+#
+# The dump is encrypted before it leaves the runner (this repository is public, and anyone signed in
+# to GitHub can download a public repository's workflow files), and kept as a workflow artifact for
+# 90 days. Restore steps: RELEASES.md, "Server backup".
+#
+# Repository secrets (Settings > Secrets and variables > Actions):
+#   SUPABASE_DB_URL     Supabase > Connect > Session pooler connection string, with the database
+#                       password filled in (the direct connection is IPv6 only; GitHub's runners aren't).
+#   BACKUP_PASSPHRASE   a long passphrase only you keep (a password manager). Without it the backup
+#                       can't be opened.
+name: Server backup
+
+on:
+  schedule:
+    - cron: "17 7 * * 1" # Mondays 07:17 UTC (2:17 AM New York)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check the secrets are set
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$DB" ] || [ -z "$PASS" ]; then
+            echo "::error::Set the SUPABASE_DB_URL and BACKUP_PASSPHRASE repository secrets first."; exit 1
+          fi
+
+      # pg_dump from the official Postgres image; a newer pg_dump can dump an older server.
+      - name: Dump the database
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -o pipefail
+          stamp=$(date -u +%Y%m%d-%H%M%S)
+          echo "STAMP=$stamp" >> "$GITHUB_ENV"
+          # Earshot's tables (schema and data), plus the user accounts their rows belong to.
+          docker run --rm -e DB postgres:18 sh -c '
+            pg_dump "$DB" --schema=public --no-owner --no-privileges &&
+            pg_dump "$DB" --data-only --table=auth.users --no-owner --no-privileges
+          ' | gzip -9 > "earshot-db-$stamp.sql.gz"
+          size=$(stat -c %s "earshot-db-$stamp.sql.gz")
+          echo "Dump: $size bytes"
+          if [ "$size" -lt 10000 ]; then echo "::error::The dump is suspiciously small"; exit 1; fi
+
+      - name: Encrypt
+        env:
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 \
+            -o "earshot-db-$STAMP.sql.gz.gpg" "earshot-db-$STAMP.sql.gz" 3<<<"$PASS"
+          shred -u "earshot-db-$STAMP.sql.gz"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: earshot-db-${{ env.STAMP }}
+          path: earshot-db-${{ env.STAMP }}.sql.gz.gpg
+          retention-days: 90
+          if-no-files-found: error
