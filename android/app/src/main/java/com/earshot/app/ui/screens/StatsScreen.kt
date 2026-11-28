@@ -378,9 +378,13 @@ private fun Tiles(r: StatsResult, comparedWith: String, streaks: Streaks?) {
             Tile("Episodes", r.episodes.toString(), r.finished?.let { "$it finished" }, Modifier.weight(1f))
             Tile("Podcasts", r.podcasts.toString(), null, Modifier.weight(1f))
         }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val smartSaved = remember(r.from, r.to) { com.earshot.app.data.stats.SmartSavedLog.savedBetween(context, r.from, r.to) }
         val facts = listOfNotNull(
             streaks?.takeIf { it.current > 0 }?.let { "Streak: ${it.current} day${if (it.current == 1) "" else "s"} in a row (best ${it.longest})" },
             r.savedBySpeedMs.takeIf { it >= 60_000 }?.let { "Saved ${formatTotal(it)} by playing faster (average ${formatSpeed(r.averageSpeed.roundSpeed())})" },
+            // Phase 22: Smart Speed's trimmed silences, recorded per day on this phone from now on.
+            smartSaved.takeIf { it >= 60_000 }?.let { "Smart Speed trimmed ${formatTotal(it)} of silence (this phone)" },
         )
         facts.forEach { Hint(it) }
     }

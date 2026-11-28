@@ -24,6 +24,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
+import com.earshot.app.data.Settings
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +59,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun InboxList(vm: AppViewModel, modifier: Modifier = Modifier) {
     val inbox by vm.inbox.collectAsStateWithLifecycle()
+    val swipes by vm.inboxSwipes.collectAsStateWithLifecycle()
     val now by vm.nowPlaying.collectAsStateWithLifecycle()
     var openId by remember { mutableStateOf<String?>(null) }
 
@@ -69,7 +74,7 @@ fun InboxList(vm: AppViewModel, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${inbox.size} new · swipe right to queue, left to archive",
+                    "${inbox.size} new · swipe right to ${if (swipes.first == Settings.SWIPE_QUEUE_NEXT) "play next" else "queue"}, left to ${if (swipes.second == Settings.SWIPE_MARK_PLAYED) "mark played" else "archive"}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -80,14 +85,18 @@ fun InboxList(vm: AppViewModel, modifier: Modifier = Modifier) {
         }
         items(inbox, key = { it.episode.id }) { item ->
             val isCurrent = now.episodeId == item.episode.id
-            SwipeRow(
-                startToEnd = SwipeAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Queue", MaterialTheme.colorScheme.primaryContainer) {
-                    vm.queueLast(item)
-                },
-                endToStart = SwipeAction(Icons.Filled.Archive, "Archive", MaterialTheme.colorScheme.surfaceContainerHighest) {
-                    vm.archive(item)
-                },
-            ) {
+            // Phase 22: which way does what is a setting (Settings > New Episodes swipes).
+            val right = if (swipes.first == Settings.SWIPE_QUEUE_NEXT) {
+                SwipeAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Play next", MaterialTheme.colorScheme.primaryContainer) { vm.queueNext(item) }
+            } else {
+                SwipeAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Queue", MaterialTheme.colorScheme.primaryContainer) { vm.queueLast(item) }
+            }
+            val left = if (swipes.second == Settings.SWIPE_MARK_PLAYED) {
+                SwipeAction(Icons.Filled.Archive, "Mark played", MaterialTheme.colorScheme.surfaceContainerHighest) { vm.setPlayed(item, true) }
+            } else {
+                SwipeAction(Icons.Filled.Archive, "Archive", MaterialTheme.colorScheme.surfaceContainerHighest) { vm.archive(item) }
+            }
+            SwipeRow(startToEnd = right, endToStart = left) {
                 EpisodeRow(
                     item = item,
                     showPodcast = true,
@@ -201,11 +210,17 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
             ReorderableItem(reorderState, key = item.episode.id) { isDragging ->
                 val isCurrent = now.episodeId == item.episode.id
                 Column(Modifier.background(if (isDragging) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)) {
+                    val index = local.indexOf(item)
                     SwipeRow(
                         startToEnd = null,
                         endToStart = SwipeAction(Icons.Filled.PlaylistRemove, "Remove", MaterialTheme.colorScheme.errorContainer) {
                             vm.removeFromQueue(item)
                         },
+                        // Phase 22: reorder without dragging (TalkBack's Actions menu).
+                        extra = listOfNotNull(
+                            if (index > 0) "Move up" to { vm.reorderQueue(local.map { it.episode.id }.toMutableList().apply { add(index - 1, removeAt(index)) }) } else null,
+                            if (index in 0 until local.size - 1) "Move down" to { vm.reorderQueue(local.map { it.episode.id }.toMutableList().apply { add(index + 1, removeAt(index)) }) } else null,
+                        ),
                     ) {
                         EpisodeRow(
                             item = item,
@@ -253,11 +268,16 @@ class SwipeAction(val icon: ImageVector, val label: String, val color: Color, va
 private fun SwipeRow(
     startToEnd: SwipeAction?,
     endToStart: SwipeAction?,
+    extra: List<Pair<String, () -> Unit>> = emptyList(),
     content: @Composable () -> Unit,
 ) {
     val state = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
+    // Phase 22: the swipes (and any extra actions) as TalkBack actions, so they work without swiping.
+    val actions = listOfNotNull(startToEnd, endToStart).map { a -> CustomAccessibilityAction(a.label) { a.onSwipe(); true } } +
+        extra.map { (label, run) -> CustomAccessibilityAction(label) { run(); true } }
     SwipeToDismissBox(
+        modifier = Modifier.semantics { customActions = actions },
         state = state,
         enableDismissFromStartToEnd = startToEnd != null,
         enableDismissFromEndToStart = endToStart != null,

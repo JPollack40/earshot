@@ -856,6 +856,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAppTheme(value: String) = Settings.setAppTheme(app, value)
 
+    // Phase 22: New Episodes swipes.
+    val inboxSwipes: StateFlow<Pair<String, String>> = Settings.inboxSwipes(app)
+    fun setInboxSwipes(right: String, left: String) = Settings.setInboxSwipes(app, right, left)
+
     // Phase 22: true black and text size.
     val trueBlack: StateFlow<Boolean> = Settings.trueBlack(app)
     fun setTrueBlack(on: Boolean) = Settings.setTrueBlack(app, on)

@@ -231,6 +231,7 @@ object Settings {
             TimeSaved(o.bySpeedMs + bySpeedMs, o.bySmartSpeedMs + bySmartSpeedMs).also { flow.value = it }
         }
         prefs(context).edit { putLong("saved_speed_ms", t.bySpeedMs).putLong("saved_smart_ms", t.bySmartSpeedMs) }
+        com.earshot.app.data.stats.SmartSavedLog.record(context, bySmartSpeedMs) // phase 22: per day, for Stats
     }
 
     // ---- Appearance (this phone only; not synced) ----
@@ -250,6 +251,27 @@ object Settings {
     fun setAppTheme(context: Context, value: String) {
         themeFlow(context).value = value
         prefs(context).edit { putString("app_theme", value) }
+    }
+
+    // Phase 22: what swiping a New Episodes row does. Right: end of queue or play next; left: archive or mark played.
+    const val SWIPE_QUEUE_LAST = "queue_last"
+    const val SWIPE_QUEUE_NEXT = "queue_next"
+    const val SWIPE_ARCHIVE = "archive"
+    const val SWIPE_MARK_PLAYED = "mark_played"
+
+    private var swipes: MutableStateFlow<Pair<String, String>>? = null
+
+    fun inboxSwipes(context: Context): StateFlow<Pair<String, String>> = synchronized(this) {
+        swipes ?: MutableStateFlow(
+            (prefs(context).getString("swipe_right", SWIPE_QUEUE_LAST) ?: SWIPE_QUEUE_LAST) to
+                (prefs(context).getString("swipe_left", SWIPE_ARCHIVE) ?: SWIPE_ARCHIVE),
+        ).also { swipes = it }
+    }.asStateFlow()
+
+    fun setInboxSwipes(context: Context, right: String, left: String) {
+        inboxSwipes(context)
+        swipes?.value = right to left
+        prefs(context).edit { putString("swipe_right", right).putString("swipe_left", left) }
     }
 
     // Phase 22: true black backgrounds (OLED) and text size, this phone only.

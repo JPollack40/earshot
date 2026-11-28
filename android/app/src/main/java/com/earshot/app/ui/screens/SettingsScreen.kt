@@ -97,6 +97,23 @@ fun SettingsScreen(vm: AppViewModel) {
                 { if (it == Settings.TEXT_COMFORTABLE) "Comfortable" else "Compact" },
             ) { vm.setTextSize(it) }
             divider()
+            val swipes by vm.inboxSwipes.collectAsStateWithLifecycle()
+            ChoiceRow(
+                "New Episodes: swipe right",
+                null,
+                swipes.first,
+                listOf(Settings.SWIPE_QUEUE_LAST, Settings.SWIPE_QUEUE_NEXT),
+                { if (it == Settings.SWIPE_QUEUE_NEXT) "Play next" else "End of queue" },
+            ) { vm.setInboxSwipes(it, swipes.second) }
+            divider()
+            ChoiceRow(
+                "New Episodes: swipe left",
+                null,
+                swipes.second,
+                listOf(Settings.SWIPE_ARCHIVE, Settings.SWIPE_MARK_PLAYED),
+                { if (it == Settings.SWIPE_MARK_PLAYED) "Mark played" else "Archive" },
+            ) { vm.setInboxSwipes(swipes.first, it) }
+            divider()
 
             val d by vm.playbackDefaults.collectAsStateWithLifecycle()
             SectionHeader("Playback")
