@@ -90,6 +90,8 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
     val podcast by remember(podcastId) { vm.podcast(podcastId) }.collectAsStateWithLifecycle(null)
     val episodes by remember(podcastId) { vm.episodesFor(podcastId) }.collectAsStateWithLifecycle(emptyList())
     var menuOpen by remember { mutableStateOf(false) }
+    var chapterRulesOpen by remember { mutableStateOf(false) } // phase 19 (B4)
+    if (chapterRulesOpen) ChapterRulesDialog(podcastId) { chapterRulesOpen = false }
     var confirmUnsubscribe by remember { mutableStateOf(false) }
     var showPlayback by remember { mutableStateOf(false) }
     var showRules by remember { mutableStateOf(false) }
@@ -241,6 +243,13 @@ fun PodcastScreen(vm: AppViewModel, podcastId: Long) {
                                         },
                                     )
                                 }
+                                DropdownMenuItem(
+                                    text = { Text("Skip chapters named…") },
+                                    onClick = {
+                                        menuOpen = false
+                                        chapterRulesOpen = true
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Automation (new episodes, tidy-up)") },
                                     onClick = {
@@ -538,5 +547,35 @@ private fun AdTrimDialog(current: String?, onPick: (String?) -> Unit, onDismiss:
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+/** Phase 19 (B4): "always skip chapters whose title contains ..." for this show. */
+@Composable
+private fun ChapterRulesDialog(podcastId: Long, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var text by remember { mutableStateOf(com.earshot.app.data.ChapterRules.text(context, podcastId)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Skip chapters named…") },
+        text = {
+            Column {
+                Text(
+                    "In every episode of this show, chapters whose title contains any of these are skipped, as if you skipped them by hand. Separate them with commas. This phone only.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("sponsor, housekeeping") },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { com.earshot.app.data.ChapterRules.set(context, podcastId, text); onDismiss() }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

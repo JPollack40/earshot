@@ -502,7 +502,7 @@ class PlaybackService : MediaLibraryService() {
                 return
             }
         }
-        val target = SkippedChapters.skipTarget(chapters, skipped, pos, duration) ?: return
+        val target = SkippedChapters.skipTarget(chapters, skipped + chapterRuleSkips(ep.episode.podcastId), pos, duration) ?: return
         if (target >= endAt - 500) {
             Log.i(TAG, "Skipped chapters run to the end: finishing \"${ep.episode.title}\"")
             finishCurrent(id, playNext = true, atEnd = false)
@@ -510,6 +510,23 @@ class PlaybackService : MediaLibraryService() {
             Log.i(TAG, "Skipping chapter: $pos -> $target ms")
             player.seekTo(target)
         }
+    }
+
+    // Phase 19 (B4): chapters the show's rule skips ("always skip chapters named ...").
+    private var ruleFor = -1L
+    private var ruleVersion = -1
+    private var ruleChapters: List<com.earshot.app.data.feed.Chapter>? = null
+    private var ruleSkips: Set<Long> = emptySet()
+
+    private fun chapterRuleSkips(podcastId: Long): Set<Long> {
+        val version = com.earshot.app.data.ChapterRules.version.value
+        if (podcastId != ruleFor || version != ruleVersion || chapters !== ruleChapters) {
+            ruleFor = podcastId
+            ruleVersion = version
+            ruleChapters = chapters
+            ruleSkips = com.earshot.app.data.ChapterRules.matching(chapters, com.earshot.app.data.ChapterRules.words(app, podcastId))
+        }
+        return ruleSkips
     }
 
     // ---- Rewind after a pause or interruption (phase 13) ----
