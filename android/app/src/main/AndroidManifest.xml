@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Phase 16: one-tap update installs Earshot's own new release (Android asks the person first). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Phase 16 (Android 14+): Earshot asks to own its updates, so later ones need no prompt. Normal permission. -->
+    <uses-permission android:name="android.permission.ENFORCE_UPDATE_OWNERSHIP" />
 
     <!-- usesCleartextTraffic: some older podcast feeds and audio files are still served over plain http. -->
     <application
