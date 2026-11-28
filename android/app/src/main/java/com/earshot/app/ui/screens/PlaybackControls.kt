@@ -178,6 +178,8 @@ fun AudioDialog(
     onVoiceBoost: (Boolean) -> Unit,
     onPodcastOnly: (Boolean) -> Unit,
     onDismiss: () -> Unit,
+    finishByLabel: String? = null,
+    onFinishBy: (() -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -209,6 +211,19 @@ fun AudioDialog(
                         modifier = Modifier.weight(1f),
                     )
                     Text(formatSpeed(fine), style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(52.dp).padding(start = 8.dp))
+                }
+                // Phase 20 (C4): end this episode by a set time.
+                if (onFinishBy != null) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(onClick = onFinishBy).padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Finish by", style = MaterialTheme.typography.bodyMedium)
+                            Text("Speeds this episode up a little to end by a time you pick.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(finishByLabel ?: "Off", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 SwitchLine("Smart Speed", "Shortens silences in speech.", prefs.smartSpeed, onSmartSpeed)
                 SwitchLine("Voice Boost", "Evens out loudness and lifts quiet voices.", prefs.voiceBoost, onVoiceBoost)

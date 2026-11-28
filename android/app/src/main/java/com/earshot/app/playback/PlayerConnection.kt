@@ -55,6 +55,14 @@ class PlayerConnection(private val app: EarshotApp) {
     private var sleepJob: Job? = null
     private var tickJob: Job? = null
 
+    // Phase 20 (C4): Finish by. The service reads it and nudges the speed.
+    private val _finishBy = MutableStateFlow<FinishBy?>(null)
+    val finishBy: StateFlow<FinishBy?> = _finishBy.asStateFlow()
+
+    fun setFinishBy(f: FinishBy?) {
+        _finishBy.value = f
+    }
+
     private val _jumpBack = MutableStateFlow<JumpBack?>(null)
     val jumpBack: StateFlow<JumpBack?> = _jumpBack.asStateFlow()
     private var jumpJob: Job? = null

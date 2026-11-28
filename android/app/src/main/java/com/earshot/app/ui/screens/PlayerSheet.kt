@@ -106,6 +106,10 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val prefs by vm.currentPrefs.collectAsStateWithLifecycle()
     val podcast by vm.currentPodcast.collectAsStateWithLifecycle()
     var audioDialog by remember { mutableStateOf(false) }
+    // Phase 20 (C4)
+    val finishBy by vm.player.finishBy.collectAsStateWithLifecycle()
+    var finishDialog by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     /** Which skip button's length picker is open: false = back, true = forward, null = none. */
     var skipDialog by remember { mutableStateOf<Boolean?>(null) }
     var sleepMenu by remember { mutableStateOf(false) }
@@ -287,6 +291,14 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     label = { Text(formatSpeed(prefs.speed)) },
                     leadingIcon = { Icon(Icons.Filled.Speed, null, Modifier.size(18.dp)) },
                 )
+                // Phase 20 (C4): shown while Finish by runs for this episode.
+                finishBy?.takeIf { it.episodeId == now.episodeId }?.let { f ->
+                    AssistChip(
+                        onClick = { finishDialog = true },
+                        label = { Text(finishByLabel(context, f, now.speed)) },
+                        leadingIcon = { Icon(Icons.Filled.Speed, null, Modifier.size(18.dp)) },
+                    )
+                }
                 // Phase 19: "Say that again, slower".
                 AssistChip(
                     onClick = { vm.player.sayAgain() },
@@ -455,8 +467,21 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 onVoiceBoost = { b -> changeAudio { it.copy(voiceBoost = b) } },
                 onPodcastOnly = ::setAudioJustForPodcast,
                 onDismiss = { audioDialog = false },
+                finishByLabel = finishBy?.takeIf { it.episodeId == now.episodeId }?.let { finishByTime(context, it.deadlineMs) },
+                onFinishBy = now.episodeId?.let { { audioDialog = false; finishDialog = true } },
             )
         }
+    }
+    val finishId = now.episodeId
+    if (finishDialog && finishId != null) {
+        FinishByDialog(
+            episodeId = finishId,
+            remainingMs = (now.durationMs - now.positionMs).coerceAtLeast(0),
+            base = prefs.speed,
+            current = finishBy?.takeIf { it.episodeId == finishId },
+            onSet = { vm.player.setFinishBy(it); finishDialog = false },
+            onDismiss = { finishDialog = false },
+        )
     }
     skipDialog?.let { forward ->
         with(vm) {

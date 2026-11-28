@@ -307,11 +307,15 @@ class PlaybackService : MediaLibraryService() {
                     sentenceStarts = starts
                 }
         }
+        // Phase 20 (C4): Finish by, checked when it's set and every 15 s while playing.
+        scope.launch { app.player.finishBy.collect { checkFinishBy() } }
         scope.launch {
+            var ticks = 0
             while (isActive) {
                 delay(500)
                 if (player.isPlaying) checkSkips()
                 checkSayAgain()
+                if (++ticks % (FinishByMath.CHECK_MS / 500).toInt() == 0 && player.isPlaying) checkFinishBy()
                 updateChapterArt()
                 updateAdButton()
             }
@@ -343,6 +347,7 @@ class PlaybackService : MediaLibraryService() {
         Log.i(TAG, "Playback settings: $p")
         sayAgainFor = null // phase 19: a speed change ends "Say that again"
         if (player.playbackParameters.speed != p.speed) player.setPlaybackSpeed(p.speed)
+        checkFinishBy() // phase 20: Finish by works from the new speed
         if (player.skipSilenceEnabled != p.smartSpeed) player.skipSilenceEnabled = p.smartSpeed
         audio.voiceBoost.enabled = p.voiceBoost
         skipPlayer.backMs = p.skipBackMs
@@ -561,6 +566,37 @@ class PlaybackService : MediaLibraryService() {
         sayAgainFor = null
         Log.i(TAG, "Say that again: back to ${prefs.speed}x")
         player.setPlaybackSpeed(prefs.speed)
+        checkFinishBy()
+    }
+
+    // ---- Finish by (phase 20, C4) ----
+
+    /** True while Finish by has the speed above the listener's own. */
+    private var finishBoosting = false
+
+    private fun checkFinishBy() {
+        val f = app.player.finishBy.value
+        if (f == null) {
+            if (finishBoosting) {
+                finishBoosting = false
+                if (sayAgainFor == null) player.setPlaybackSpeed(prefs.speed)
+                Log.i(TAG, "Finish by: off, back to ${prefs.speed}x")
+            }
+            return
+        }
+        if (sayAgainFor != null) return // the slow replay finishes first
+        val now = System.currentTimeMillis()
+        if (player.currentMediaItem?.mediaId != f.episodeId || now >= f.deadlineMs) {
+            app.player.setFinishBy(null) // collected: puts the speed back
+            return
+        }
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
+        val target = FinishByMath.speedFor(duration - player.currentPosition, now, f.deadlineMs, prefs.speed, f.maxSpeed)
+        finishBoosting = true
+        if (abs(player.playbackParameters.speed - target) >= 0.01f) {
+            Log.i(TAG, "Finish by: ${target}x (own speed ${prefs.speed}x, up to ${f.maxSpeed}x)")
+            player.setPlaybackSpeed(target)
+        }
     }
 
     private fun rewindAfterPause() {
