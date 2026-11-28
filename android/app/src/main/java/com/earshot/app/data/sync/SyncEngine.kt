@@ -1,5 +1,6 @@
 package com.earshot.app.data.sync
 
+import androidx.core.content.edit
 import android.content.Context
 import android.util.Log
 import androidx.room.withTransaction
@@ -87,7 +88,7 @@ class SyncEngine(private val app: EarshotApp) {
                 val pushed = push()
                 val pulled = pull()
                 val now = System.currentTimeMillis()
-                prefs.edit().putLong("last_sync_at", now).apply()
+                prefs.edit { putLong("last_sync_at", now) }
                 _status.value = SyncStatus(running = false, lastSyncAt = now)
                 Log.i(TAG, "Sync ($reason): pushed $pushed, pulled $pulled")
                 true
@@ -399,7 +400,7 @@ class SyncEngine(private val app: EarshotApp) {
                 last = o.getLong("rev")
                 n++
             }
-            prefs.edit().putLong(revKey, last).apply()
+            prefs.edit { putLong(revKey, last) }
             if (page.length() < pageSize) return n
         }
     }

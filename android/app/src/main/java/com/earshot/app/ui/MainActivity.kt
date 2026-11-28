@@ -79,8 +79,16 @@ class MainActivity : ComponentActivity() {
         handlePlayIntent(intent)
     }
 
-    /** The Play button on a "New episode" notification (phase 10). */
+    /** The Play button on a "New episode" notification (phase 10), or a voice request (phase 15). */
     private fun handlePlayIntent(intent: Intent?) {
+        if (intent?.action == android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
+            val query = intent.getStringExtra(android.app.SearchManager.QUERY)
+            val extras = intent.extras?.let { b -> b.keySet().joinToString { k -> "$k=${b.get(k)}" } }
+            android.util.Log.i("Earshot", "Voice (phone): MEDIA_PLAY_FROM_SEARCH query=\"$query\" extras={$extras}")
+            intent.action = null // not again on rotation
+            (application as com.earshot.app.EarshotApp).player.playFromSearch(query)
+            return
+        }
         if (intent?.action != com.earshot.app.push.Push.ACTION_PLAY) return
         val id = intent.getStringExtra(com.earshot.app.push.Push.EXTRA_EPISODE) ?: return
         intent.action = null // not again on rotation

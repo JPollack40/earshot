@@ -1,5 +1,6 @@
 package com.earshot.app.playback
 
+import androidx.core.net.toUri
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -28,6 +29,7 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.earshot.app.EarshotApp
 import com.earshot.app.R
@@ -68,6 +70,13 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 private const val TAG = "Earshot"
+
+/** Apps that send voice requests: the Google app (Assistant and Gemini), Android Auto and the car assistant. */
+private val VOICE_CONTROLLERS = setOf(
+    "com.google.android.googlequicksearchbox",
+    "com.google.android.projection.gearhead",
+    "com.google.android.carassistant",
+)
 
 /**
  * Owns the ExoPlayer and the media session. The app, the notification, lock screen, headset buttons
@@ -137,8 +146,6 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(buttons())
             .build()
-        // Phase 12 scaffold: the templated car app (same process) hands this to the car host.
-        platformToken = session?.platformToken
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
@@ -189,7 +196,7 @@ class PlaybackService : MediaLibraryService() {
                 .collect { session?.notifyChildrenChanged(EpisodeMedia.PODCASTS, it.size, null) }
         }
         scope.launch {
-            // Latest, and each podcast's episode list (only the podcasts whose episodes changed).
+            // Each podcast's episode list (only the podcasts whose episodes changed), from the newest episodes.
             var last: Map<Long, List<EpisodeSignature>>? = null
             repo.observeLatest()
                 .map { list -> list.groupBy({ it.episode.podcastId }, ::signature) }
@@ -199,7 +206,6 @@ class PlaybackService : MediaLibraryService() {
                     last = byPodcast
                     if (before == null) return@collect
                     val s = session ?: return@collect
-                    s.notifyChildrenChanged(EpisodeMedia.LATEST, byPodcast.values.sumOf { it.size }.coerceAtMost(LATEST_LIMIT), null)
                     for (id in byPodcast.keys + before.keys) {
                         if (byPodcast[id] != before[id]) {
                             s.notifyChildrenChanged(EpisodeMedia.PODCAST_PREFIX + id, byPodcast[id]?.size ?: 0, null)
@@ -574,8 +580,26 @@ class PlaybackService : MediaLibraryService() {
         pendingSpeedMs -= speedMs
         pendingSmartMs -= smartMs
         Settings.addTimeSaved(this, speedMs, smartMs)
+        // Phase 15: the episode's share rides along with the next position save (one database write
+        // every 5 s instead of three, since every write makes every open list re-query).
+        if (unsavedTimeSavedId != null && unsavedTimeSavedId != id) writeTimeSaved()
+        unsavedTimeSavedId = id
+        unsavedTimeSavedMs += speedMs + smartMs
+        if (!player.isPlaying) writeTimeSaved()
+    }
+
+    private var unsavedTimeSavedId: String? = null
+    private var unsavedTimeSavedMs = 0L
+
+    /** Writes the episode's time saved not yet written with a position save. */
+    private fun writeTimeSaved() {
+        val id = unsavedTimeSavedId ?: return
+        val ms = unsavedTimeSavedMs
+        unsavedTimeSavedId = null
+        unsavedTimeSavedMs = 0L
+        if (ms == 0L) return
         val dao = repo.episodes
-        app.appScope.launch { dao.addTimeSaved(id, speedMs + smartMs) }
+        app.appScope.launch { dao.addTimeSaved(id, ms) }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -733,8 +757,17 @@ class PlaybackService : MediaLibraryService() {
         val id = player.currentMediaItem?.mediaId ?: return
         if (player.playbackState == Player.STATE_ENDED) return
         val dao = repo.episodes
-        dao.savePosition(id, player.currentPosition, System.currentTimeMillis())
+        val position = player.currentPosition
         val duration = player.duration
+        if (unsavedTimeSavedId == id) {
+            val ms = unsavedTimeSavedMs
+            unsavedTimeSavedId = null
+            unsavedTimeSavedMs = 0L
+            dao.savePositionAndTimeSaved(id, position, System.currentTimeMillis(), ms)
+        } else {
+            dao.savePosition(id, position, System.currentTimeMillis())
+        }
+        // Only writes when the duration differs (an update that changes no row doesn't wake the lists).
         if (duration > 0) dao.setDuration(id, duration)
     }
 
@@ -781,13 +814,17 @@ class PlaybackService : MediaLibraryService() {
             // "Hey Google, play ... on Earshot" arrives with a search query and no id.
             val query = requested.requestMetadata.searchQuery
                 ?.takeIf { requested.mediaId.isEmpty() }
+            if (query != null) Log.i(TAG, "Voice: search from ${controller.packageName}: \"$query\" extras=${requested.requestMetadata.extras}")
             // Save where we were in the current episode before it's replaced.
             val prevId = player.currentMediaItem?.mediaId
             val prevPos = player.currentPosition
             val prevEnded = player.playbackState == Player.STATE_ENDED
             return future {
                 val ep = if (query != null) {
-                    voiceSearch(query) ?: throw IllegalArgumentException("Nothing found for \"$query\"")
+                    voiceSearch(query) ?: run {
+                        Log.i(TAG, "Voice: nothing found for \"$query\"")
+                        throw IllegalArgumentException("Nothing found for \"$query\"")
+                    }
                 } else {
                     repo.episodes.getWithPodcast(requested.mediaId)
                         ?: throw IllegalArgumentException("Unknown episode ${requested.mediaId}")
@@ -821,7 +858,33 @@ class PlaybackService : MediaLibraryService() {
                         .add(PlayerButtons.aiSweepCommand)
                         .build(),
                 )
-            return Futures.immediateFuture(builder.build())
+            // Voice "play X on Earshot" in Android Auto comes from the Google app as a play-from-search.
+            // Media3 drops it without a word if that controller can't set media items, so give the
+            // Google voice and car apps full player control.
+            if (controller.packageName in VOICE_CONTROLLERS) {
+                builder.setAvailablePlayerCommands(
+                    defaults.availablePlayerCommands.buildUpon().addAllCommands().build(),
+                )
+            }
+            val result = builder.build()
+            Log.i(
+                TAG,
+                "Controller ${controller.packageName} v${controller.controllerVersion} trusted=${controller.isTrusted} " +
+                    "setItem=${result.availablePlayerCommands.contains(Player.COMMAND_SET_MEDIA_ITEM)}",
+            )
+            return Futures.immediateFuture(result)
+        }
+
+        @Deprecated("Still called by Media3 1.11; used only to log voice commands.")
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int {
+            if (controller.packageName in VOICE_CONTROLLERS) {
+                Log.i(TAG, "Voice: command $playerCommand from ${controller.packageName}")
+            }
+            return SessionResult.RESULT_SUCCESS
         }
 
         override fun onCustomCommand(
@@ -840,7 +903,7 @@ class PlaybackService : MediaLibraryService() {
                     Log.i(TAG, "AI sweep requested for $it")
                     com.earshot.app.work.AiSweepWorker.enqueue(app, it)
                 }
-                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
@@ -850,6 +913,9 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> = future {
+            mediaItems.filter { it.mediaId.isEmpty() }.forEach {
+                Log.i(TAG, "Voice: add-items search from ${controller.packageName} ignored: \"${it.requestMetadata.searchQuery}\"")
+            }
             mediaItems.mapNotNull { repo.episodes.getWithPodcast(it.mediaId)?.let(EpisodeMedia::item) }.toMutableList()
         }
 
@@ -911,7 +977,7 @@ class PlaybackService : MediaLibraryService() {
             }
             val item = folder ?: repo.episodes.getWithPodcast(mediaId)?.let(EpisodeMedia::item)
             if (item != null) LibraryResult.ofItem(item, null)
-            else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+            else LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
         }
 
         override fun onGetChildren(
@@ -941,7 +1007,6 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
                 parentId == EpisodeMedia.INBOX -> EpisodeMedia.itemsByDate(dao.getInbox())
-                parentId == EpisodeMedia.LATEST -> EpisodeMedia.itemsByDate(dao.getLatest(LATEST_LIMIT))
                 parentId == EpisodeMedia.PODCASTS -> repo.podcasts.getAll().map(EpisodeMedia::podcastFolder)
                 parentId.startsWith(EpisodeMedia.PODCAST_PREFIX) -> {
                     val id = parentId.removePrefix(EpisodeMedia.PODCAST_PREFIX).toLongOrNull()
@@ -958,7 +1023,7 @@ class PlaybackService : MediaLibraryService() {
                     if (p == null || p.deleted) emptyList()
                     else repo.playlistEpisodes(PlaylistJson.parse(p.filtersJson)).map { EpisodeMedia.item(it) }
                 }
-                else -> return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                else -> return@future LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
             }
             LibraryResult.ofItemList(pageOf(items, page, pageSize), params)
         }
@@ -1073,7 +1138,7 @@ class PlaybackService : MediaLibraryService() {
         )
     }
 
-    private fun iconUri(res: Int): Uri = Uri.parse("android.resource://$packageName/$res")
+    private fun iconUri(res: Int): Uri = "android.resource://$packageName/$res".toUri()
 
     private fun likePattern(query: String): String =
         "%" + query.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
@@ -1091,16 +1156,24 @@ class PlaybackService : MediaLibraryService() {
      * What "play [query]" should start (phase 10, see data/VoiceMatch.kt):
      *  - nothing, "podcasts", "Earshot": carry on with the loaded episode, else the top of the queue;
      *  - "the latest <show>": that show's newest unplayed episode;
-     *  - a show's name (spelled loosely): its newest unplayed episode;
+     *  - a show's name (spelled loosely): its newest unplayed episode (an unfollowed show she still
+     *    has episodes of: the one part way through);
      *  - otherwise the newest episode whose title matches (exactly, then loosely).
      */
     private suspend fun voiceSearch(query: String): EpisodeWithPodcast? {
         val intent = VoiceMatch.parse(query)
         Log.i(TAG, "Voice: \"$query\" -> $intent")
         suspend fun newestOf(show: String): EpisodeWithPodcast? {
-            val podcast = VoiceMatch.best(show, repo.podcasts.getAll()) { it.title } ?: return null
+            VoiceMatch.best(show, repo.podcasts.getAll()) { it.title }?.let { podcast ->
+                val episodes = repo.episodes.getForPodcast(podcast.id, 50)
+                return episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
+            }
+            // A show she unfollowed but still has episodes of (Continue listening): the one she was
+            // part way through, else its newest unplayed. A show name beats an episode-title match.
+            val podcast = VoiceMatch.best(show, repo.podcasts.getUnfollowedWithEpisodes()) { it.title } ?: return null
             val episodes = repo.episodes.getForPodcast(podcast.id, 50)
-            return episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
+            return episodes.firstOrNull { !it.episode.played && it.episode.positionMs > 0 }
+                ?: episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
         }
         return when (intent) {
             VoiceMatch.Intent.Resume -> {
@@ -1134,6 +1207,7 @@ class PlaybackService : MediaLibraryService() {
         protectedEpisodeId = null
         trackTimeSaved()
         flushTimeSaved()
+        writeTimeSaved()
         listening.finish()
         app.appScope.launch {
             if (saveId != null) dao.savePosition(saveId, position, System.currentTimeMillis())
@@ -1146,12 +1220,10 @@ class PlaybackService : MediaLibraryService() {
             release()
         }
         session = null
-        platformToken = null
         super.onDestroy()
     }
 
     companion object {
-        private const val LATEST_LIMIT = 100
         private const val CONTINUE_LIMIT = 20
         private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
 
@@ -1161,11 +1233,6 @@ class PlaybackService : MediaLibraryService() {
          */
         @Volatile
         var protectedEpisodeId: String? = null
-            private set
-
-        /** The session's platform token while the service runs (phase 12 car app scaffold). */
-        @Volatile
-        var platformToken: android.media.session.MediaSession.Token? = null
             private set
     }
 }

@@ -31,8 +31,11 @@ object Backup {
     private const val SETTINGS_ENTRY = "settings.xml"
     private const val MANIFEST_ENTRY = "manifest.json"
 
-    /** Newest database version this build understands (AppDatabase's version). */
-    private const val SCHEMA = 9
+    /**
+     * Newest database version this build understands. Phase 15: read from AppDatabase; it was a copy
+     * left at 9, so since v10 (phase 13) a backup made by the same app was refused as "newer".
+     */
+    private const val SCHEMA = com.earshot.app.data.db.AppDatabase.VERSION
 
     class BackupException(message: String) : Exception(message)
 

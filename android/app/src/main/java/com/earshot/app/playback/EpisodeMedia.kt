@@ -1,5 +1,6 @@
 package com.earshot.app.playback
 
+import androidx.core.net.toUri
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
@@ -21,7 +22,6 @@ object EpisodeMedia {
     const val ROOT = "root"
     const val QUEUE = "queue"
     const val INBOX = "inbox"
-    const val LATEST = "latest"
     const val PODCASTS = "podcasts"
     const val PODCAST_PREFIX = "podcast:"
     /** Smart playlists (phase 7): the car's Playlists tab, and each playlist ("playlist:<id>"). */
@@ -46,7 +46,7 @@ object EpisodeMedia {
     fun item(item: EpisodeWithPodcast, group: String? = null): MediaItem {
         val e = item.episode
         val localFile = e.localPath?.let { File(it) }?.takeIf { it.exists() }
-        val uri: Uri = localFile?.let { Uri.fromFile(it) } ?: Uri.parse(e.audioUrl)
+        val uri: Uri = localFile?.let { Uri.fromFile(it) } ?: e.audioUrl.toUri()
 
         val extras = Bundle()
         val status = when {
@@ -77,7 +77,7 @@ object EpisodeMedia {
                     .setTitle(e.title)
                     .setArtist(item.podcastTitle)
                     .setAlbumTitle(item.podcastTitle)
-                    .setArtworkUri(item.artworkUrl?.let { Uri.parse(it) })
+                    .setArtworkUri(item.artworkUrl?.toUri())
                     .setDurationMs(e.durationMs.takeIf { it > 0 })
                     .setIsPlayable(true)
                     .setIsBrowsable(false)
@@ -162,7 +162,7 @@ object EpisodeMedia {
                 MediaMetadata.Builder()
                     .setTitle(p.title)
                     .setArtist(p.author.ifBlank { null })
-                    .setArtworkUri(p.imageUrl?.let { Uri.parse(it) })
+                    .setArtworkUri(p.imageUrl?.toUri())
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST)
@@ -204,7 +204,7 @@ object EpisodeMedia {
                 MediaMetadata.Builder()
                     .setTitle("More from ${p.title}")
                     .setSubtitle("The playing episode's podcast")
-                    .setArtworkUri(p.imageUrl?.let { Uri.parse(it) })
+                    .setArtworkUri(p.imageUrl?.toUri())
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST)

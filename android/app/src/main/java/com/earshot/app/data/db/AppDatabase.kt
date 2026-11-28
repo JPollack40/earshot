@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(entities = [Podcast::class, Episode::class, Transcript::class, Bookmark::class, Playlist::class, Listen::class,
     EpisodeAi::class],
-    version = 10, exportSchema = false)
+    version = AppDatabase.VERSION, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun podcasts(): PodcastDao
     abstract fun episodes(): EpisodeDao
@@ -20,6 +20,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun episodeAi(): EpisodeAiDao
 
     companion object {
+        /** The database version. Backups use it too, so a new version can't be forgotten there (phase 15). */
+        const val VERSION = 11
+
         /** v2: episodes.downloadedAt, used to expire old downloads. Existing downloads are backfilled by the cleanup. */
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -158,12 +161,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v11 (phase 15): indexes only, for the lists that re-query after every play-position save. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_queuePosition` ON `episodes` (`queuePosition`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_inInbox` ON `episodes` (`inInbox`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_lastPlayedAt` ON `episodes` (`lastPlayedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_episodes_dirty` ON `episodes` (`dirty`)")
+            }
+        }
+
         /** Episodes published within this window are uploaded even without listening state. */
         const val RECENT_MS = 60L * 24 * 60 * 60 * 1000
 
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "earshot.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 // Upgrades must always migrate (subscriptions live here). Only a downgrade, which
                 // only happens when installing an older dev build, may start from scratch.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)

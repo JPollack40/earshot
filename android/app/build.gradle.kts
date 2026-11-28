@@ -6,9 +6,6 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-/** Phase 12 scaffold switch, see the end of the android block. */
-val carApp = providers.gradleProperty("earshot.carApp").orNull == "true"
-
 android {
     namespace = "com.earshot.app"
     // Compose 1.13 / Coil 3.6 / core 1.19 / lifecycle 2.11 need compileSdk 37.1+.
@@ -101,53 +98,9 @@ android {
         // Plain JVM unit tests (audio processing): Android framework calls return defaults instead of throwing.
         unitTests.isReturnDefaultValues = true
     }
-
-    // Phase 12 scaffold (custom car screens, Car App Library templated media app). OFF unless the build
-    // is run with -Pearshot.carApp=true, so normal builds, Android Studio and CI are unchanged. Then:
-    //   standard  = the app as today (no car app)
-    //   twoIcons  = the same app (same id, so it updates the installed one) plus the templated car app:
-    //               the Desktop Head Unit test of whether one app shows two icons in Android Auto
-    //   lab       = "Earshot Lab", a separate app (com.jpollack.earshot.lab) beside the normal one, with the
-    //               templated car app; its library arrives through sync after signing in
-    // Code and manifest for the car app: src/carapp/ (shared by twoIcons and lab).
-    if (carApp) {
-        flavorDimensions += "edition"
-        productFlavors {
-            create("standard") { dimension = "edition" }
-            create("twoIcons") { dimension = "edition" }
-            create("lab") {
-                dimension = "edition"
-                applicationIdSuffix = ".lab"
-                versionNameSuffix = "-lab"
-                // Its name comes from src/lab/res/values/strings.xml.
-            }
-        }
-        sourceSets {
-            for (flavor in listOf("twoIcons", "lab")) {
-                getByName(flavor) {
-                    java.srcDir("src/carapp/java")
-                    // AGP 9 built-in Kotlin only compiles .kt files from Kotlin source dirs; without this
-                    // the car service was silently left out of the APK (crash in the head unit).
-                    kotlin.srcDir("src/carapp/java")
-                    res.srcDir("src/carapp/res")
-                    manifest.srcFile("src/carapp/AndroidManifest.xml")
-                }
-            }
-        }
-    }
 }
 
 dependencies {
-    // Phase 12 scaffold only (see "carApp" above): Car App Library (stable 1.7.0; templated media is
-    // Beta and needs Car API level 8) and the compat media classes for the session token hand-over.
-    if (carApp) {
-        for (flavor in listOf("twoIcons", "lab")) {
-            add("${flavor}Implementation", "androidx.car.app:app:1.7.0")
-            add("${flavor}Implementation", "androidx.car.app:app-projected:1.7.0")
-            add("${flavor}Implementation", "androidx.media:media:1.7.1")
-        }
-    }
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

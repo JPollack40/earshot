@@ -1,5 +1,6 @@
 package com.earshot.app.ui
 
+import androidx.core.content.edit
 import android.app.Application
 import android.net.Uri
 import androidx.compose.runtime.getValue
@@ -416,7 +417,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val prefs = app.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
             if (!prefs.getBoolean("latest_playlist_made", false)) {
                 repo.ensureLatestPlaylist()
-                prefs.edit().putBoolean("latest_playlist_made", true).apply()
+                prefs.edit { putBoolean("latest_playlist_made", true) }
                 app.sync.request("latest playlist")
             }
             com.earshot.app.data.Settings.adoptSkipAdButtonDefault(app)

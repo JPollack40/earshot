@@ -1,5 +1,6 @@
 package com.earshot.app.data.sync
 
+import androidx.core.content.edit
 import android.content.Context
 import com.earshot.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +55,7 @@ class Supabase(context: Context) {
     }
 
     fun signOut() {
-        prefs.edit().clear().apply()
+        prefs.edit { clear() }
         _session.value = null
     }
 

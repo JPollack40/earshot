@@ -2,8 +2,8 @@
 
 package com.earshot.app.ui.screens
 
+import androidx.core.net.toUri
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,9 +62,9 @@ fun UpdateBanner(vm: AppViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = {
                     val url = u.apkUrl.ifBlank { u.pageUrl }
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
                 }) { Text("Download") }
-                TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u.pageUrl))) } }) {
+                TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, u.pageUrl.toUri())) } }) {
                     Text("What's new")
                 }
                 TextButton(onClick = vm::dismissUpdate) { Text("Not now") }
@@ -161,7 +161,7 @@ fun CarSetupScreen(vm: AppViewModel) {
             OutlinedButton(onClick = {
                 runCatching {
                     context.startActivity(
-                        Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.google.android.projection.gearhead"))
+                        Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:com.google.android.projection.gearhead".toUri())
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     )
                 }

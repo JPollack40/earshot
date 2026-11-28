@@ -192,6 +192,31 @@ class PlayerConnection(private val app: EarshotApp) {
     }
 
     /**
+     * Phase 15: "Hey Google, play <show> on Earshot" on the phone (MEDIA_PLAY_FROM_SEARCH). Hands the
+     * words to the service, which picks the episode the same way as a voice request in the car.
+     * A blank query resumes what's loaded.
+     */
+    fun playFromSearch(query: String?) {
+        withController { c ->
+            if (query.isNullOrBlank()) {
+                if (c.mediaItemCount > 0) {
+                    c.play()
+                } else {
+                    app.appScope.launch { app.repository.queueHead()?.let { play(it) } }
+                }
+                return@withController
+            }
+            c.setMediaItem(
+                MediaItem.Builder()
+                    .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery(query).build())
+                    .build(),
+            )
+            c.prepare()
+            c.play()
+        }
+    }
+
+    /**
      * Plays an episode from [positionMs] (a transcript line, a bookmark or a search result). If it's
      * already loaded it just seeks there.
      */

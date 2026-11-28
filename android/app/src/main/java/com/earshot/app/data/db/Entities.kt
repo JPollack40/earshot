@@ -72,7 +72,9 @@ data class Podcast(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("podcastId"), Index("pubDate")],
+    // Phase 15 (v11): queuePosition, inInbox, lastPlayedAt and dirty, for the queue, New Episodes,
+    // Continue listening and sync, which re-query after every play-position save.
+    indices = [Index("podcastId"), Index("pubDate"), Index("queuePosition"), Index("inInbox"), Index("lastPlayedAt"), Index("dirty")],
 )
 data class Episode(
     /** Stable hash of feed URL + guid, so the same episode has the same id on every device (needed for sync). */

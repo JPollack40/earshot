@@ -51,7 +51,7 @@ object TranscriptFormat {
 
     /** Parses a feed transcript by its declared type, falling back to sniffing the content. */
     fun parse(body: String, type: String?): ParsedTranscript {
-        val text = body.removePrefix("﻿")
+        val text = body.removePrefix("\uFEFF")
         val trimmed = text.trimStart()
         val t = type?.lowercase().orEmpty()
         return when {
