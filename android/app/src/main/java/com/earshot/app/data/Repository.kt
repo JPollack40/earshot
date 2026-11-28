@@ -771,9 +771,15 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
-    suspend fun download(id: String) {
+    /** Starts a download. Phase 17: refused (false) while downloads are at the storage limit. */
+    suspend fun download(id: String): Boolean {
+        if (overStorageCap()) {
+            Log.i(TAG, "Not downloading $id: downloads are at the storage limit")
+            return false
+        }
         episodes.setDownload(id, DownloadState.QUEUED, 0, null)
         DownloadWorker.enqueue(context, id)
+        return true
     }
 
     suspend fun deleteDownload(id: String) = withContext(Dispatchers.IO) {

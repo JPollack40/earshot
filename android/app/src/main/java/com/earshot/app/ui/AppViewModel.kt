@@ -689,13 +689,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun download(item: EpisodeWithPodcast) {
-        viewModelScope.launch { repo.download(item.episode.id) }
+        viewModelScope.launch { if (!repo.download(item.episode.id)) sayOverStorageCap() }
     }
+
+    /** Phase 17: a tapped Download over the storage limit. */
+    private fun sayOverStorageCap() =
+        say("Over your ${com.earshot.app.data.StorageCap.label(Settings.storageCapGb(app))} storage limit. Delete some downloads or raise the limit in Settings > Downloads.")
 
     fun deleteDownload(item: EpisodeWithPodcast) {
         viewModelScope.launch {
             repo.deleteDownload(item.episode.id)
-            sayWithUndo("Download deleted") { repo.download(item.episode.id) } // Undo downloads it again
+            sayWithUndo("Download deleted") { if (!repo.download(item.episode.id)) sayOverStorageCap() } // Undo downloads it again
         }
     }
 
