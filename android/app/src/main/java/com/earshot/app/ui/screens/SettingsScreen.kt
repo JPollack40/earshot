@@ -124,6 +124,8 @@ fun SettingsScreen(vm: AppViewModel) {
                 Switch(checked = rewind, onCheckedChange = vm::updateResumeRewind)
             }
             divider()
+            SleepScheduleSetting(vm.sleepSchedule, vm::updateSleepSchedule)
+            divider()
 
             val saved by vm.timeSaved.collectAsStateWithLifecycle()
             SectionHeader("Time saved")

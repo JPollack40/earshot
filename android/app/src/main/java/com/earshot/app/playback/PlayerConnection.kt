@@ -270,7 +270,7 @@ class PlayerConnection(private val app: EarshotApp) {
         _sleep.value = SleepTimer.At(endsAt)
         sleepJob = app.appScope.launch {
             delay(minutes * 60_000L)
-            controller?.pause()
+            withController { it.pause() } // phase 17: also when only the car or the service is connected
             _sleep.value = SleepTimer.Off
         }
     }

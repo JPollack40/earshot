@@ -284,6 +284,13 @@ object Settings {
         prefs(context).edit { putBoolean("download_wifi_only", wifiOnly) }
     }
 
+    /** Phase 17: the automatic sleep timer ([SleepSchedule]). This phone only. */
+    fun sleepSchedule(context: Context): SleepSchedule = SleepSchedule.fromJson(prefs(context).getString("sleep_schedule", null))
+
+    fun setSleepSchedule(context: Context, s: SleepSchedule) {
+        prefs(context).edit { putString("sleep_schedule", s.toJson()) }
+    }
+
     /** Phase 17: the most space downloads may take, in GB (0 = no limit). See [StorageCap]. */
     fun storageCapGb(context: Context): Int = prefs(context).getInt("storage_cap_gb", 0)
 

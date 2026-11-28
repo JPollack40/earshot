@@ -42,6 +42,7 @@ import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.feed.SkippedChapters
 import com.earshot.app.data.PlaylistJson
 import com.earshot.app.data.Settings
+import com.earshot.app.data.SleepSchedule
 import com.earshot.app.data.VoiceMatch
 import com.earshot.app.data.db.EpisodeWithPodcast
 import com.earshot.app.ui.MainActivity
@@ -542,6 +543,15 @@ class PlaybackService : MediaLibraryService() {
         return true
     }
 
+    /** Phase 17: sets the scheduled sleep timer when play is pressed in its window and no timer is running. */
+    private fun autoSleepTimer() {
+        val schedule = Settings.sleepSchedule(app)
+        if (!schedule.inWindow(java.time.LocalDateTime.now())) return
+        if (app.player.sleepTimer.value != SleepTimer.Off) return
+        Log.i(TAG, "Automatic sleep timer: ${SleepSchedule.minutesLabel(schedule.minutes)}")
+        if (schedule.minutes == 0) app.player.sleepAtEndOfEpisode() else app.player.setSleepTimer(schedule.minutes)
+    }
+
     /** Bookmarks the playing moment (Bookmark button in Android Auto or the notification). */
     private fun bookmarkNow() {
         val id = player.currentMediaItem?.mediaId ?: return
@@ -661,6 +671,11 @@ class PlaybackService : MediaLibraryService() {
             } else {
                 rewindAfterPause()
             }
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Phase 17: the automatic sleep timer, on a press of play (not buffering or focus coming back).
+            if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) autoSleepTimer()
         }
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {

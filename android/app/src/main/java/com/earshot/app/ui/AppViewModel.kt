@@ -16,6 +16,7 @@ import com.earshot.app.data.ImportStatus
 import com.earshot.app.data.PlaybackDefaults
 import com.earshot.app.data.PlaybackPrefs
 import com.earshot.app.data.Settings
+import com.earshot.app.data.SleepSchedule
 import com.earshot.app.data.TimeSaved
 import com.earshot.app.data.TidyDefaults
 import com.earshot.app.data.PlaylistFilters
@@ -807,6 +808,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             say(if (n == 0) "No downloads to delete" else "Deleted all downloads ($n ${if (n == 1) "file" else "files"})")
             done()
         }
+    }
+
+    /** Phase 17: Settings > Playback > Automatic sleep timer. */
+    var sleepSchedule by mutableStateOf(Settings.sleepSchedule(app))
+        private set
+
+    fun updateSleepSchedule(s: SleepSchedule) {
+        Settings.setSleepSchedule(app, s)
+        sleepSchedule = s
     }
 
     /** Phase 17: Settings > Downloads > Storage limit. */
