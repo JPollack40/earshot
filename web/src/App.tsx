@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import * as store from "./store";
@@ -16,11 +16,14 @@ import { BookmarksPage, TranscriptPage, TranscriptSearchPage } from "./screens/N
 import { navHolder } from "./screens/common";
 import { PlaylistPage } from "./screens/Playlists";
 import { startListenLog } from "./listens";
-import { StatsPage, StatsReviewPage } from "./screens/Stats";
 import type { ReviewKind } from "./stats";
 import type { BrowseCard } from "./browse";
 import { BrowseCategoriesPage, BrowseListPage, BrowsePage, BrowseSettingsPage } from "./screens/Browse";
 import { WhatsNew } from "./screens/WhatsNew";
+
+// Phase 15: the Stats pages load only when opened (their charts and maths aren't needed at start).
+const StatsPage = lazy(() => import("./screens/Stats").then((m) => ({ default: m.StatsPage })));
+const StatsReviewPage = lazy(() => import("./screens/Stats").then((m) => ({ default: m.StatsReviewPage })));
 
 export type Route =
   | { name: "library" }
@@ -130,8 +133,10 @@ export function App() {
       {route.name === "bookmarks" && <BookmarksPage nav={nav} />}
       {route.name === "search" && <TranscriptSearchPage nav={nav} />}
       {route.name === "playlist" && <PlaylistPage key={route.id} id={route.id} nav={nav} />}
-      {route.name === "stats" && <StatsPage nav={nav} />}
-      {route.name === "statsReview" && <StatsReviewPage key={`${route.kind}-${route.from}`} nav={nav} kind={route.kind} from={route.from} />}
+      <Suspense fallback={null}>
+        {route.name === "stats" && <StatsPage nav={nav} />}
+        {route.name === "statsReview" && <StatsReviewPage key={`${route.kind}-${route.from}`} nav={nav} kind={route.kind} from={route.from} />}
+      </Suspense>
       {route.name === "browse" && <BrowsePage nav={nav} />}
       {route.name === "browseList" && <BrowseListPage key={`${route.title}-${route.category ?? ""}`} nav={nav} title={route.title} category={route.category} items={route.items} />}
       {route.name === "browseCategories" && <BrowseCategoriesPage nav={nav} />}

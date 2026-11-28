@@ -1,0 +1,199 @@
+{
+  "now": 1000000000000,
+  "subscribed": [
+    "https://a.example/rss",
+    "https://b.example/rss"
+  ],
+  "episodes": [
+    {
+      "id": "a1",
+      "feed": "https://a.example/rss",
+      "title": "Don’t Panic: the news",
+      "pub": 999990000000,
+      "durationMs": 1200000,
+      "positionMs": 0
+    },
+    {
+      "id": "a2",
+      "feed": "https://a.example/rss",
+      "title": "Long interview",
+      "pub": 999000000000,
+      "durationMs": 5400000,
+      "positionMs": 600000
+    },
+    {
+      "id": "a3",
+      "feed": "https://a.example/rss",
+      "title": "Old one",
+      "pub": 900000000000,
+      "durationMs": 1800000,
+      "positionMs": 0,
+      "played": true
+    },
+    {
+      "id": "a4",
+      "feed": "https://a.example/rss",
+      "title": "Unknown length",
+      "pub": 999500000000,
+      "durationMs": 0,
+      "positionMs": 0
+    },
+    {
+      "id": "b1",
+      "feed": "https://b.example/rss",
+      "title": "Election special",
+      "pub": 999800000000,
+      "durationMs": 600000,
+      "positionMs": 0
+    },
+    {
+      "id": "c1",
+      "feed": "https://c.example/rss",
+      "title": "Not followed",
+      "pub": 999999000000,
+      "durationMs": 600000,
+      "positionMs": 0
+    }
+  ],
+  "cases": [
+    {
+      "name": "defaults: unplayed, newest first",
+      "filters": {},
+      "ids": [
+        "a1",
+        "b1",
+        "a4",
+        "a2"
+      ]
+    },
+    {
+      "name": "one podcast, listed differently",
+      "filters": {
+        "podcasts": [
+          "http://www.B.example/rss/"
+        ]
+      },
+      "ids": [
+        "b1"
+      ]
+    },
+    {
+      "name": "not started",
+      "filters": {
+        "status": "not_started"
+      },
+      "ids": [
+        "a1",
+        "b1",
+        "a4"
+      ]
+    },
+    {
+      "name": "in progress",
+      "filters": {
+        "status": "in_progress"
+      },
+      "ids": [
+        "a2"
+      ]
+    },
+    {
+      "name": "played",
+      "filters": {
+        "status": "played"
+      },
+      "ids": [
+        "a3"
+      ]
+    },
+    {
+      "name": "any, oldest first",
+      "filters": {
+        "status": "any",
+        "sort": "oldest"
+      },
+      "ids": [
+        "a3",
+        "a2",
+        "a4",
+        "b1",
+        "a1"
+      ]
+    },
+    {
+      "name": "under 25 min: unknown length never passes",
+      "filters": {
+        "maxMinutes": 25
+      },
+      "ids": [
+        "a1",
+        "b1"
+      ]
+    },
+    {
+      "name": "over 15 min",
+      "filters": {
+        "minMinutes": 15
+      },
+      "ids": [
+        "a1",
+        "a2"
+      ]
+    },
+    {
+      "name": "shortest first, unknown last",
+      "filters": {
+        "sort": "shortest"
+      },
+      "ids": [
+        "b1",
+        "a1",
+        "a2",
+        "a4"
+      ]
+    },
+    {
+      "name": "longest first, unknown last",
+      "filters": {
+        "sort": "longest"
+      },
+      "ids": [
+        "a2",
+        "a1",
+        "b1",
+        "a4"
+      ]
+    },
+    {
+      "name": "last 7 days",
+      "filters": {
+        "withinDays": 7
+      },
+      "ids": [
+        "a1",
+        "b1",
+        "a4"
+      ]
+    },
+    {
+      "name": "keywords, curly apostrophe",
+      "filters": {
+        "keywords": "don't, ELECTION"
+      },
+      "ids": [
+        "a1",
+        "b1"
+      ]
+    },
+    {
+      "name": "limit",
+      "filters": {
+        "limit": 2
+      },
+      "ids": [
+        "a1",
+        "b1"
+      ]
+    }
+  ]
+}

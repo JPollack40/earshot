@@ -14,6 +14,8 @@ work = "2.12.0"
 coil = "3.6.3"
 reorderable = "3.1.0"
 junit = "4.13.2"
+# Real org.json for JVM unit tests (Android's copy is only a stub there): shared test vectors, phase 15.
+orgJson = "20260814"
 # Firebase Cloud Messaging (phase 10 new-episode notifications). Inert without app/google-services.json.
 firebaseBom = "34.6.0"
 
@@ -49,6 +51,7 @@ coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp"
 
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

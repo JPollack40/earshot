@@ -83,6 +83,8 @@ class MainActivity : ComponentActivity() {
     private fun handlePlayIntent(intent: Intent?) {
         if (intent?.action == android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             val query = intent.getStringExtra(android.app.SearchManager.QUERY)
+            // Bundle.get is deprecated, but the extras' types aren't known here and this only logs them.
+            @Suppress("DEPRECATION")
             val extras = intent.extras?.let { b -> b.keySet().joinToString { k -> "$k=${b.get(k)}" } }
             android.util.Log.i("Earshot", "Voice (phone): MEDIA_PLAY_FROM_SEARCH query=\"$query\" extras={$extras}")
             intent.action = null // not again on rotation
