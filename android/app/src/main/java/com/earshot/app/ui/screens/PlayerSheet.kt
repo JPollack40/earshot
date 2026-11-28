@@ -452,9 +452,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
 
 private fun sleepLabel(sleep: SleepTimer): String = when (sleep) {
     SleepTimer.Off -> "Sleep"
-    SleepTimer.EndOfEpisode -> "End of episode"
+    SleepTimer.EndOfEpisode -> "Sleep: end of episode"
     is SleepTimer.At -> {
         val minsLeft = ((sleep.endsAtMs - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1
-        "${minsLeft}m"
+        "Sleep ${minsLeft}m"
     }
 }
