@@ -807,13 +807,17 @@ class PlaybackService : MediaLibraryService() {
             // "Hey Google, play ... on Earshot" arrives with a search query and no id.
             val query = requested.requestMetadata.searchQuery
                 ?.takeIf { requested.mediaId.isEmpty() }
+            if (query != null) Log.i(TAG, "Voice: search from ${controller.packageName}: \"$query\" extras=${requested.requestMetadata.extras}")
             // Save where we were in the current episode before it's replaced.
             val prevId = player.currentMediaItem?.mediaId
             val prevPos = player.currentPosition
             val prevEnded = player.playbackState == Player.STATE_ENDED
             return future {
                 val ep = if (query != null) {
-                    voiceSearch(query) ?: throw IllegalArgumentException("Nothing found for \"$query\"")
+                    voiceSearch(query) ?: run {
+                        Log.i(TAG, "Voice: nothing found for \"$query\"")
+                        throw IllegalArgumentException("Nothing found for \"$query\"")
+                    }
                 } else {
                     repo.episodes.getWithPodcast(requested.mediaId)
                         ?: throw IllegalArgumentException("Unknown episode ${requested.mediaId}")
@@ -876,6 +880,9 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> = future {
+            mediaItems.filter { it.mediaId.isEmpty() }.forEach {
+                Log.i(TAG, "Voice: add-items search from ${controller.packageName} ignored: \"${it.requestMetadata.searchQuery}\"")
+            }
             mediaItems.mapNotNull { repo.episodes.getWithPodcast(it.mediaId)?.let(EpisodeMedia::item) }.toMutableList()
         }
 
