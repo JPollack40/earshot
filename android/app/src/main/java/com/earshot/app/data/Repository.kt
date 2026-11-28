@@ -698,6 +698,55 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     // ---- Episode state ----
 
+    /** Phase 16: what Undo puts back for one episode. */
+    data class EpisodeSnapshot(val id: String, val played: Boolean, val positionMs: Long, val inInbox: Boolean, val queueIndex: Int?)
+
+    suspend fun snapshotEpisodes(ids: List<String>): List<EpisodeSnapshot> = withContext(Dispatchers.IO) {
+        val queue = episodes.queueIds()
+        ids.mapNotNull { id ->
+            val e = episodes.get(id) ?: return@mapNotNull null
+            EpisodeSnapshot(id, e.played, e.positionMs, e.inInbox, queue.indexOf(id).takeIf { it >= 0 })
+        }
+    }
+
+    /**
+     * Phase 16 Undo: puts [snaps] back (played, position, New Episodes, place in the queue). Episodes
+     * removed meanwhile are skipped. The server keeps a played episode played when an unplayed write
+     * still has a position (009_sync_safety), so an unplayed episode goes back at position 0 first,
+     * [syncNow] sends that, and only then is its position restored.
+     */
+    suspend fun restoreEpisodes(snaps: List<EpisodeSnapshot>, syncNow: suspend () -> Unit) {
+        val present = snaps.filter { episodes.get(it.id) != null }
+        if (present.isEmpty()) return
+        var needsSecondStep = false
+        queueLock.withLock {
+            db.withTransaction {
+                for (s in present) {
+                    val cur = episodes.get(s.id) ?: continue
+                    val unplaying = cur.played && !s.played && s.positionMs > 0
+                    if (unplaying) needsSecondStep = true
+                    episodes.restoreState(s.id, s.played, if (unplaying) 0 else s.positionMs, s.inInbox)
+                }
+                val ids = episodes.queueIds().filter { id -> present.none { it.id == id } }.toMutableList()
+                for (s in present.filter { it.queueIndex != null }.sortedBy { it.queueIndex }) {
+                    ids.add(s.queueIndex!!.coerceIn(0, ids.size), s.id)
+                }
+                writeQueue(ids)
+                for (s in present.filter { it.queueIndex == null }) episodes.setQueuePosition(s.id, null)
+            }
+        }
+        if (needsSecondStep) {
+            runCatching { syncNow() }
+            for (s in present) if (!s.played && s.positionMs > 0) episodes.restorePosition(s.id, s.positionMs)
+        }
+    }
+
+    /** Phase 16 Undo for "Delete playlist". */
+    suspend fun restorePlaylist(id: String) {
+        val p = playlists.get(id) ?: return
+        playlists.upsert(p.copy(deleted = false, dirty = true, changedAt = maxOf(System.currentTimeMillis(), p.changedAt + 1)))
+    }
+
     suspend fun setPlayed(id: String, played: Boolean) {
         queueLock.withLock {
             episodes.setPlayed(id, played)

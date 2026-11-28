@@ -142,7 +142,25 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    // Phase 16: time left in the queue at each show's speed, and when it would be done.
+    val library by vm.library.collectAsStateWithLifecycle()
+    val defaults by vm.playbackDefaults.collectAsStateWithLifecycle()
+    val speeds = remember(library) { library.associate { it.podcast.id to it.podcast.speed } }
+    val timeLabel = com.earshot.app.ui.queueTimeLabel(
+        com.earshot.app.ui.queueTimeLeftMs(local, { id -> speeds[id] ?: defaults.speed }, now.episodeId, now.positionMs),
+    )
+
     LazyColumn(modifier = modifier, state = listState, contentPadding = PaddingValues(bottom = 8.dp)) {
+        if (continuing.isEmpty() && local.isNotEmpty() && timeLabel.isNotEmpty()) {
+            item(key = "queue-time") {
+                Text(
+                    "Queue · ${local.size} · $timeLabel",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp),
+                )
+            }
+        }
         // Phase 13: Continue listening (started, unfinished, not queued).
         if (continuing.isNotEmpty()) {
             item(key = "continue-header") {
@@ -173,7 +191,7 @@ fun QueueList(vm: AppViewModel, modifier: Modifier = Modifier) {
             }
             item(key = "queue-header") {
                 Text(
-                    if (local.isEmpty()) "Queue is empty" else "Queue · ${local.size}",
+                    if (local.isEmpty()) "Queue is empty" else "Queue · ${local.size}" + if (timeLabel.isNotEmpty()) " · $timeLabel" else "",
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
                 )
@@ -237,7 +255,14 @@ private fun SwipeRow(
     endToStart: SwipeAction?,
     content: @Composable () -> Unit,
 ) {
-    val state = rememberSwipeToDismissBoxState()
+    // Not saved with the list (PR D, test B3): the list keeps each row's saved state by its key, so after
+    // a swipe and Undo the episode came back already "swiped" and was removed again, over and over.
+    // (The box keeps the state if Compose skips the inner block on a later pass; the first pass always runs it.)
+    val box = remember { arrayOfNulls<androidx.compose.material3.SwipeToDismissBoxState>(1) }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.runtime.saveable.LocalSaveableStateRegistry provides null) {
+        box[0] = rememberSwipeToDismissBoxState()
+    }
+    val state = box[0]!!
     val scope = rememberCoroutineScope()
     SwipeToDismissBox(
         state = state,

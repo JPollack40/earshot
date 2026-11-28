@@ -263,9 +263,15 @@ fun EpisodeSheet(
     /** Phase 13: shown for queued episodes. */
     onMoveToTop: (() -> Unit)? = null,
     onMoveToBottom: (() -> Unit)? = null,
+    /** Phase 16: a tapped timestamp in the show notes ("12:34", "1:02:03") plays from there. */
+    onTimestamp: ((Long) -> Unit)? = null,
 ) {
     val e = item.episode
-    val notes = remember(e.description) { AnnotatedString.fromHtml(e.description) }
+    val linkColor = MaterialTheme.colorScheme.primary
+    val notes = remember(e.description, onTimestamp != null) {
+        val html = AnnotatedString.fromHtml(e.description)
+        if (onTimestamp == null) html else com.earshot.app.ui.linkTimestamps(html, e.durationMs, linkColor) { ms -> onDismiss(); onTimestamp(ms) }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
         Column(
             Modifier
@@ -447,7 +453,19 @@ fun MiniPlayer(now: NowPlaying, onOpen: () -> Unit, onTogglePlay: () -> Unit, on
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(now.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    PodcastLink(now.podcastTitle, onOpenPodcast)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PodcastLink(now.podcastTitle, onOpenPodcast, modifier = Modifier.weight(1f, fill = false))
+                        // Phase 16: time left at this speed, or "Buffering…".
+                        val status = com.earshot.app.ui.miniPlayerStatus(now.isBuffering, now.positionMs, now.durationMs, now.speed)
+                        if (status.isNotEmpty()) {
+                            Text(
+                                " · $status",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
                 if (now.isBuffering) {
                     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {

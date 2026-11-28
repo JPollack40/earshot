@@ -296,6 +296,7 @@ class PlaybackService : MediaLibraryService() {
             while (isActive) {
                 delay(500)
                 if (player.isPlaying) checkSkips()
+                updateChapterArt()
                 updateAdButton()
             }
         }
@@ -353,6 +354,26 @@ class PlaybackService : MediaLibraryService() {
         val s = session ?: return
         s.notifyChildrenChanged(EpisodeMedia.CHAPTERS, list.size, null)
         scope.launch { s.notifyChildrenChanged(EpisodeMedia.QUEUE, repo.episodes.getQueue().size + 3, null) }
+    }
+
+    /**
+     * Phase 16: the lock screen, notification and car show the playing chapter's own picture (Podcasting
+     * 2.0 chapters can have one), and the episode's artwork again in chapters without one. Only the
+     * metadata changes, so playback isn't interrupted.
+     */
+    private fun updateChapterArt() {
+        val ep = loaded ?: return
+        val item = player.currentMediaItem ?: return
+        if (item.mediaId != ep.episode.id || chaptersFor != ep.episode.id) return
+        val want = (chapters.getOrNull(currentChapterIndex())?.imageUrl?.takeIf { it.startsWith("http") } ?: ep.artworkUrl)?.toUri()
+        if (item.mediaMetadata.artworkUri == want) return
+        if (chapters.none { it.imageUrl != null } && want == ep.artworkUrl?.toUri()) return
+        val index = player.currentMediaItemIndex.takeIf { it >= 0 } ?: return
+        val updated = item.buildUpon()
+            .setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(want).setArtworkData(null, null).build())
+            .build()
+        runCatching { player.replaceMediaItem(index, updated) }
+            .onFailure { Log.w(TAG, "Chapter art: couldn't update the artwork", it) }
     }
 
     /** The chapter playing now (by title), for the Chapters row. */

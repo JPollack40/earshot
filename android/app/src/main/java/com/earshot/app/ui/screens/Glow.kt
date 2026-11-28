@@ -118,7 +118,14 @@ fun GlowMiniPlayer(
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(now.title, style = MaterialTheme.typography.bodyMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                PodcastLink(now.podcastTitle, onOpenPodcast, color = Color.White.copy(alpha = 0.8f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PodcastLink(now.podcastTitle, onOpenPodcast, modifier = Modifier.weight(1f, fill = false), color = Color.White.copy(alpha = 0.8f))
+                    // Phase 16: time left at this speed, or "Buffering…".
+                    val status = com.earshot.app.ui.miniPlayerStatus(now.isBuffering, now.positionMs, now.durationMs, now.speed)
+                    if (status.isNotEmpty()) {
+                        Text(" · $status", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), maxLines = 1)
+                    }
+                }
             }
             IconButton(onClick = onSkipBack) {
                 Icon(Icons.Filled.Replay, contentDescription = "Back " + skipLengthName(skipBackMs), tint = Color.White)
