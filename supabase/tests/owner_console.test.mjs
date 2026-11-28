@@ -71,3 +71,11 @@ test("the migration runs twice", async () => {
   await pg.exec(sql("014_owner_console.sql"));
   assert.equal((await pg.query(`select count(*)::int n from public.usage_watch`)).rows[0].n, 1);
 });
+
+test("015 adds the auto-prepare switch (off) and budget, and runs twice", async () => {
+  const pg = await db();
+  for (const f of ["002_transcripts_bookmarks.sql", "011_shared_transcripts.sql", "015_auto_prepare.sql", "015_auto_prepare.sql"]) await pg.exec(sql(f));
+  const c = (await pg.query(`select auto_prepare_on, auto_prepare_hours::int h, auto_prepare_owners_only from public.app_config`)).rows[0];
+  assert.deepEqual(c, { auto_prepare_on: false, h: 10, auto_prepare_owners_only: true });
+  assert.equal((await pg.query(`select prepared_ms::int ms from public.usage_watch`)).rows[0].ms, 0);
+});

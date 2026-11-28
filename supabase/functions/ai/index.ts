@@ -260,18 +260,42 @@ function useConfigModels(cfg: Record<string, unknown> | null) {
 const mainModel = () => cfgMain || Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
 const fallbackModel = () => cfgFallback || Deno.env.get("GEMINI_FALLBACK_MODEL") || DEFAULT_FALLBACK_MODEL;
 
+/** Phase 21: the new secret key first; the legacy service_role key only while no secret key exists. */
+function serviceHeaders(): Record<string, string> {
+  let key = "";
+  try {
+    key = Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>)[0] ?? "";
+  } catch (_) {
+    // not set
+  }
+  key = key || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const h: Record<string, string> = { apikey: key };
+  if (key.startsWith("eyJ")) h.Authorization = `Bearer ${key}`;
+  return h;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
   const base = Deno.env.get("SUPABASE_URL");
-  const auth = req.headers.get("authorization") ?? "";
-  const apikey = req.headers.get("apikey") ?? "";
-  if (!base || !auth.toLowerCase().startsWith("bearer ") || !apikey) return json({ error: "Sign in first" }, 401);
-  const asUser = { Authorization: auth, apikey };
-  const who = await fetch(`${base}/auth/v1/user`, { headers: asUser });
-  if (!who.ok) return json({ error: "Sign in first" }, 401);
-  await who.body?.cancel();
+  // Phase 21 (D4): the new-episodes check calls this for a person (auto-prepare), with its own secret.
+  const cronSecret = Deno.env.get("NEW_EPISODES_SECRET") ?? "";
+  const serverCall = cronSecret !== "" && req.headers.get("x-earshot-cron") === cronSecret;
+  let apikey = req.headers.get("apikey") ?? "";
+  let asUser: Record<string, string>;
+  if (serverCall) {
+    asUser = serviceHeaders();
+    apikey = asUser.apikey;
+  } else {
+    const auth = req.headers.get("authorization") ?? "";
+    if (!base || !auth.toLowerCase().startsWith("bearer ") || !apikey) return json({ error: "Sign in first" }, 401);
+    asUser = { Authorization: auth, apikey };
+    const who = await fetch(`${base}/auth/v1/user`, { headers: asUser });
+    if (!who.ok) return json({ error: "Sign in first" }, 401);
+    await who.body?.cancel();
+  }
+  if (!base) return json({ error: "Sign in first" }, 401);
 
   let body: {
     episodeId?: string; kind?: string; title?: string; podcast?: string; question?: string; startMs?: number; endMs?: number;
@@ -283,6 +307,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Expected JSON" }, 400);
   }
   const episodeId = String(body.episodeId ?? "");
+  // Server calls name the person; they may only ask for what auto-prepare saves.
+  const actAs = serverCall ? String((body as { userId?: string }).userId ?? "") : "";
+  if (serverCall && (!/^[0-9a-f-]{36}$/i.test(actAs) || !["chapters", "summary", "ads"].includes(String(body.kind)))) {
+    return json({ error: "userId and kind (chapters, summary or ads) are required" }, 400);
+  }
+  const userFilter = actAs ? `&user_id=eq.${actAs}` : "";
   const kind = body.kind as Kind | "ask" | "title" | "recap" | "playlist";
   if (!(kind in PROMPTS || kind === "ask" || kind === "title" || kind === "recap" || kind === "playlist") || (!episodeId && kind !== "playlist")) {
     return json({ error: "episodeId and kind (chapters, summary, ads, ask, title, recap or playlist) are required" }, 400);
@@ -355,23 +385,29 @@ Deno.serve(async (req: Request) => {
   }
 
   // The user's own transcript (row-level security keeps it to theirs).
-  const tr = await fetch(`${base}/rest/v1/transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
+  const tr = await fetch(`${base}/rest/v1/transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}${userFilter}`, { headers: asUser });
   if (!tr.ok) return json({ error: `Couldn't read the transcript (HTTP ${tr.status})` }, 502);
   const rows = await tr.json() as { segments: Segment[]; timed: boolean }[];
-  const t = rows[0];
+  let t = rows[0];
   // Phase 18-pre: after 012 the text lives in the shared copy (episode_transcripts); the person's row is a pointer.
-  if (t && (!Array.isArray(t.segments) || t.segments.length === 0)) {
+  // Server calls (phase 21) may also find only the shared copy; for people, the read rule needs their own row.
+  if ((t && (!Array.isArray(t.segments) || t.segments.length === 0)) || (!t && serverCall)) {
     const sh = await fetch(`${base}/rest/v1/episode_transcripts?select=segments,timed&episode_id=eq.${encodeURIComponent(episodeId)}`, { headers: asUser });
     if (sh.ok) {
       const s0 = (await sh.json() as { segments: Segment[]; timed: boolean }[])[0];
       if (s0 && Array.isArray(s0.segments)) {
-        t.segments = s0.segments;
-        t.timed = s0.timed;
+        if (t) {
+          t.segments = s0.segments;
+          t.timed = s0.timed;
+        } else {
+          rows.push({ segments: s0.segments, timed: s0.timed });
+        }
       }
     } else {
       await sh.body?.cancel(); // 011 not run yet: nothing shared to read
     }
   }
+  t = t ?? rows[0];
   if (!t || !Array.isArray(t.segments) || t.segments.length === 0) return json({ error: "This episode has no transcript yet. Get one first (Transcript)." }, 400);
   if (!t.timed) return json({ error: "This episode's transcript has no timings, so moments can't be placed. Transcribe it instead." }, 400);
   const lastMs = Math.max(...t.segments.map((s) => s.e || s.s || 0));
@@ -468,7 +504,7 @@ Deno.serve(async (req: Request) => {
   const save = await fetch(`${base}/rest/v1/episode_ai?on_conflict=user_id,episode_id,kind`, {
     method: "POST",
     headers: { ...asUser, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ episode_id: episodeId, kind, data, model, created_at: now, changed_at: now }),
+    body: JSON.stringify({ ...(actAs ? { user_id: actAs } : {}), episode_id: episodeId, kind, data, model, created_at: now, changed_at: now }),
   });
   if (!save.ok) {
     const detail = (await save.text()).slice(0, 300);

@@ -23,7 +23,13 @@
 // quietly without it) into usage_watch, and below its warning level sends the owners' phones a warning
 // (at most every 3 days). Optional secret DEEPGRAM_ADMIN_KEY if the DEEPGRAM_API_KEY can't read billing.
 //
-// Returns { feeds, lookedUp, checked, found, added, notified, credit, titled, errors }.
+// Phase 21 (D4): auto-prepare (needs 015_auto_prepare.sql, OFF until switched on in the owner console).
+// A new episode of a pinned show (the owners' only, unless switched to everyone) without a feed transcript
+// is transcribed with Deepgram within the monthly hours budget, then the ai function (called with
+// NEW_EPISODES_SECRET) finds its ads and, without feed chapters, its chapters, so it arrives with Skip ad
+// ready. Feed transcripts are left to the phone, which reads them for free. Uses DEEPGRAM_API_KEY.
+//
+// Returns { feeds, lookedUp, checked, found, added, notified, credit, prepared, titled, errors }.
 
 const API = "https://api.podcastindex.org/api/1.0";
 const BATCH = 200; // Podcast Index's limit of feed ids per byfeedid call
@@ -314,6 +320,159 @@ async function warnOwners(title: string, body: string, errors: string[]): Promis
   return sent;
 }
 
+// ---------------------------------------------------------------- phase 21 (D4): auto-prepare pinned shows
+
+const LISTEN = "https://api.deepgram.com/v1/listen?model=nova-3&language=en&smart_format=true&diarize_model=latest";
+
+type Segment = { s: number; e: number; t: string; sp: string | null };
+type Word = { t: string; s: number; e: number; sp: string | null };
+
+/** Same as the transcribe function's wordsOf: the words of a Deepgram answer, speakers as spk_1, spk_2, ... */
+// deno-lint-ignore no-explicit-any
+function wordsOf(res: any): { words: Word[]; text: string } {
+  const alt = res?.results?.channels?.[0]?.alternatives?.[0];
+  const words: Word[] = [];
+  for (const w of alt?.words ?? []) {
+    const t = typeof w?.punctuated_word === "string" ? w.punctuated_word : typeof w?.word === "string" ? w.word : "";
+    if (!t) continue;
+    words.push({
+      t,
+      s: Math.round((Number(w.start) || 0) * 1000),
+      e: Math.round((Number(w.end) || 0) * 1000),
+      sp: Number.isInteger(w.speaker) ? `spk_${w.speaker + 1}` : null,
+    });
+  }
+  return { words, text: typeof alt?.transcript === "string" ? alt.transcript : "" };
+}
+
+/** Same as the transcribe function's wordsToSegments. */
+function wordsToSegments(words: Word[]): Segment[] {
+  const out: Segment[] = [];
+  let cur: { s: number; e: number; parts: string[]; sp: string | null } | null = null;
+  for (const w of words) {
+    const text = w.t.trim();
+    if (!text) continue;
+    if (cur) {
+      const len = cur.e - cur.s;
+      const lastWord = cur.parts[cur.parts.length - 1];
+      const sentenceEnd = /[.?!]["')\]]?$/.test(lastWord);
+      if (w.sp !== cur.sp || w.s - cur.e >= 2000 || (sentenceEnd && len >= 6000) || len >= 25000) {
+        out.push({ s: cur.s, e: cur.e, t: cur.parts.join(" "), sp: cur.sp });
+        cur = null;
+      }
+    }
+    if (!cur) cur = { s: w.s, e: w.e, parts: [], sp: w.sp };
+    cur.parts.push(text);
+    cur.e = Math.max(cur.e, w.e);
+  }
+  if (cur) out.push({ s: cur.s, e: cur.e, t: cur.parts.join(" "), sp: cur.sp });
+  return out;
+}
+
+type PrepConfig = { auto_prepare_on?: boolean; auto_prepare_hours?: number | string; auto_prepare_owners_only?: boolean; transcribe_on?: boolean; ad_finding_on?: boolean; ai_on?: boolean };
+type PrepUsage = { prepared_month: string | null; prepared_ms: number; prepared_count: number };
+type EpisodeInfo = { id: string; user_id: string; audio_url: string; duration_ms: number; chapters_url: string | null; transcript_url: string | null; title: string };
+
+/** This month's first day, "2026-11-01". */
+const monthStart = (d = new Date()) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+
+/**
+ * Prepares as many of this run's new pinned episodes as time and the budget allow (usually one or two:
+ * Deepgram takes up to a minute an episode). Returns how many were prepared.
+ */
+async function autoPrepare(added: Added[], deadline: number, errors: string[]): Promise<number> {
+  const wanted = added.filter((a) => a.pinned && a.action !== "skip");
+  if (wanted.length === 0) return 0;
+  let cfg: PrepConfig | undefined;
+  let usage: PrepUsage | undefined;
+  try {
+    cfg = (await db("app_config?id=eq.1&select=auto_prepare_on,auto_prepare_hours,auto_prepare_owners_only,transcribe_on,ad_finding_on,ai_on") as PrepConfig[])[0];
+    usage = (await db("usage_watch?id=eq.1&select=prepared_month,prepared_ms,prepared_count") as PrepUsage[])[0];
+  } catch (_) {
+    return 0; // 015 not run yet
+  }
+  if (!cfg?.auto_prepare_on || cfg.transcribe_on === false || !usage) return 0;
+  const key = Deno.env.get("DEEPGRAM_API_KEY");
+  if (!key) return 0;
+
+  const month = monthStart();
+  let usedMs = usage.prepared_month === month ? Number(usage.prepared_ms) || 0 : 0;
+  let count = usage.prepared_month === month ? Number(usage.prepared_count) || 0 : 0;
+  const budgetMs = Math.max(0, Number(cfg.auto_prepare_hours) || 0) * 3600_000;
+
+  let people = wanted;
+  if (cfg.auto_prepare_owners_only !== false) {
+    const owners = new Set((await db("app_owners?select=user_id") as { user_id: string }[]).map((o) => o.user_id));
+    people = wanted.filter((a) => owners.has(a.user_id));
+  }
+  // One transcript per episode, shared; each person who pinned it gets the ads (and chapters).
+  const byEpisode = new Map<string, Added[]>();
+  for (const a of people) byEpisode.set(a.episode_id, [...(byEpisode.get(a.episode_id) ?? []), a]);
+
+  let prepared = 0;
+  for (const [episodeId, who] of byEpisode) {
+    if (Date.now() > deadline - 60_000) break; // not enough time left for Deepgram
+    const ep = (await db(`episodes?select=id,user_id,audio_url,duration_ms,chapters_url,transcript_url,title&id=eq.${encodeURIComponent(episodeId)}&user_id=eq.${who[0].user_id}`) as EpisodeInfo[])[0];
+    if (!ep || ep.transcript_url) continue; // the phone reads feed transcripts itself, for free
+    const shared = await db(`episode_transcripts?select=episode_id&episode_id=eq.${encodeURIComponent(episodeId)}`) as unknown[];
+    let segments: Segment[] | null = null;
+    if (shared.length === 0) {
+      const lengthMs = Number(ep.duration_ms) || 3600_000; // unknown length: count an hour
+      if (usedMs + lengthMs > budgetMs) {
+        console.log(`Auto-prepare: monthly budget reached (${Math.round(usedMs / 60_000)} min used), skipping "${ep.title}"`);
+        break;
+      }
+      const res = await fetch(LISTEN, {
+        method: "POST",
+        headers: { Authorization: `Token ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: ep.audio_url }),
+        signal: AbortSignal.timeout(Math.max(10_000, deadline - Date.now())),
+      });
+      if (!res.ok) {
+        errors.push(`Auto-prepare Deepgram: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+        break; // credit or key trouble: try again next run
+      }
+      const out = await res.json();
+      const { words, text } = wordsOf(out);
+      const realMs = Math.round((Number(out?.metadata?.duration) || 0) * 1000) || lengthMs;
+      segments = wordsToSegments(words);
+      if (segments.length === 0 && text.trim()) segments = [{ s: 0, e: realMs, t: text.trim(), sp: null }];
+      usedMs += realMs;
+      count++;
+      await db("usage_watch?id=eq.1", { method: "PATCH", body: JSON.stringify({ prepared_month: month, prepared_ms: usedMs, prepared_count: count, updated_at: new Date().toISOString() }) });
+      if (segments.length === 0) continue;
+    }
+    // Each person gets their own transcript row (their phone syncs it); an existing one is kept.
+    const now = Date.now();
+    if (segments) {
+      await db("transcripts?on_conflict=user_id,episode_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+        body: JSON.stringify(who.map((a) => ({ user_id: a.user_id, episode_id: episodeId, source: "deepgram", timed: true, segments, changed_at: now }))),
+      });
+    }
+    // Ads, and chapters when the feed has none, for each person.
+    for (const a of who) {
+      const kinds: string[] = [];
+      if (cfg.ad_finding_on !== false) kinds.push("ads");
+      if (cfg.ai_on !== false && !ep.chapters_url) kinds.push("chapters");
+      for (const kind of kinds) {
+        if (Date.now() > deadline) break;
+        const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ai`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-earshot-cron": Deno.env.get("NEW_EPISODES_SECRET") ?? "" },
+          body: JSON.stringify({ userId: a.user_id, episodeId, kind, title: a.title, podcast: a.podcast_title }),
+        });
+        if (!r.ok) errors.push(`Auto-prepare ${kind}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+        else await r.body?.cancel();
+      }
+    }
+    prepared++;
+    console.log(`Auto-prepare: "${ep.title}" ready for ${who.length} ${who.length === 1 ? "person" : "people"}`);
+  }
+  return prepared;
+}
+
 /** Titles untitled bookmarks until [deadline] (ms since epoch). Returns how many got a title. */
 async function titleBookmarks(deadline: number, errors: string[]): Promise<number> {
   // Phase 16: Serena's kill switch (app_config.ai_on, 010_safe_updates.sql). A failed read changes nothing.
@@ -465,6 +624,13 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     errors.push(`Credit watch: ${(e as Error).message}`);
   }
+  // Phase 21 (D4): auto-prepare new episodes of pinned shows, with time to spare for bookmark titles.
+  let prepared = 0;
+  try {
+    prepared = await autoPrepare(added, started + 95_000, errors);
+  } catch (e) {
+    errors.push(`Auto-prepare: ${(e as Error).message}`);
+  }
   // Phase 14: bookmark titles with the time left (edge functions stop at about 150 s).
   let titled = 0;
   try {
@@ -472,7 +638,7 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     errors.push(`Bookmark titles: ${(e as Error).message}`);
   }
-  const result = { feeds: feedCount, lookedUp, checked, found, added: added.length, notified, credit, titled, errors: errors.slice(0, 20) };
+  const result = { feeds: feedCount, lookedUp, checked, found, added: added.length, notified, credit, prepared, titled, errors: errors.slice(0, 20) };
   console.log(JSON.stringify(result));
   return json(result, errors.length && !checked ? 500 : 200);
 });

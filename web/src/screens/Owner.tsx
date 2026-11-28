@@ -76,6 +76,10 @@ interface Config {
   banner: string | null;
   gemini_model: string | null;
   gemini_fallback_model: string | null;
+  // Phase 21 (D4), after 015
+  auto_prepare_on?: boolean;
+  auto_prepare_hours?: number;
+  auto_prepare_owners_only?: boolean;
 }
 interface Usage {
   deepgram_balance_usd: number | null;
@@ -83,6 +87,9 @@ interface Usage {
   deepgram_error: string | null;
   warn_below_usd: number;
   warned_at: string | null;
+  prepared_month?: string | null;
+  prepared_ms?: number;
+  prepared_count?: number;
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never");
@@ -92,6 +99,8 @@ const SWITCHES: { key: keyof Config; label: string }[] = [
   { key: "ad_finding_on", label: "Find ads" },
   { key: "transcribe_on", label: "Transcribe with Deepgram" },
   { key: "browse_ai_on", label: "Browse suggestions (Gemini)" },
+  { key: "auto_prepare_on", label: "Auto-prepare pinned shows (transcript, ads, chapters on arrival; uses Deepgram credit)" },
+  { key: "auto_prepare_owners_only", label: "Auto-prepare only your own pinned shows (untick: friends' too)" },
 ];
 const TEXTS: { key: keyof Config; label: string; hint: string }[] = [
   { key: "banner", label: "Banner", hint: "A short note at the top of everyone's app and web player. Empty = none." },
@@ -100,6 +109,7 @@ const TEXTS: { key: keyof Config; label: string; hint: string }[] = [
   { key: "hold_version", label: "Hold updates at", hint: "e.g. 1.1.0: the update check offers nothing newer." },
   { key: "gemini_model", label: "Gemini model", hint: "Empty = the function's secret or default." },
   { key: "gemini_fallback_model", label: "Gemini fallback model", hint: "Empty = the function's secret or default." },
+  { key: "auto_prepare_hours", label: "Auto-prepare budget (audio hours a month)", hint: "Deepgram stops preparing once this much audio is done this month." },
 ];
 
 export function OwnerPage({ nav }: { nav: Nav }) {
@@ -160,6 +170,7 @@ export function OwnerPage({ nav }: { nav: Nav }) {
     }
   };
 
+  const thisMonth = usage?.prepared_month?.slice(0, 7) === new Date().toISOString().slice(0, 7);
   const emailOf = new Map((overview?.people ?? []).map((p) => [p.user_id, p.email]));
 
   return (
@@ -187,6 +198,12 @@ export function OwnerPage({ nav }: { nav: Nav }) {
               {usage.warned_at ? ` Warning sent ${when(usage.warned_at)}.` : ""}
             </p>
             {usage.deepgram_error && <p className="error">{usage.deepgram_error}</p>}
+            {usage.prepared_ms != null && (
+              <p className="muted">
+                Auto-prepare this month: {thisMonth ? (usage.prepared_count ?? 0) : 0} episodes, {Math.round((thisMonth ? (usage.prepared_ms ?? 0) : 0) / 60_000)} minutes of audio
+                {config?.auto_prepare_hours != null ? ` of ${config.auto_prepare_hours} hours` : ""}.
+              </p>
+            )}
             <WarnLevel
               value={Number(usage.warn_below_usd)}
               onSave={async (v) => {
@@ -256,13 +273,13 @@ export function OwnerPage({ nav }: { nav: Nav }) {
         <h2>Switches</h2>
         {config ? (
           <>
-            {SWITCHES.map((s) => (
+            {SWITCHES.filter((s) => s.key in config).map((s) => (
               <label key={s.key} className="owner-row">
                 <input type="checkbox" checked={Boolean(config[s.key])} onChange={(e) => void saveConfig({ [s.key]: e.target.checked })} />
                 {s.label}
               </label>
             ))}
-            {TEXTS.map((t) => (
+            {TEXTS.filter((t) => t.key in config).map((t) => (
               <label key={t.key} className="owner-field">
                 <span>{t.label}</span>
                 <input
@@ -278,6 +295,7 @@ export function OwnerPage({ nav }: { nav: Nav }) {
               onClick={() => {
                 const patch: Record<string, string | null> = {};
                 for (const [k, v] of Object.entries(draft)) patch[k] = k === "paused_message" ? String(v) : String(v).trim() || null;
+                if ("auto_prepare_hours" in patch) (patch as Record<string, unknown>).auto_prepare_hours = Math.max(0, Number(patch.auto_prepare_hours) || 0);
                 void saveConfig(patch as Partial<Config>);
               }}
             >
