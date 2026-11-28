@@ -42,6 +42,12 @@
                 <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <!-- Phase 23: share a web article to Earshot and it's read aloud into the queue. -->
+            <intent-filter android:label="Read aloud in Earshot">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- Phase 20 (C6): the Earshot tile in Quick Settings (play / pause). -->

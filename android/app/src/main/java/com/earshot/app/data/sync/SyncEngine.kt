@@ -118,23 +118,25 @@ class SyncEngine(private val app: EarshotApp) {
 
         // Podcasts: changed ones, plus hidden ones whose episodes are about to go up (so the web
         // player knows their title and artwork).
-        val dirtyPodcasts = podcastDao.dirty()
-        if (dirtyPodcasts.isNotEmpty()) {
-            upsertPodcasts(dirtyPodcasts)
-            for (p in dirtyPodcasts) podcastDao.markClean(p.id, p.changedAt)
-            n += dirtyPodcasts.size
-        }
+        // Phase 23: the Articles show lives on this phone only (its audio is made here).
+        val allDirty = podcastDao.dirty()
+        val dirtyPodcasts = allDirty.filter { !com.earshot.app.data.articles.Articles.isLocalFeed(it.feedUrl) }
+        if (dirtyPodcasts.isNotEmpty()) upsertPodcasts(dirtyPodcasts)
+        for (p in allDirty) podcastDao.markClean(p.id, p.changedAt)
+        n += dirtyPodcasts.size
 
         val pushedPodcastIds = dirtyPodcasts.map { it.id }.toMutableSet()
         for (round in 0 until 200) { // 500 at a time; capped so a row that keeps changing can't loop forever
             val batch = episodeDao.dirty(500)
             if (batch.isEmpty()) break
-            val hidden = batch.mapNotNull { byId[it.podcastId] }.filter { !it.subscribed && it.id !in pushedPodcastIds }.distinctBy { it.id }
+            val hidden = batch.mapNotNull { byId[it.podcastId] }
+                .filter { !it.subscribed && it.id !in pushedPodcastIds && !com.earshot.app.data.articles.Articles.isLocalFeed(it.feedUrl) }.distinctBy { it.id }
             if (hidden.isNotEmpty()) {
                 upsertPodcasts(hidden)
                 pushedPodcastIds += hidden.map { it.id }
             }
-            upsertEpisodes(batch.mapNotNull { e -> byId[e.podcastId]?.let { e to it.feedUrl } })
+            val up = batch.filter { !com.earshot.app.data.articles.Articles.isArticle(it.id) }.mapNotNull { e -> byId[e.podcastId]?.let { e to it.feedUrl } }
+            if (up.isNotEmpty()) upsertEpisodes(up)
             app.db.withTransaction { for (e in batch) episodeDao.markClean(e.id, e.changedAt) }
             n += batch.size
             if (batch.size < 500) break
@@ -248,6 +250,7 @@ class SyncEngine(private val app: EarshotApp) {
             if (batch.isEmpty()) break
             val rows = JSONArray()
             for (l in batch) {
+                if (com.earshot.app.data.articles.Articles.isArticle(l.episodeId)) continue // phase 23: phone only
                 rows.put(
                     JSONObject()
                         .put("id", l.id)
@@ -265,7 +268,7 @@ class SyncEngine(private val app: EarshotApp) {
                         .put("changed_at", l.changedAt),
                 )
             }
-            supabase.upsert("listens", "user_id,id", rows)
+            if (rows.length() > 0) supabase.upsert("listens", "user_id,id", rows)
             for (l in batch) dao.markClean(l.id, l.changedAt)
             n += batch.size
             if (batch.size < 500) break
@@ -294,6 +297,7 @@ class SyncEngine(private val app: EarshotApp) {
             if (batch.isEmpty()) break
             val rows = JSONArray()
             for (t in batch) {
+                if (com.earshot.app.data.articles.Articles.isArticle(t.episodeId)) continue // phase 23: phone only
                 rows.put(
                     JSONObject()
                         .put("episode_id", t.episodeId)
@@ -303,7 +307,7 @@ class SyncEngine(private val app: EarshotApp) {
                         .put("changed_at", t.changedAt),
                 )
             }
-            supabase.upsert("transcripts", "user_id,episode_id", rows)
+            if (rows.length() > 0) supabase.upsert("transcripts", "user_id,episode_id", rows)
             for (t in batch) dao.markClean(t.episodeId, t.changedAt)
             n += batch.size
             if (batch.size < 10) break
@@ -317,7 +321,8 @@ class SyncEngine(private val app: EarshotApp) {
         for (round in 0 until 20) {
             val batch = dao.dirty(500)
             if (batch.isEmpty()) break
-            supabase.upsert("bookmarks", "user_id,id", JSONArray(batch.map(::bookmarkJson)))
+            val up = batch.filter { !com.earshot.app.data.articles.Articles.isArticle(it.episodeId) } // phase 23: phone only
+            if (up.isNotEmpty()) supabase.upsert("bookmarks", "user_id,id", JSONArray(up.map(::bookmarkJson)))
             for (b in batch) dao.markClean(b.id, b.changedAt)
             n += batch.size
             if (batch.size < 500) break

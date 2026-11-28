@@ -102,6 +102,18 @@ class MainActivity : ComponentActivity() {
 
     /** The Play button on a "New episode" notification (phase 10), or a voice request (phase 15). */
     private fun handlePlayIntent(intent: Intent?) {
+        // Phase 23: a web article shared to Earshot is read aloud into the queue.
+        if (intent?.action == Intent.ACTION_SEND) {
+            val url = com.earshot.app.data.articles.Articles.firstUrl(intent.getStringExtra(Intent.EXTRA_TEXT))
+            intent.action = null // not again on rotation
+            if (url == null) {
+                android.widget.Toast.makeText(this, "Share a web page link to read it aloud", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                com.earshot.app.work.ArticleWorker.enqueue(this, url)
+                android.widget.Toast.makeText(this, "Reading the article. It joins your queue when it's ready.", android.widget.Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (intent?.action == android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             val query = intent.getStringExtra(android.app.SearchManager.QUERY)
             // Bundle.get is deprecated, but the extras' types aren't known here and this only logs them.

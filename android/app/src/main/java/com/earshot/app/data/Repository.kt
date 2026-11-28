@@ -416,6 +416,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     /** Returns the number of new episodes found. */
     suspend fun refresh(podcast: Podcast, inbox: InboxMode = InboxMode.ALL_NEW): Int = withContext(Dispatchers.IO) {
+        if (com.earshot.app.data.articles.Articles.isLocalFeed(podcast.feedUrl)) return@withContext 0 // phase 23: made on this phone
         val feed = fetchFeed(podcast.feedUrl)
         // Only the feed's fields: [podcast] may be stale, and its settings may have changed since.
         podcasts.updateMeta(
@@ -810,6 +811,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     }
 
     suspend fun download(id: String) {
+        if (com.earshot.app.data.articles.Articles.isArticle(id)) return // phase 23: already on the phone
         episodes.setDownload(id, DownloadState.QUEUED, 0, null)
         DownloadWorker.enqueue(context, id)
     }
