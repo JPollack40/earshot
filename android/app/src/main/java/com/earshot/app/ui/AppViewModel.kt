@@ -319,6 +319,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val before = repo.snapshotEpisodes(ids)
             val n = action()
+            // A repeat of an action already done (a swipe can report twice) changes nothing: no second
+            // message, whose Undo would put back the already-changed state (PR D test B3).
+            if (repo.snapshotEpisodes(ids) == before) return@launch
             val text = message(n) ?: return@launch
             if (n > 0) sayWithUndo(text) {
                 repo.restoreEpisodes(before) { app.sync.sync("undo") }
