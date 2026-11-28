@@ -673,11 +673,6 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            // Phase 17: the automatic sleep timer, on a press of play (not buffering or focus coming back).
-            if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) autoSleepTimer()
-        }
-
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
             // A seek or skip while paused means the listener chose where to carry on: don't rewind from there.
             if (!player.isPlaying) pausedAt = 0L
@@ -696,6 +691,8 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Phase 17: the automatic sleep timer, on a press of play (not buffering or focus coming back).
+            if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) autoSleepTimer()
             // Paused by setPauseAtEndOfMediaItems: the episode has played to the end.
             if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) return
             val id = player.currentMediaItem?.mediaId ?: return
