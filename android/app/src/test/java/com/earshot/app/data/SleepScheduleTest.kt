@@ -8,7 +8,7 @@ import java.time.LocalDateTime
 
 class SleepScheduleTest {
     // 2026-11-30 is a Monday.
-    private fun at(day: Int, h: Int, m: Int = 0) = LocalDateTime.of(2026, 11, 29 + day, h, m)
+    private fun at(day: Int, h: Int, m: Int = 0) = LocalDateTime.of(2026, 11, 30, h, m).plusDays(day - 1L)
 
     @Test fun windowAcrossMidnightBelongsToTheNightItStarts() {
         val s = SleepSchedule(on = true, startMin = 22 * 60 + 30, endMin = 6 * 60, days = setOf(1)) // Monday nights
