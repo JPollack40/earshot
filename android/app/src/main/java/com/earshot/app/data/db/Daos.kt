@@ -36,6 +36,10 @@ interface PodcastDao {
     @Query("SELECT * FROM podcasts WHERE subscribed = 1 ORDER BY pinned DESC, title COLLATE NOCASE")
     suspend fun getAll(): List<Podcast>
 
+    /** Unfollowed shows that still have episodes kept (queued or partly played), for voice search. */
+    @Query("SELECT * FROM podcasts WHERE subscribed = 0 AND id IN (SELECT podcastId FROM episodes) ORDER BY title COLLATE NOCASE")
+    suspend fun getUnfollowedWithEpisodes(): List<Podcast>
+
     @Query("SELECT * FROM podcasts WHERE id = :id")
     fun observe(id: Long): Flow<Podcast?>
 

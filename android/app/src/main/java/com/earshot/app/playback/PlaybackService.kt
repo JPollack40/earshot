@@ -875,6 +875,7 @@ class PlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(result)
         }
 
+        @Deprecated("Still called by Media3 1.11; used only to log voice commands.")
         override fun onPlayerCommandRequest(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -1155,16 +1156,24 @@ class PlaybackService : MediaLibraryService() {
      * What "play [query]" should start (phase 10, see data/VoiceMatch.kt):
      *  - nothing, "podcasts", "Earshot": carry on with the loaded episode, else the top of the queue;
      *  - "the latest <show>": that show's newest unplayed episode;
-     *  - a show's name (spelled loosely): its newest unplayed episode;
+     *  - a show's name (spelled loosely): its newest unplayed episode (an unfollowed show she still
+     *    has episodes of: the one part way through);
      *  - otherwise the newest episode whose title matches (exactly, then loosely).
      */
     private suspend fun voiceSearch(query: String): EpisodeWithPodcast? {
         val intent = VoiceMatch.parse(query)
         Log.i(TAG, "Voice: \"$query\" -> $intent")
         suspend fun newestOf(show: String): EpisodeWithPodcast? {
-            val podcast = VoiceMatch.best(show, repo.podcasts.getAll()) { it.title } ?: return null
+            VoiceMatch.best(show, repo.podcasts.getAll()) { it.title }?.let { podcast ->
+                val episodes = repo.episodes.getForPodcast(podcast.id, 50)
+                return episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
+            }
+            // A show she unfollowed but still has episodes of (Continue listening): the one she was
+            // part way through, else its newest unplayed. A show name beats an episode-title match.
+            val podcast = VoiceMatch.best(show, repo.podcasts.getUnfollowedWithEpisodes()) { it.title } ?: return null
             val episodes = repo.episodes.getForPodcast(podcast.id, 50)
-            return episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
+            return episodes.firstOrNull { !it.episode.played && it.episode.positionMs > 0 }
+                ?: episodes.firstOrNull { !it.episode.played } ?: episodes.firstOrNull()
         }
         return when (intent) {
             VoiceMatch.Intent.Resume -> {
