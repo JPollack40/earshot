@@ -43,6 +43,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         // Android 12+ can refuse to start a foreground job while the app is in the background;
         // in that case the download just runs as a normal background job.
+        // Phase 17: one of several tapped downloads waiting its turn when the others filled the storage limit.
+        if (app.repository.overStorageCap()) {
+            android.util.Log.i("Earshot", "Download of \"${episode.title}\" cancelled: downloads are at the storage limit")
+            dao.setDownload(id, DownloadState.NONE, 0, null)
+            return Result.success()
+        }
         runCatching { setForeground(foregroundInfo(episode.title, 0)) }
         dao.setDownload(id, DownloadState.DOWNLOADING, 0, null)
 

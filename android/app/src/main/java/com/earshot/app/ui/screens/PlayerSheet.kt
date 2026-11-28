@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -197,6 +198,30 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         marks.forEach { f ->
                             val x = inset + f * (size.width - 2 * inset)
                             drawRect(tickColor, topLeft = Offset(x - tick.width / 2, size.height / 2 - tick.height / 2), size = tick)
+                        }
+                    }
+                }
+                // Phase 17: a small moon on the track where the sleep timer will stop playback
+                // (minutes left x the speed playing; Smart Speed can make it land a little later in the episode).
+                val sleepAt: Float? = when (val t = sleep) {
+                    is SleepTimer.At -> {
+                        val left = (t.endsAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
+                        ((now.positionMs + left * prefs.speed) / duration).takeIf { now.durationMs > 0 && it < 1f }
+                    }
+                    SleepTimer.EndOfEpisode -> if (now.durationMs > 0) 1f else null
+                    SleepTimer.Off -> null
+                }
+                if (sleepAt != null) {
+                    val moon = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.Bedtime)
+                    val moonColor = if (glow) Color.White else MaterialTheme.colorScheme.primary
+                    Canvas(Modifier.matchParentSize()) {
+                        val inset = 10.dp.toPx()
+                        val x = inset + sleepAt.coerceIn(0f, 1f) * (size.width - 2 * inset)
+                        val tick = Size(2.dp.toPx(), 14.dp.toPx())
+                        drawRect(moonColor, topLeft = Offset(x - tick.width / 2, size.height / 2 - tick.height / 2), size = tick)
+                        val m = 12.dp.toPx()
+                        translate(left = x - m / 2, top = size.height / 2 - tick.height / 2 - m) {
+                            with(moon) { draw(Size(m, m), colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(moonColor)) }
                         }
                     }
                 }
@@ -501,9 +526,9 @@ fun PlayerSheet(vm: AppViewModel, onDismiss: () -> Unit) {
 
 private fun sleepLabel(sleep: SleepTimer): String = when (sleep) {
     SleepTimer.Off -> "Sleep"
-    SleepTimer.EndOfEpisode -> "End of episode"
+    SleepTimer.EndOfEpisode -> "Sleep: end of episode"
     is SleepTimer.At -> {
         val minsLeft = ((sleep.endsAtMs - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1
-        "${minsLeft}m"
+        "Sleep ${minsLeft}m"
     }
 }
